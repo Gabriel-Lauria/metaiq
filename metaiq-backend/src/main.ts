@@ -17,48 +17,66 @@ async function bootstrap() {
   const globalExceptionFilter = app.get(GlobalExceptionFilter);
   app.useGlobalFilters(globalExceptionFilter);
 
-  // Security headers
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", "data:", "https:"],
+  // ── Segurança: Helmet com CSP e HSTS ──────────────────────────────────
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          connectSrc: ["'self'", config.app.frontendUrl],
+        },
       },
-    },
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-    },
-  }));
+      hsts: {
+        maxAge: 31536000, // 1 ano
+        includeSubDomains: true,
+        preload: true,
+      },
+      frameguard: { action: 'deny' }, // Previne clickjacking
+      noSniff: true, // Previne MIME type sniffing
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    }),
+  );
 
-  // Global validation pipe
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-    disableErrorMessages: config.app.nodeEnv === 'production',
-  }));
+  // ── Validação global de DTOs ───────────────────────────────────────────
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      disableErrorMessages: config.app.nodeEnv === 'production',
+    }),
+  );
 
-  // CORS seguro - permitir apenas frontend
+  // ── Rate limiting global ────────────────────────────────────────────────
+  // ThrottlerGuard protege contra abuso de API
+  app.useGlobalGuards(new ThrottlerGuard());
+
+  // ── CORS seguro ────────────────────────────────────────────────────────
   app.enableCors({
     origin: config.app.frontendUrl,
-    credentials: true,
+    credentials: true, // Permite cookies e headers customizados
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 3600, // Pre-flight cache 1 hora
   });
+
+  // ── Prefix global de API ────────────────────────────────────────────────
+  app.setGlobalPrefix('api');
 
   await app.listen(config.app.port);
 
   console.log(`
 ╔════════════════════════════════════════════╗
-║      🚀 MetaIQ Backend Server             ║
+║      🚀 MetaIQ Backend Server              ║
 ╠════════════════════════════════════════════╣
 ║                                            ║
-║  🌐 URL: http://localhost:${config.app.port}           ║
-║  📊 API: http://localhost:${config.app.port}/api       ║
-║  🏥 Health: http://localhost:${config.app.port}/health ║
+║  🌐 URL: http://localhost:${config.app.port}            ║
+║  📊 API: http://localhost:${config.app.port}/api        ║
+║  🏥 Health: http://localhost:${config.app.port}/api/health ║
+║  🔒 Security: Helmet + JWT + Rate Limiting ║
 ║                                            ║
 ╚════════════════════════════════════════════╝
   `);
