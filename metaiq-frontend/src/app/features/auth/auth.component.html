@@ -1,0 +1,79 @@
+<div class="auth-container">
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1 class="logo">meta<span>IQ</span></h1>
+      <p class="subtitle">{{ isLogin ? 'Faça login na sua conta' : 'Crie uma nova conta' }}</p>
+    </div>
+
+    <form [formGroup]="isLogin ? loginForm : registerForm" (ngSubmit)="onSubmit()" class="auth-form">
+      <!-- Email Field -->
+      <div class="form-group">
+        <label for="email" class="form-label">Email</label>
+        <input
+          type="email"
+          id="email"
+          formControlName="email"
+          class="form-input"
+          [class.error]="isLogin ? loginForm.get('email')?.touched && loginForm.get('email')?.invalid : registerForm.get('email')?.touched && registerForm.get('email')?.invalid"
+          placeholder="você@exemplo.com"
+        />
+        <span class="error-message" *ngIf="getFieldError('email')">{{ getFieldError('email') }}</span>
+      </div>
+
+      <!-- Password Field -->
+      <div class="form-group">
+        <label for="password" class="form-label">Senha</label>
+        <input
+          type="password"
+          id="password"
+          formControlName="password"
+          class="form-input"
+          [class.error]="isLogin ? loginForm.get('password')?.touched && loginForm.get('password')?.invalid : registerForm.get('password')?.touched && registerForm.get('password')?.invalid"
+          placeholder="••••••••"
+        />
+        <span class="error-message" *ngIf="getFieldError('password')">{{ getFieldError('password') }}</span>
+      </div>
+
+      <!-- Confirm Password Field (Register only) -->
+      <div class="form-group" *ngIf="!isLogin">
+        <label for="confirmPassword" class="form-label">Confirme a Senha</label>
+        <input
+          type="password"
+          id="confirmPassword"
+          formControlName="confirmPassword"
+          class="form-input"
+          placeholder="••••••••"
+        />
+      </div>
+
+      <!-- Global Error -->
+      <div class="auth-error" *ngIf="error && !error.includes('sucesso')">
+        {{ error }}
+      </div>
+
+      <!-- Success Message -->
+      <div class="auth-success" *ngIf="error && error.includes('sucesso')">
+        {{ error }}
+      </div>
+
+      <!-- Submit Button -->
+      <button type="submit" class="btn btn-primary" [disabled]="loading || (isLogin ? loginForm.invalid : registerForm.invalid)">
+        <span *ngIf="!loading">{{ isLogin ? 'Entrar' : 'Criar Conta' }}</span>
+        <span *ngIf="loading" class="spinner"></span>
+      </button>
+    </form>
+
+    <!-- Demo Credentials Hint -->
+    <div class="demo-hint" *ngIf="isLogin">
+      <p class="hint-text">Demo: demo@metaiq.dev / Demo@1234</p>
+    </div>
+
+    <!-- Toggle Mode -->
+    <div class="auth-toggle">
+      <span>{{ isLogin ? 'Não tem conta?' : 'Já tem conta?' }}</span>
+      <button type="button" (click)="toggleMode()" class="toggle-link">
+        {{ isLogin ? 'Registre-se' : 'Faça login' }}
+      </button>
+    </div>
+  </div>
+</div>

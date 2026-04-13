@@ -1,0 +1,83 @@
+<div class="app-layout" *ngIf="isAuthenticated$ | async; else noAuth">
+  <!-- Sidebar -->
+  <aside class="sidebar" [class.open]="sidebarOpen">
+    <div class="logo-section">
+      <h1 class="logo">
+        <span>meta</span>IQ
+        <span class="version">v2.0</span>
+      </h1>
+    </div>
+
+    <nav class="nav-menu">
+      <a
+        routerLink="/dashboard"
+        class="nav-item"
+        [class.active]="isActive('/dashboard')"
+      >
+        <span class="nav-dot"></span>
+        <span>Dashboard</span>
+      </a>
+      <a
+        routerLink="/campaigns"
+        class="nav-item"
+        [class.active]="isActive('/campaigns')"
+      >
+        <span class="nav-dot"></span>
+        <span>Campanhas</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="account-badge">
+        <div class="account-dot"></div>
+        <div>
+          <div class="account-name">Conta #12847</div>
+          <div class="account-status">Conectada · Meta Ads</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-wrapper">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-content">
+        <button class="toggle-sidebar" (click)="toggleSidebar()">☰</button>
+        <div class="header-spacer"></div>
+        <div class="user-info" *ngIf="currentUser$ | async as user">
+          <span class="user-name">{{ user.name }}</span>
+        </div>
+        <button class="logout-btn" (click)="logout()">
+          <span>Sair</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+      <div class="main-container">
+        <router-outlet></router-outlet>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>
+        MetaIQ © 2026 · SQLite Local ·
+        {{ today | date: 'dd/MM/yyyy' }}
+      </p>
+    </footer>
+  </div>
+</div>
+
+<!-- Global Components -->
+<app-notification-container></app-notification-container>
+<app-global-loading></app-global-loading>
+
+<!-- Not Authenticated -->
+<ng-template #noAuth>
+  <div class="auth-wrapper">
+    <router-outlet></router-outlet>
+  </div>
+</ng-template>

@@ -1,0 +1,216 @@
+<div class="campaigns-container">
+  <!-- Header -->
+  <div class="campaigns-header">
+    <div>
+      <h2 class="page-title">Campanhas Ativas</h2>
+      <p class="page-sub">Gerencie e analise o desempenho de suas campanhas</p>
+    </div>
+    <button class="btn btn-primary" (click)="refresh()">Atualizar</button>
+  </div>
+
+  <!-- Error State -->
+  <div class="error-state" *ngIf="error()">
+    <div class="error-icon">⚠️</div>
+    <p class="error-title">Erro ao carregar campanhas</p>
+    <p class="error-description">{{ error() }}</p>
+    <button class="btn btn-secondary" (click)="refresh()">Tentar Novamente</button>
+  </div>
+
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="loading()">
+    <div class="spinner"></div>
+    <p>Carregando campanhas...</p>
+  </div>
+
+  <!-- Content -->
+  <div class="campaigns-content" *ngIf="!loading() && !error()">
+    <!-- Filters -->
+    <div class="filters-bar">
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Pesquisar por nome ou ID..."
+        [(ngModel)]="search"
+      />
+
+      <div class="status-filter">
+        <button
+          class="filter-btn"
+          [class.active]="filter() === 'ALL'"
+          (click)="setFilter('ALL')"
+        >
+          Todas
+        </button>
+        <button
+          class="filter-btn"
+          [class.active]="filter() === 'ACTIVE'"
+          (click)="setFilter('ACTIVE')"
+        >
+          Ativas
+        </button>
+        <button
+          class="filter-btn"
+          [class.active]="filter() === 'PAUSED'"
+          (click)="setFilter('PAUSED')"
+        >
+          Pausadas
+        </button>
+      </div>
+    </div>
+
+    <!-- Pagination Info -->
+    <div class="pagination-info" *ngIf="totalItems() > 0">
+      <span>Mostrando {{ ((currentPage() - 1) * pageSize()) + 1 }} - {{ Math.min(currentPage() * pageSize(), totalItems()) }} de {{ totalItems() }} campanhas</span>
+    </div>
+
+    <!-- Campaigns List -->
+    <div class="campaigns-list" *ngIf="filtered().length > 0">
+      <div class="campaign-row" *ngFor="let campaign of filtered()">
+        <!-- Summary Row -->
+        <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
+          <div class="campaign-info">
+            <div class="campaign-header-left">
+              <button
+                class="toggle-btn"
+                [class.expanded]="expanded() === campaign.id"
+              >
+                ▼
+              </button>
+              <div class="campaign-names">
+                <div class="campaign-name">{{ campaign.name }}</div>
+                <div class="campaign-id">#{{ campaign.id }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="campaign-metrics">
+            <div class="metric" *ngIf="campaign.metrics">
+              <span class="metric-label">CTR</span>
+              <span class="metric-value">{{ fmt(campaign.metrics.ctr) }}%</span>
+            </div>
+            <div class="metric" *ngIf="campaign.metrics">
+              <span class="metric-label">CPA</span>
+              <span class="metric-value">{{
+                campaign.metrics.cpa > 0 ? fmt(campaign.metrics.cpa) : '—'
+              }}</span>
+            </div>
+            <div class="metric" *ngIf="campaign.metrics">
+              <span class="metric-label">ROAS</span>
+              <span class="metric-value">{{
+                campaign.metrics.roas > 0 ? fmtPct(campaign.metrics.roas) : '—'
+              }}</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Status</span>
+              <span class="status-pill" [ngClass]="'status-' + campaign.status.toLowerCase()">
+                {{ campaign.status === 'ACTIVE' ? 'Ativa' : campaign.status === 'PAUSED' ? 'Pausada' : 'Arquivada' }}
+              </span>
+            </div>
+            <div class="metric" *ngIf="campaign.metrics">
+              <span class="metric-label">Score</span>
+              <div class="score-mini">
+                <div class="score-bar">
+                  <div
+                    class="score-fill"
+                    [style.width.%]="campaign.metrics.score"
+                    [style.background]="scoreColor(campaign.metrics.score)"
+                  ></div>
+                </div>
+                <span
+                  class="score-num"
+                  [style.color]="scoreColor(campaign.metrics.score)"
+                  >{{ campaign.metrics.score }}</span
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Expanded Details -->
+        <div class="campaign-details" *ngIf="expanded() === campaign.id">
+          <div class="details-grid" *ngIf="campaign.metrics">
+            <div class="detail-card">
+              <div class="detail-label">Gasto Total</div>
+              <div class="detail-value">{{ fmt(campaign.metrics.spend) }}</div>
+            </div>
+            <div class="detail-card">
+              <div class="detail-label">Conversões</div>
+              <div class="detail-value">{{ campaign.metrics.conversions }}</div>
+            </div>
+            <div class="detail-card">
+              <div class="detail-label">Impressões</div>
+              <div class="detail-value">
+                {{ (campaign.metrics.impressions / 1000).toFixed(1) }}K
+              </div>
+            </div>
+            <div class="detail-card">
+              <div class="detail-label">Cliques</div>
+              <div class="detail-value">{{ campaign.metrics.clicks }}</div>
+            </div>
+          </div>
+
+          <div class="insights-section" *ngIf="campaign.insights && campaign.insights.length > 0">
+            <h4>Insights</h4>
+            <div class="insights-list">
+              <div class="insight-item" *ngFor="let insight of campaign.insights.slice(0, 3)">
+                <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
+                <span class="insight-title">{{ insight.title }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn btn-secondary">Visualizar Relatório</button>
+            <button class="btn btn-secondary">Editar</button>
+            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'">
+              Pausar
+            </button>
+            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'">
+              Ativar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" *ngIf="totalPages() > 1">
+      <button
+        class="pagination-btn"
+        [disabled]="!hasPrev()"
+        (click)="prevPage()"
+      >
+        ← Anterior
+      </button>
+
+      <div class="pagination-pages">
+        <button
+          class="page-btn"
+          *ngFor="let page of [].constructor(totalPages()); let i = index"
+          [class.active]="i + 1 === currentPage()"
+          (click)="goToPage(i + 1)"
+          [disabled]="i + 1 === currentPage()"
+        >
+          {{ i + 1 }}
+        </button>
+      </div>
+
+      <button
+        class="pagination-btn"
+        [disabled]="!hasNext()"
+        (click)="nextPage()"
+      >
+        Próximo →
+      </button>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" *ngIf="filtered().length === 0 && !loading()">
+      <div class="empty-icon">📊</div>
+      <p class="empty-title">Nenhuma campanha encontrada</p>
+      <p class="empty-description">
+        Ajuste seus filtros ou crie uma nova campanha
+      </p>
+    </div>
+  </div>
+</div>

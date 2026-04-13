@@ -1,0 +1,150 @@
+<div class="dashboard-wrapper">
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="loading()">
+    <div class="spinner"></div>
+    <p>Carregando dashboard...</p>
+  </div>
+
+  <!-- Error State -->
+  <div class="error-state" *ngIf="error() && !loading()">
+    <div class="error-icon">⚠️</div>
+    <p class="error-title">Erro ao carregar dashboard</p>
+    <p class="error-description">{{ error() }}</p>
+    <button class="btn btn-secondary" (click)="loadData()">Tentar Novamente</button>
+  </div>
+
+  <!-- Main Dashboard -->
+  <div class="dashboard-content" *ngIf="!loading() && !error()">
+    <!-- Header -->
+    <div class="dashboard-header">
+      <div class="header-left">
+        <h1 class="page-title">Dashboard de Performance</h1>
+        <p class="page-subtitle">Últimos {{ period() }} dias • Atualizado há alguns instantes</p>
+      </div>
+      <div class="time-range-buttons">
+        <button
+          class="btn-time-range"
+          [class.active]="period() === 7"
+          (click)="setPeriod(7)">
+          7 dias
+        </button>
+        <button
+          class="btn-time-range"
+          [class.active]="period() === 30"
+          (click)="setPeriod(30)">
+          30 dias
+        </button>
+        <button
+          class="btn-time-range"
+          [class.active]="period() === 90"
+          (click)="setPeriod(90)">
+          90 dias
+        </button>
+      </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <div class="metrics-grid" *ngIf="metrics()">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Impressões</span>
+          <span class="metric-icon">👁️</span>
+        </div>
+        <div class="metric-value">{{ metrics()!.impressions.toLocaleString() }}</div>
+        <div class="metric-change">+12.5%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Cliques</span>
+          <span class="metric-icon">👆</span>
+        </div>
+        <div class="metric-value">{{ metrics()!.clicks.toLocaleString() }}</div>
+        <div class="metric-change">+8.2%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Gasto Total</span>
+          <span class="metric-icon">💰</span>
+        </div>
+        <div class="metric-value">{{ fmt(metrics()!.spend) }}</div>
+        <div class="metric-change">+15.3%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Conversões</span>
+          <span class="metric-icon">🎯</span>
+        </div>
+        <div class="metric-value">{{ metrics()!.conversions.toLocaleString() }}</div>
+        <div class="metric-change">+22.1%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">CTR</span>
+          <span class="metric-icon">📊</span>
+        </div>
+        <div class="metric-value">{{ fmtPct(metrics()!.ctr) }}</div>
+        <div class="metric-change">+5.7%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">CPA</span>
+          <span class="metric-icon">💸</span>
+        </div>
+        <div class="metric-value">{{ fmt(metrics()!.cpa) }}</div>
+        <div class="metric-change">-3.2%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">ROAS</span>
+          <span class="metric-icon">📈</span>
+        </div>
+        <div class="metric-value">{{ fmtPct(metrics()!.roas) }}</div>
+        <div class="metric-change">+18.9%</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Receita</span>
+          <span class="metric-icon">💵</span>
+        </div>
+        <div class="metric-value">{{ fmt(metrics()!.revenue) }}</div>
+        <div class="metric-change">+25.4%</div>
+      </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="charts-section">
+      <!-- ROAS Chart -->
+      <div class="chart-card" *ngIf="insights().length > 0">
+        <div class="chart-header">
+          <h3>ROAS por Campanha</h3>
+          <span class="chart-badge">Performance</span>
+        </div>
+        <div class="chart-container">
+          <canvas #roasCanvas></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Insights Section -->
+    <div class="insights-section" *ngIf="allInsights.length > 0">
+      <h3>Insights e Recomendações</h3>
+      <div class="insights-grid">
+        <div class="insight-card" *ngFor="let insight of allInsights">
+          <div class="insight-header">
+            <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
+            <span class="insight-title">{{ insight.title }}</span>
+          </div>
+          <p class="insight-description">{{ insight.description }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
