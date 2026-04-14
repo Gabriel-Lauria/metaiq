@@ -165,8 +165,35 @@ export class InsightsService {
     return this.insightRepo.save(insight);
   }
 
+  /**
+   * Resolve insight com validação de ownership
+   */
+  async resolveInsightByUser(id: string, userId: string): Promise<Insight> {
+    const insight = await this.insightRepo
+      .createQueryBuilder('insight')
+      .innerJoinAndSelect('insight.campaign', 'campaign')
+      .where('insight.id = :id', { id })
+      .andWhere('campaign.userId = :userId', { userId })
+      .getOneOrFail();
+
+    insight.resolved = true;
+    return this.insightRepo.save(insight);
+  }
+
   async findOne(id: string): Promise<Insight> {
     return this.insightRepo.findOneOrFail({ where: { id } });
+  }
+
+  /**
+   * Find insight com validação de ownership
+   */
+  async findOneByUser(id: string, userId: string): Promise<Insight> {
+    return this.insightRepo
+      .createQueryBuilder('insight')
+      .innerJoinAndSelect('insight.campaign', 'campaign')
+      .where('insight.id = :id', { id })
+      .andWhere('campaign.userId = :userId', { userId })
+      .getOneOrFail();
   }
 
   async deleteOldResolved(days: number): Promise<void> {
@@ -189,6 +216,51 @@ export class InsightsService {
     resolved?: boolean;
   }): Promise<Insight[]> {
     const query = this.insightRepo.createQueryBuilder('insight');
+
+    if (filters.campaignId) {
+      query.andWhere('insight.campaignId = :campaignId', {
+        campaignId: filters.campaignId,
+      });
+    }
+
+    if (filters.type) {
+      query.andWhere('insight.type = :type', { type: filters.type });
+    }
+
+    if (filters.severity) {
+      query.andWhere('insight.severity = :severity', {
+        severity: filters.severity,
+      });
+    }
+
+    if (filters.resolved !== undefined) {
+      query.andWhere('insight.resolved = :resolved', {
+        resolved: filters.resolved,
+      });
+    }
+
+    query.orderBy('insight.detectedAt', 'DESC');
+
+    return query.getMany();
+  }
+
+  /**
+   * Find all insights para um usuário específico
+   * SEGURANÇA: usa JOIN com Campaign para validar ownership
+   */
+  async findAllByUser(
+    userId: string,
+    filters: {
+      campaignId?: string;
+      type?: string;
+      severity?: string;
+      resolved?: boolean;
+    } = {},
+  ): Promise<Insight[]> {
+    const query = this.insightRepo
+      .createQueryBuilder('insight')
+      .innerJoinAndSelect('insight.campaign', 'campaign')
+      .where('campaign.userId = :userId', { userId });
 
     if (filters.campaignId) {
       query.andWhere('insight.campaignId = :campaignId', {

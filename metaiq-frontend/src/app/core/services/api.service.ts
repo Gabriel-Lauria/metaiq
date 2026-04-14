@@ -90,7 +90,7 @@ export class ApiService {
     if (pagination?.page) params = params.set('page', pagination.page.toString());
     if (pagination?.limit) params = params.set('limit', pagination.limit.toString());
 
-    return this.request(this.http.get<PaginatedResponse<Campaign>>(`${API}/api/campaigns`, { params }));
+    return this.request(this.http.get<PaginatedResponse<Campaign>>(`${API}/campaigns`, { params }));
   }
 
   getCampaign(id: string): Observable<Campaign> {
@@ -121,7 +121,7 @@ export class ApiService {
     if (pagination?.page) params = params.set('page', pagination.page.toString());
     if (pagination?.limit) params = params.set('limit', pagination.limit.toString());
 
-    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/api/metrics`, { params }));
+    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/metrics`, { params }));
   }
 
   getCampaignMetricsPaginated(campaignId: string, pagination?: PaginationDto): Observable<PaginatedResponse<MetricDaily>> {
@@ -129,7 +129,7 @@ export class ApiService {
     if (pagination?.page) params = params.set('page', pagination.page.toString());
     if (pagination?.limit) params = params.set('limit', pagination.limit.toString());
 
-    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/api/metrics/campaigns/${campaignId}`, { params }));
+    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/metrics/campaigns/${campaignId}`, { params }));
   }
 
   // ── Insights ─────────────────────────────────────────────────
@@ -151,6 +151,6 @@ export class ApiService {
   }
 
   getMetaConnectUrl(): string {
-    return `${API}/api/meta/connect`;
+    return `${API}/meta/connect`;
   }
 }

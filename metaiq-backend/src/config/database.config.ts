@@ -13,7 +13,11 @@ export interface DatabaseConfig {
 
 export default registerAs('database', () => ({
   type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
-  database: process.env.DATABASE || process.env.POSTGRES_DB || 'metaiq.sqlite',
+  database:
+    process.env.SQLITE_PATH ||
+    process.env.DATABASE ||
+    process.env.POSTGRES_DB ||
+    './data/metaiq.db',
   url: process.env.DATABASE_URL,
   host: process.env.POSTGRES_HOST || 'localhost',
   port: parseInt(process.env.POSTGRES_PORT || '5432', 10),

@@ -39,13 +39,13 @@ export class AuthService {
   }
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/login`, credentials).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/login`, credentials).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
 
   register(data: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/register`, data).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/register`, data).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
@@ -56,7 +56,7 @@ export class AuthService {
       return throwError(() => new Error('Refresh token não encontrado'));
     }
 
-    return this.http.post<AuthResponse>(`${API}/api/auth/refresh`, { refreshToken }).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/refresh`, { refreshToken }).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }

@@ -8,6 +8,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Campaign } from '../../modules/campaigns/campaign.entity';
+import { Insight } from '../../modules/insights/insight.entity';
+import { AdAccount } from '../../modules/ad-accounts/ad-account.entity';
 
 /**
  * OwnershipGuard verifica se o recurso acessado pertence ao usuário autenticado.
@@ -26,12 +29,12 @@ import { Repository } from 'typeorm';
 @Injectable()
 export class OwnershipGuard implements CanActivate {
   constructor(
-    @InjectRepository('Campaign')
-    private campaignRepo?: Repository<any>,
-    @InjectRepository('Insight')
-    private insightRepo?: Repository<any>,
-    @InjectRepository('AdAccount')
-    private adAccountRepo?: Repository<any>,
+    @InjectRepository(Campaign)
+    private campaignRepo?: Repository<Campaign>,
+    @InjectRepository(Insight)
+    private insightRepo?: Repository<Insight>,
+    @InjectRepository(AdAccount)
+    private adAccountRepo?: Repository<AdAccount>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

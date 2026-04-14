@@ -23,7 +23,7 @@ import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
 import { Campaign }    from './src/modules/campaigns/campaign.entity';
 import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
 import { MetricsEngine } from './src/modules/metrics/metrics.engine';
-import { encrypt }     from './src/common/utils/crypto.util';
+import { encrypt }     from './src/common/crypto.util';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
@@ -51,9 +51,9 @@ async function seed() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const ds = new DataSource({
-    type: 'sqljs',
-    location: DB_PATH,
-    autoSave: true,
+    type: 'sqlite',
+    database: DB_PATH,
+    busyTimeout: 5000,
     entities: [User, AdAccount, Campaign, MetricDaily],
     synchronize: true,
     logging: false,
@@ -83,14 +83,14 @@ async function seed() {
 
   if (!account) {
     account = accRepo.create({
-      metaAccountId: 'act_123456789',
+      metaId: 'act_123456789',
       name: 'Conta Demo — E-commerce',
       accessToken: encrypt('demo_token_nao_funcional'),
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       userId: user.id,
     });
     await accRepo.save(account);
-    console.log('🔗 Conta Meta criada:', account.metaAccountId);
+    console.log('🔗 Conta Meta criada:', account.metaId);
   }
 
   // ── Campanhas ─────────────────────────────────────────────
