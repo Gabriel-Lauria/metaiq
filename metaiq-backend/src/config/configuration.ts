@@ -31,9 +31,7 @@ export interface Config {
 
 export default (): Config => {
   const nodeEnv = process.env.NODE_ENV || 'development';
-  const databaseUrl = process.env.DATABASE_URL;
-  const postgresHost = process.env.POSTGRES_HOST;
-  const usePostgres = Boolean(databaseUrl || postgresHost);
+  const usePostgres = true; // Always PostgreSQL
 
   return {
     app: {
@@ -42,21 +40,16 @@ export default (): Config => {
       nodeEnv,
       cryptoSecret: process.env.CRYPTO_SECRET || 'default-key-32-characters-minimum',
     },
-    database: usePostgres
-      ? {
-          type: 'postgres',
-          url: databaseUrl,
-          host: postgresHost,
-          port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
-          username: process.env.POSTGRES_USER || 'postgres',
-          password: process.env.POSTGRES_PASSWORD || 'postgres',
-          database: process.env.POSTGRES_DB || 'metaiq',
-          ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
-        }
-      : {
-          type: 'sqlite',
-          database: process.env.SQLITE_PATH || './data/metaiq.db',
-        },
+    database: {
+      type: 'postgres',
+      url: process.env.DATABASE_URL,
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+      username: process.env.POSTGRES_USER || 'postgres',
+      password: process.env.POSTGRES_PASSWORD || 'postgres',
+      database: process.env.POSTGRES_DB || 'metaiq',
+      ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    },
     jwt: {
       secret: process.env.JWT_SECRET ?? (() => { throw new Error('JWT_SECRET não configurado'); })(),
       refreshSecret: process.env.JWT_REFRESH_SECRET ?? (() => { throw new Error('JWT_REFRESH_SECRET não configurado'); })(),

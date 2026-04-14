@@ -23,7 +23,7 @@ import { AdAccount }   from './modules/meta/ad-account.entity';
 import { Campaign }    from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { MetricsEngine } from './modules/metrics/metrics.engine';
-import { encrypt }     from './common/crypto.util';
+import { encrypt }     from './src/common/utils/crypto.util';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {

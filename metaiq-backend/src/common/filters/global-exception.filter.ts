@@ -18,8 +18,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly isProduction: boolean;
 
   constructor(private configService: ConfigService) {
-    const config = this.configService.get<Config>('config');
-    this.isProduction = config.app.nodeEnv === 'production';
+    this.isProduction = this.configService.get<string>('NODE_ENV') === 'production';
   }
 
   catch(exception: unknown, host: ArgumentsHost): void {

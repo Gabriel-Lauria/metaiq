@@ -19,7 +19,9 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
-  const config = configService.get<Config>('config');
+  const port = configService.get<string>('PORT') || '3000';
+  const frontendUrl = configService.get<string>('FRONTEND_URL') || 'http://localhost:4200';
+  const nodeEnv = configService.get<string>('NODE_ENV') || 'development';
 
   // Global exception filter
   const globalExceptionFilter = app.get(GlobalExceptionFilter);
@@ -34,7 +36,7 @@ async function bootstrap() {
           styleSrc: ["'self'", "'unsafe-inline'"],
           scriptSrc: ["'self'"],
           imgSrc: ["'self'", "data:", "https:"],
-          connectSrc: ["'self'", config.app.frontendUrl],
+          connectSrc: ["'self'", frontendUrl],
         },
       },
       hsts: {
@@ -54,7 +56,7 @@ async function bootstrap() {
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      disableErrorMessages: config.app.nodeEnv === 'production',
+      disableErrorMessages: nodeEnv === 'production',
     }),
   );
 
@@ -64,7 +66,7 @@ async function bootstrap() {
 
   // ── CORS seguro ────────────────────────────────────────────────────────
   app.enableCors({
-    origin: config.app.frontendUrl,
+    origin: frontendUrl,
     credentials: true, // Permite cookies e headers customizados
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -74,16 +76,16 @@ async function bootstrap() {
   // ── Prefix global de API ────────────────────────────────────────────────
   app.setGlobalPrefix('api');
 
-  await app.listen(config.app.port);
+  await app.listen(port);
 
   console.log(`
 ╔════════════════════════════════════════════╗
 ║      🚀 MetaIQ Backend Server              ║
 ╠════════════════════════════════════════════╣
 ║                                            ║
-║  🌐 URL: http://localhost:${config.app.port}            ║
-║  📊 API: http://localhost:${config.app.port}/api        ║
-║  🏥 Health: http://localhost:${config.app.port}/api/health ║
+║  🌐 URL: http://localhost:${port}            ║
+║  📊 API: http://localhost:${port}/api        ║
+║  🏥 Health: http://localhost:${port}/api/health ║
 ║  🔒 Security: Helmet + JWT + Rate Limiting ║
 ║                                            ║
 ╚════════════════════════════════════════════╝
