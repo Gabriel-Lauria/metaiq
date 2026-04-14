@@ -5,7 +5,7 @@ import { timeout, retry, catchError } from 'rxjs/operators';
 import {
   Campaign, MetricDaily, AggregatedMetrics,
   CampaignInsightReport, AdAccount,
-} from '../../models';
+} from '../models';
 import { environment } from '../environment';
 
 const API = environment.apiUrl;

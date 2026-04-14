@@ -5,7 +5,7 @@ import {
 } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import { AuthService } from './auth.service';
+import { AuthService } from './services/auth.service';
 import { UiService } from './services/ui.service';
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
@@ -21,12 +21,10 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       if (error.error && typeof error.error === 'object') {
         const backendError = error.error as { statusCode?: number; message?: string; error?: string };
 
-        if (backendError.statusCode) {
-          error.status = backendError.statusCode;
-        }
+        const statusCode = backendError.statusCode ?? error.status;
 
         if (backendError.message) {
-          userFriendlyMessage = getUserFriendlyMessage(error.status, backendError.message);
+          userFriendlyMessage = getUserFriendlyMessage(statusCode, backendError.message);
         }
       }
 

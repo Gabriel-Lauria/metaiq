@@ -112,6 +112,7 @@ export class InsightsService {
       const payload = rule();
       if (!payload) continue;
 
+      // Verifica duplicata com cooldown
       const duplicate = await this.insightRepo.findOne({
         where: {
           campaignId: campaign.id,
@@ -120,12 +121,30 @@ export class InsightsService {
           resolved: false,
         },
       });
-      if (duplicate) continue;
+
+      // Se houver duplicata e dentro do cooldown, pula
+      if (duplicate && this.isInCooldown(duplicate)) {
+        continue;
+      }
+
+      // Se houver duplicata fora do cooldown, atualiza lastTriggeredAt
+      if (duplicate) {
+        duplicate.lastTriggeredAt = new Date();
+        duplicate.cooldownInHours = this.getCooldownForRule(payload.type);
+        duplicate.priority = this.getPriorityForRule(payload.severity);
+        duplicate.ruleVersion = 1;
+        await this.insightRepo.save(duplicate);
+        continue;
+      }
 
       const insight = this.insightRepo.create({
         campaignId: campaign.id,
         ...payload,
         resolved: false,
+        priority: this.getPriorityForRule(payload.severity),
+        cooldownInHours: this.getCooldownForRule(payload.type),
+        lastTriggeredAt: new Date(),
+        ruleVersion: 1,
       });
 
       newInsights.push(await this.insightRepo.save(insight));
@@ -201,6 +220,49 @@ export class InsightsService {
   // ══════════════════════════════════════════════════════════════
   // REGRAS DE NEGÓCIO — cada método retorna InsightPayload ou null
   // ══════════════════════════════════════════════════════════════
+
+  /**
+   * Verifica se um insight está em período de cooldown
+   */
+  private isInCooldown(insight: Insight): boolean {
+    if (!insight.lastTriggeredAt || !insight.cooldownInHours) {
+      return false;
+    }
+
+    const lastTriggered = new Date(insight.lastTriggeredAt).getTime();
+    const cooldownMs = insight.cooldownInHours * 3600000; // converter para ms
+    const now = Date.now();
+
+    return (now - lastTriggered) < cooldownMs;
+  }
+
+  /**
+   * Retorna o cooldown em horas baseado no tipo de insight
+   */
+  private getCooldownForRule(type: string): number {
+    const cooldownMap: { [key: string]: number } = {
+      'alert': 4, // 4 hours
+      'warning': 6, // 6 hours
+      'opportunity': 24, // 24 hours
+      'info': 12, // 12 hours
+    };
+
+    return cooldownMap[type] || 6;
+  }
+
+  /**
+   * Retorna a prioridade baseada na severidade
+   */
+  private getPriorityForRule(severity: string): 'low' | 'medium' | 'high' {
+    const priorityMap: { [key: string]: 'low' | 'medium' | 'high' } = {
+      'danger': 'high',
+      'warning': 'medium',
+      'success': 'low',
+      'info': 'low',
+    };
+
+    return priorityMap[severity] || 'medium';
+  }
 
   /** Regra 1: ROAS abaixo de 1.0 (prejuízo) */
   private ruleROASDanger(roas: number): InsightPayload | null {

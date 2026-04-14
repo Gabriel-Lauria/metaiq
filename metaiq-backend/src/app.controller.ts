@@ -1,5 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { CurrentUser } from './common/decorators/current-user.decorator';
 
 @Controller()
 export class AppController {
@@ -23,9 +24,10 @@ export class AppController {
 
   @UseGuards(JwtAuthGuard)
   @Get('/protected')
-  protected() {
+  protected(@CurrentUser() user: any) {
     return {
       message: 'Acesso autorizado!',
+      user,
       timestamp: new Date().toISOString(),
     };
   }
