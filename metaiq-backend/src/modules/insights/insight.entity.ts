@@ -51,6 +51,18 @@ export class Insight {
   @Column({ default: false })
   resolved: boolean;
 
+  @Column({ type: 'varchar', default: 'medium', nullable: false })
+  priority: 'low' | 'medium' | 'high';
+
+  @Column({ nullable: true })
+  lastTriggeredAt?: Date;
+
+  @Column({ type: 'int', default: 0, nullable: false })
+  cooldownInHours: number;
+
+  @Column({ type: 'int', default: 1, nullable: false })
+  ruleVersion: number;
+
   @CreateDateColumn()
   detectedAt: Date;
 

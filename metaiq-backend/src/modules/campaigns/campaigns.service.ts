@@ -11,18 +11,20 @@ export class CampaignsService {
     private campaignRepository: Repository<Campaign>,
   ) {}
 
-  async findAll(): Promise<Campaign[]> {
+  async findAll(userId: string): Promise<Campaign[]> {
     return this.campaignRepository.find({
+      where: { userId },
       relations: ['adAccount'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findAllPaginated(pagination: PaginationDto): Promise<PaginatedResponse<Campaign>> {
+  async findAllPaginated(userId: string, pagination: PaginationDto): Promise<PaginatedResponse<Campaign>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
     const [data, total] = await this.campaignRepository.findAndCount({
+      where: { userId },
       relations: ['adAccount'],
       order: { createdAt: 'DESC' },
       skip,
@@ -44,9 +46,9 @@ export class CampaignsService {
     };
   }
 
-  async findOne(id: string): Promise<Campaign> {
+  async findOne(id: string, userId: string): Promise<Campaign> {
     return this.campaignRepository.findOne({
-      where: { id },
+      where: { id, userId },
       relations: ['adAccount'],
     });
   }

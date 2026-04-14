@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
+import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdAccountsModule } from './modules/ad-accounts/ad-accounts.module';
@@ -38,6 +39,7 @@ import { MetricDaily } from './modules/metrics/metric-daily.entity';
       ],
     }),
     ScheduleModule.forRoot(),
+    CommonModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Injectable } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { CampaignsService } from '../modules/campaigns/campaigns.service';
 import { InsightsService } from '../modules/insights/insights.service';
+import { LoggerService } from '../common/services/logger.service';
 
 /**
  * SyncCron executa tarefas de sincronização em background.
@@ -21,11 +22,10 @@ import { InsightsService } from '../modules/insights/insights.service';
  */
 @Injectable()
 export class SyncCron {
-  private readonly logger = new Logger(SyncCron.name);
-
   constructor(
     private readonly campaignsService: CampaignsService,
     private readonly insightsService: InsightsService,
+    private readonly logger: LoggerService,
   ) {}
 
   /**
@@ -33,11 +33,10 @@ export class SyncCron {
    *
    * Schedule: 0 0 * * * * = minute 0 of every hour
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron('0 0 * * * *')
   async generateInsights() {
-    this.logger.log('⏰ Cron iniciado: geração de insights');
-    const start = Date.now();
-
+    const operation = this.logger.startOperation('Cron: Geração de insights');
+    
     try {
       const campaigns = await this.campaignsService.findAllActive();
       let success = 0;
@@ -50,43 +49,52 @@ export class SyncCron {
         } catch (err) {
           errors++;
           this.logger.error(
-            `Erro ao gerar insights para campanha ${campaign.id}: ${err.message}`,
+            `Erro ao gerar insights para campanha ${campaign.id}`,
+            err,
+            { campaignId: campaign.id },
           );
         }
       }
 
-      const duration = Date.now() - start;
-      this.logger.log(
-        `⏰ Cron finalizado em ${duration}ms — ` +
-        `${success} ok, ${errors} erros de ${campaigns.length} campanhas`,
+      this.logger.info(
+        `Cron finalizado: ${success} sucessos, ${errors} erros de ${campaigns.length} campanhas`,
+        { success, errors, total: campaigns.length },
       );
+
+      operation.end(errors === 0, { success, errors, total: campaigns.length });
     } catch (err) {
-      this.logger.error(`Erro geral no cron de insights: ${err.message}`);
+      this.logger.error('Erro geral no cron de insights', err);
+      operation.end(false, { error: err.message });
     }
   }
 
-  /**
-   * Executa todo dia às 2h da manhã e limpa insights resolvidos antigos.
-   */
   @Cron('0 0 2 * * *')
   async cleanOldResolvedInsights() {
-    this.logger.log('🧹 Cron iniciado: limpeza de insights antigos');
-    await this.insightsService.deleteOldResolved(30);
-    this.logger.log('🧹 Cron finalizado: limpeza completada');
+    const operation = this.logger.startOperation('Cron: Limpeza de insights antigos');
+    
+    try {
+      await this.insightsService.deleteOldResolved(30);
+      this.logger.info('Limpeza de insights antigos concluída');
+      operation.end(true);
+    } catch (err) {
+      this.logger.error('Erro ao limpar insights antigos', err);
+      operation.end(false, { error: err.message });
+    }
   }
 
-  /**
-   * Executa a cada 6 horas: sincroniza dados com a Meta API
-   *
-   * PRÓXIMO PASSO: implementar integração real com Meta Graph API
-   */
-  @Cron('0 */6 * * * *') // Every 6 hours
+  @Cron('0 0 */6 * * *')
   async syncMetaData() {
-    this.logger.log('🔄 Cron iniciado: sincronização com Meta API');
+    const operation = this.logger.startOperation('Cron: Sincronização com Meta API');
+    
+    try {
+      // TODO: buscar campanhas, métricas e dados reais da Meta API
+      // e popular MetricDaily com dados reais
 
-    // PRÓXIMO PASSO: buscar campanhas, métricas e dados reais da Meta API
-    // e popular MetricDaily com dados reais
-
-    this.logger.log('🔄 Cron finalizado: sincronização completada');
+      this.logger.info('Sincronização com Meta API concluída');
+      operation.end(true);
+    } catch (err) {
+      this.logger.error('Erro ao sincronizar com Meta API', err);
+      operation.end(false, { error: err.message });
+    }
   }
 }

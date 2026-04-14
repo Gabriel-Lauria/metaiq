@@ -18,6 +18,54 @@
 			"type": "shell",
 			"command": "git add .",
 			"group": "build"
+		},
+		{
+			"label": "Git Commit",
+			"type": "shell",
+			"command": "git commit -m \"Initial commit with complete MetaIQ project\"",
+			"group": "build"
+		},
+		{
+			"label": "Git Status",
+			"type": "shell",
+			"command": "git status",
+			"group": "build"
+		},
+		{
+			"label": "Git Commit",
+			"type": "shell",
+			"command": "git commit -m 'Initial commit with complete MetaIQ project'",
+			"group": "build"
+		},
+		{
+			"label": "Git Commit",
+			"type": "shell",
+			"command": "git commit --message=\"Initial commit with complete MetaIQ project\"",
+			"group": "build"
+		},
+		{
+			"label": "Git Commit Test",
+			"type": "shell",
+			"command": "git commit -m \"test\"",
+			"group": "build"
+		},
+		{
+			"label": "Git Push",
+			"type": "shell",
+			"command": "git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Commit All Changes",
+			"type": "shell",
+			"command": "git add . && git commit -m \"feat: implement critical fixes and architecture improvements\" && git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Git Add All",
+			"type": "shell",
+			"command": "git add .",
+			"group": "build"
 		}
 	]
 }

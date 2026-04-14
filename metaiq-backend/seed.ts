@@ -18,11 +18,11 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-import { User }        from './modules/users/user.entity';
-import { AdAccount }   from './modules/meta/ad-account.entity';
-import { Campaign }    from './modules/campaigns/campaign.entity';
-import { MetricDaily } from './modules/metrics/metric-daily.entity';
-import { MetricsEngine } from './modules/metrics/metrics.engine';
+import { User }        from './src/modules/users/user.entity';
+import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
+import { Campaign }    from './src/modules/campaigns/campaign.entity';
+import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
+import { MetricsEngine } from './src/modules/metrics/metrics.engine';
 import { encrypt }     from './src/common/utils/crypto.util';
 
 // ── Validação de variáveis de ambiente ────────────────────────
