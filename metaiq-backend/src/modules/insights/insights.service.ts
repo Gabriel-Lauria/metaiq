@@ -87,8 +87,8 @@ export class InsightsService {
     const lastMetricDate = summary.lastMetricDate || null;
 
     const avgCTR = summary.avgCtr || summary.ctr || 0;
-    const avgCPC = summary.avgCpa || summary.cpa || 0;
-    const avgCPA = summary.avgCpa || summary.cpa || 0;
+    const avgCPC = totalClicks > 0 ? totalSpend / totalClicks : 0;
+    const avgCPA = totalConversions > 0 ? totalSpend / totalConversions : 0;
     const avgROAS = summary.avgRoas || summary.roas || 0;
 
     const rules: Array<() => InsightPayload | null> = [
