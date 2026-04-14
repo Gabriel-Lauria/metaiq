@@ -9,6 +9,14 @@ import { ConfigService } from '@nestjs/config';
 import { Config } from './config/configuration';
 
 async function bootstrap() {
+  const requiredEnvVars = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'CRYPTO_SECRET'];
+  for (const envVar of requiredEnvVars) {
+    if (!process.env[envVar]) {
+      console.error(`❌ Variável de ambiente obrigatória não configurada: ${envVar}`);
+      process.exit(1);
+    }
+  }
+
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const config = configService.get<Config>('config');
@@ -52,7 +60,7 @@ async function bootstrap() {
 
   // ── Rate limiting global ────────────────────────────────────────────────
   // ThrottlerGuard protege contra abuso de API
-  app.useGlobalGuards(new ThrottlerGuard());
+  app.useGlobalGuards(app.get(ThrottlerGuard));
 
   // ── CORS seguro ────────────────────────────────────────────────────────
   app.enableCors({

@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from '../users/user.entity';
-import { AdAccount } from '../meta/ad-account.entity';
+import { AdAccount } from '../ad-accounts/ad-account.entity';
 
 @Entity('campaigns')
 @Index(['userId'])

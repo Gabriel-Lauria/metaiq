@@ -20,6 +20,11 @@ export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
     req = addToken(req, token);
   }
 
+  // Add credentials for auth endpoints
+  if (isWhitelistedUrl(req.url)) {
+    req = addCredentials(req);
+  }
+
   return next(req).pipe(
     catchError(error => {
       if (error instanceof HttpErrorResponse && error.status === 401) {

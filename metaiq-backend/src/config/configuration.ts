@@ -11,7 +11,9 @@ export interface DatabaseConfig {
 
 export interface JwtConfig {
   secret: string;
+  refreshSecret: string;
   expiresIn: string | number;
+  refreshExpiresIn: string | number;
 }
 
 export interface AppConfig {
@@ -56,8 +58,10 @@ export default (): Config => {
           database: process.env.SQLITE_PATH || './data/metaiq.db',
         },
     jwt: {
-      secret: process.env.JWT_SECRET || 'fallback-secret-key',
+      secret: process.env.JWT_SECRET ?? (() => { throw new Error('JWT_SECRET não configurado'); })(),
+      refreshSecret: process.env.JWT_REFRESH_SECRET ?? (() => { throw new Error('JWT_REFRESH_SECRET não configurado'); })(),
       expiresIn: process.env.JWT_EXPIRES_IN || '1h',
+      refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     },
   };
 };

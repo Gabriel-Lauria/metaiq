@@ -39,25 +39,19 @@ export class AuthService {
   }
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/login`, credentials);
+    return this.http.post<AuthResponse>(`${API}/api/auth/login`, credentials, { withCredentials: true });
   }
 
   register(data: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/register`, data);
+    return this.http.post<AuthResponse>(`${API}/api/auth/register`, data, { withCredentials: true });
   }
 
   refreshToken(): Observable<AuthResponse> {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      return throwError(() => new Error('Refresh token não encontrado'));
-    }
-
-    return this.http.post<AuthResponse>(`${API}/api/auth/refresh`, { refreshToken });
+    return this.http.post<AuthResponse>(`${API}/api/auth/refresh`, {}, { withCredentials: true });
   }
 
   logout(): void {
     localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     this.currentUserSubject.next(null);
     this.accessTokenSubject.next(null);
@@ -77,7 +71,6 @@ export class AuthService {
 
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.setItem('accessToken', response.accessToken);
-    localStorage.setItem('refreshToken', response.refreshToken);
     localStorage.setItem('user', JSON.stringify(response.user));
     this.currentUserSubject.next(response.user);
     this.accessTokenSubject.next(response.accessToken);

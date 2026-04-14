@@ -69,41 +69,28 @@ export class InsightsService {
       .toISOString()
       .split('T')[0];
 
-    const summary = await this.metricsService.getSummary(from, to);
+    const summary = await this.metricsService.getCampaignSummary(
+      campaign.id,
+      from,
+      to,
+    );
 
-    if (!summary || summary.length === 0) {
+    if (!summary) {
       return [];
     }
 
-    // Agrupa dados brutos para as regras
-    const totalSpend = summary.reduce(
-      (acc: number, m: any) => acc + (m.spend || 0),
-      0,
-    );
-    const totalImpressions = summary.reduce(
-      (acc: number, m: any) => acc + (m.impressions || 0),
-      0,
-    );
-    const totalClicks = summary.reduce(
-      (acc: number, m: any) => acc + (m.clicks || 0),
-      0,
-    );
-    const totalConversions = summary.reduce(
-      (acc: number, m: any) => acc + (m.conversions || 0),
-      0,
-    );
-    const totalRevenue = summary.reduce(
-      (acc: number, m: any) => acc + (m.revenue || 0),
-      0,
-    );
+    const totalSpend = summary.totalSpend || 0;
+    const totalImpressions = summary.impressions || 0;
+    const totalClicks = summary.clicks || 0;
+    const totalConversions = summary.conversions || 0;
+    const totalRevenue = summary.totalRevenue || 0;
+    const lastMetricDate = summary.lastMetricDate || null;
 
-    // Calcula médias ponderadas
-    const avgCTR = calcCTR(totalClicks, totalImpressions);
-    const avgCPC = calcCPC(totalSpend, totalClicks);
-    const avgCPA = calcCPA(totalSpend, totalConversions);
-    const avgROAS = calcROAS(totalRevenue, totalSpend);
+    const avgCTR = summary.avgCtr || summary.ctr || 0;
+    const avgCPC = summary.avgCpa || summary.cpa || 0;
+    const avgCPA = summary.avgCpa || summary.cpa || 0;
+    const avgROAS = summary.avgRoas || summary.roas || 0;
 
-    // Lista de todas as regras aplicáveis
     const rules: Array<() => InsightPayload | null> = [
       () => this.ruleROASDanger(avgROAS),
       () => this.ruleROASWarning(avgROAS),
@@ -116,16 +103,15 @@ export class InsightsService {
       () => this.ruleOverspend(totalSpend, campaign.dailyBudget),
       () => this.ruleNoConversions(totalSpend, totalConversions),
       () => this.ruleCampaignEndingSoon(campaign.endTime),
-      () => this.ruleNoRecentData(summary),
+      () => this.ruleNoRecentData(lastMetricDate),
     ];
 
     const newInsights: Insight[] = [];
 
     for (const rule of rules) {
       const payload = rule();
-      if (!payload) continue; // Regra não se aplica
+      if (!payload) continue;
 
-      // Deduplicação: não cria insight se já existe um não resolvido do mesmo tipo
       const duplicate = await this.insightRepo.findOne({
         where: {
           campaignId: campaign.id,
@@ -158,6 +144,23 @@ export class InsightsService {
     const insight = await this.insightRepo.findOneOrFail({ where: { id } });
     insight.resolved = true;
     return this.insightRepo.save(insight);
+  }
+
+  async findOne(id: string): Promise<Insight> {
+    return this.insightRepo.findOneOrFail({ where: { id } });
+  }
+
+  async deleteOldResolved(days: number): Promise<void> {
+    const cutoffDate = new Date(Date.now() - days * 86400000)
+      .toISOString()
+      .split('T')[0];
+
+    await this.insightRepo.createQueryBuilder()
+      .delete()
+      .from(Insight)
+      .where('resolved = :resolved', { resolved: true })
+      .andWhere('updatedAt < :cutoffDate', { cutoffDate })
+      .execute();
   }
 
   async findAll(filters: {
@@ -360,11 +363,18 @@ export class InsightsService {
   }
 
   /** Regra 12: Sem dados recentes (campanha inativa?) */
-  private ruleNoRecentData(metrics: any[]): InsightPayload | null {
-    if (!metrics || metrics.length === 0) return null;
+  private ruleNoRecentData(lastMetricDate: string | null): InsightPayload | null {
+    if (!lastMetricDate) {
+      return {
+        type: 'info',
+        severity: 'warning',
+        message: `⚠️ Sem dados de performance registrados para esta campanha nos últimos ${this.THRESHOLDS.LOOKBACK_DAYS} dias`,
+        recommendation:
+          'Verifique se a campanha está ativa e se o pixel está disparando corretamente',
+      };
+    }
 
-    const lastEntry = metrics[metrics.length - 1];
-    const lastDate = new Date(lastEntry.date || lastEntry.updatedAt);
+    const lastDate = new Date(lastMetricDate);
     const daysSince = Math.floor(
       (Date.now() - lastDate.getTime()) / 86400000,
     );

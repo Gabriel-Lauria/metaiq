@@ -10,7 +10,7 @@ import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { JwtStrategy } from './auth/jwt.strategy';
 import { User } from './modules/users/user.entity';
-import { AdAccount } from './modules/meta/ad-account.entity';
+import { AdAccount } from './modules/ad-accounts/ad-account.entity';
 import { Campaign } from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { Insight } from './modules/insights/insight.entity';
@@ -67,8 +67,8 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
         const dbConfig = config.get<Config>('config').database;
 
         const baseConfig = {
-          synchronize: true,
-          logging: false,
+          synchronize: config.get<Config>('config').app.nodeEnv !== 'production',
+          logging: config.get<Config>('config').app.nodeEnv !== 'production',
           entities: [User, AdAccount, Campaign, MetricDaily, Insight],
         };
 

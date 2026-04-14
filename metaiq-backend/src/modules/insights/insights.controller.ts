@@ -43,7 +43,7 @@ export class InsightsController {
    */
   @Get(':id')
   async findOne(@Param('id') id: string): Promise<Insight> {
-    return this.insightsService.resolveInsight(id);
+    return this.insightsService.findOne(id);
   }
 
   /**

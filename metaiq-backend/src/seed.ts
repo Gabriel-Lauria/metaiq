@@ -20,7 +20,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 import { User }        from './modules/users/user.entity';
-import { AdAccount }   from './modules/meta/ad-account.entity';
+import { AdAccount }   from './modules/ad-accounts/ad-account.entity';
 import { Campaign }    from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { MetricsEngine } from './modules/metrics/metrics.engine';
@@ -103,14 +103,14 @@ async function seed() {
 
   if (!account) {
     account = accRepo.create({
-      metaAccountId: 'act_123456789',
+      metaId: 'act_123456789',
       name: 'Conta Demo — E-commerce',
       accessToken: encrypt('demo_token_nao_funcional'),
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       userId: user.id,
     });
     await accRepo.save(account);
-    console.log('🔗 Conta Meta criada:', account.metaAccountId);
+    console.log('🔗 Conta Meta criada:', account.metaId);
   }
 
   // ── Campanhas ─────────────────────────────────────────────

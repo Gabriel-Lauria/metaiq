@@ -59,6 +59,11 @@ export interface AggregatedMetrics {
   spend: number;
   conversions: number;
   revenue: number;
+  totalSpend: number;
+  totalRevenue: number;
+  avgRoas: number;
+  avgCpa: number;
+  avgCtr: number;
   ctr: number;
   cpa: number;
   roas: number;

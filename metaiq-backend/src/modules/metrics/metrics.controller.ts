@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
@@ -19,8 +19,34 @@ export class MetricsController {
 
   @Get('summary')
   async getSummary(@Query('from') from?: string, @Query('to') to?: string) {
-    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const toDate = to ? new Date(to) : new Date();
+    const fromDate = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const toDate = to || new Date().toISOString().split('T')[0];
     return this.metricsService.getSummary(fromDate, toDate);
+  }
+
+  @Get('campaigns/:campaignId')
+  async getCampaignMetrics(
+    @Param('campaignId') campaignId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    if (page || limit) {
+      return this.metricsService.findByCampaignPaginated(campaignId, { page, limit });
+    }
+
+    return this.metricsService.findByCampaign(campaignId);
+  }
+
+  @Get('campaigns/:campaignId/aggregate')
+  async getCampaignAggregate(
+    @Param('campaignId') campaignId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const fromDate = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const toDate = to || new Date().toISOString().split('T')[0];
+    return this.metricsService.getCampaignSummary(campaignId, fromDate, toDate);
   }
 }

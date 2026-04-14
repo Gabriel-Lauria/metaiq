@@ -8,7 +8,7 @@ export interface CreateCampaignDto {
   metaId: string;
   name: string;
   status?: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
-  objective?: string;
+  objective?: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS';
   dailyBudget: number;
   startTime: Date;
   endTime?: Date;

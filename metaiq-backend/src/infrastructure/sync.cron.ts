@@ -39,49 +39,39 @@ export class SyncCron {
     const start = Date.now();
 
     try {
-      // Busca todas as campanhas ativas — será implementado no CampaignsService
-      // const campaigns = await this.campaignsService.findAllActive();
+      const campaigns = await this.campaignsService.findAllActive();
+      let success = 0;
+      let errors = 0;
 
-      // Por enquanto, usando findAll como placeholder
-      // const campaigns = [];
+      for (const campaign of campaigns) {
+        try {
+          await this.insightsService.generateForCampaign(campaign);
+          success++;
+        } catch (err) {
+          errors++;
+          this.logger.error(
+            `Erro ao gerar insights para campanha ${campaign.id}: ${err.message}`,
+          );
+        }
+      }
 
-      // let success = 0;
-      // let errors = 0;
-
-      // for (const campaign of campaigns) {
-      //   try {
-      //     await this.insightsService.generateForCampaign(campaign);
-      //     success++;
-      //   } catch (err) {
-      //     errors++;
-      //     this.logger.error(
-      //       `Erro ao gerar insights para campanha ${campaign.id}: ${err.message}`,
-      //     );
-      //     // Continua para a próxima campanha
-      //   }
-      // }
-
-      // const duration = Date.now() - start;
-      // this.logger.log(
-      //   `⏰ Cron finalizado em ${duration}ms — ` +
-      //   `${success} ok, ${errors} erros de ${campaigns.length} campanhas`,
-      // );
+      const duration = Date.now() - start;
+      this.logger.log(
+        `⏰ Cron finalizado em ${duration}ms — ` +
+        `${success} ok, ${errors} erros de ${campaigns.length} campanhas`,
+      );
     } catch (err) {
       this.logger.error(`Erro geral no cron de insights: ${err.message}`);
     }
   }
 
   /**
-   * Executa a cada 30 minutos: limpa insights resolvidos antigos
-   * (mantém histórico de últimos 30 dias)
+   * Executa todo dia às 2h da manhã e limpa insights resolvidos antigos.
    */
-  @Cron('0 */30 * * * *') // Every 30 minutes
+  @Cron('0 0 2 * * *')
   async cleanOldResolvedInsights() {
     this.logger.log('🧹 Cron iniciado: limpeza de insights antigos');
-
-    // PRÓXIMO PASSO: implementar limpeza de insights resolvidos há mais de 30 dias
-    // para não poluir o banco de dados
-
+    await this.insightsService.deleteOldResolved(30);
     this.logger.log('🧹 Cron finalizado: limpeza completada');
   }
 

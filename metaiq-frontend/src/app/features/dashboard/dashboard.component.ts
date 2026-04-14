@@ -145,11 +145,12 @@ export class DashboardComponent implements OnInit, OnDestroy {
             this.buildMetricsCards(metrics);
           }
 
-          if (campaigns && campaigns.data) {
-            this.campaigns.set(this.transformCampaigns(campaigns.data));
+          if (campaigns?.data) {
+            // Buscar métricas reais de cada campanha
+            const campaignIds = campaigns.data.map(c => c.id);
+            this.loadCampaignMetrics(campaigns.data, days);
             this.campaignsTotal.set(campaigns.meta.total);
             this.campaignsTotalPages.set(campaigns.meta.totalPages);
-            this.buildChartData(campaigns.data, metrics);
           } else {
             this.campaigns.set([]);
             this.campaignsTotal.set(0);
@@ -165,6 +166,41 @@ export class DashboardComponent implements OnInit, OnDestroy {
           this.loading.set(false);
           this.uiService.showError('Erro ao carregar dados', err?.message || 'Não foi possível carregar os dados do dashboard.');
         }
+      });
+  }
+
+  private loadCampaignMetrics(campaigns: Campaign[], days: number): void {
+    if (campaigns.length === 0) {
+      this.campaigns.set([]);
+      return;
+    }
+
+    const requests = campaigns.map(c =>
+      this.api.getCampaignAggregate(c.id, days).pipe(
+        catchError(() => of(null))
+      )
+    );
+
+    forkJoin(requests)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(metricsArray => {
+        const enriched: CampaignData[] = campaigns.map((c, i) => {
+          const m = metricsArray[i];
+          return {
+            id: c.id,
+            name: c.name,
+            status: c.status as 'ACTIVE' | 'PAUSED' | 'ARCHIVED',
+            spend: m?.spend ?? 0,
+            budget: c.dailyBudget * 30,
+            conversions: m?.conversions ?? 0,
+            roas: m?.avgRoas ?? m?.roas ?? 0,
+            cpa: m?.avgCpa ?? m?.cpa ?? 0,
+            ctr: m?.avgCtr ?? m?.ctr ?? 0,
+            score: c.score ?? 0
+          };
+        });
+        this.campaigns.set(enriched);
+        this.buildChartData(enriched, this.metrics());
       });
   }
 
@@ -223,71 +259,31 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.metricsCards.set(cards);
   }
 
-  private buildChartData(campaigns: Campaign[], metrics: AggregatedMetrics | null): void {
+  private buildChartData(campaigns: CampaignData[], metrics: AggregatedMetrics | null): void {
     if (!campaigns || campaigns.length === 0) return;
 
-    // Simular dados diários para o gráfico
-    const days = 30;
-    const labels: string[] = [];
-    const spendData: number[] = [];
-    const conversionData: number[] = [];
-
-    const now = new Date();
-    for (let i = days - 1; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      labels.push((date.getDate()).toString().padStart(2, '0'));
-      
-      const dailySpend = (metrics?.totalSpend || 48000) / days + (Math.random() - 0.5) * 2000;
-      const conversions = 20 + Math.random() * 30;
-      
-      spendData.push(Math.max(0, dailySpend));
-      conversionData.push(conversions);
-    }
-
+    // Gráfico baseado nos dados reais de métricas
+    // Por agora, usar os totais do summary — dados diários virão com a Meta API
+    if (!metrics) return;
     this.chartData.set({
-      labels,
+      labels: ['Total período'],
       datasets: [
         {
           label: 'Gasto (R$)',
-          data: spendData,
+          data: [metrics.totalSpend ?? metrics.spend ?? 0],
           borderColor: '#6ee7f7',
           backgroundColor: 'rgba(110,231,247,0.06)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          borderWidth: 2,
-          yAxisID: 'y'
+          fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2, yAxisID: 'y'
         },
         {
           label: 'Conversões',
-          data: conversionData,
+          data: [metrics.conversions ?? 0],
           borderColor: '#34d399',
           backgroundColor: 'rgba(52,211,153,0.06)',
-          fill: true,
-          tension: 0.4,
-          pointRadius: 0,
-          borderWidth: 2,
-          borderDash: [4, 3],
-          yAxisID: 'y1'
+          fill: true, tension: 0.4, pointRadius: 4, borderWidth: 2, yAxisID: 'y1'
         }
       ]
     });
-  }
-
-  private transformCampaigns(campaigns: Campaign[]): CampaignData[] {
-    return campaigns.map(campaign => ({
-      id: campaign.id,
-      name: campaign.name,
-      status: campaign.status as 'ACTIVE' | 'PAUSED' | 'ARCHIVED',
-      spend: Math.random() * 10000,
-      budget: campaign.dailyBudget * 30,
-      conversions: Math.floor(Math.random() * 100),
-      roas: 2 + Math.random() * 4,
-      cpa: 30 + Math.random() * 50,
-      ctr: 1 + Math.random() * 4,
-      score: 40 + Math.random() * 60
-    }));
   }
 
   private formatCurrency(value: number): string {
