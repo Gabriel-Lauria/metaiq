@@ -22,9 +22,20 @@
   justify-content: space-between;
   gap: 20px;
 
-  @media (max-width: 768px) {
+  @media (min-width: 1024px) {
+    gap: 24px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
     flex-direction: column;
     align-items: flex-start;
+    gap: 16px;
+  }
+
+  @media (max-width: 767px) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .page-title {
@@ -33,12 +44,30 @@
     color: #f0f4ff;
     margin: 0 0 6px 0;
     letter-spacing: -0.5px;
+
+    @media (min-width: 1024px) {
+      font-size: 28px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 26px;
+      margin-bottom: 4px;
+    }
+
+    @media (max-width: 767px) {
+      font-size: 24px;
+      margin-bottom: 2px;
+    }
   }
 
   .page-sub {
     font-size: 14px;
     color: #64748b;
     margin: 0;
+
+    @media (max-width: 767px) {
+      font-size: 12px;
+    }
   }
 }
 
@@ -57,9 +86,24 @@
   padding: 18px;
   align-items: center;
 
-  @media (max-width: 768px) {
+  @media (min-width: 1024px) {
+    gap: 16px;
+    padding: 16px 20px;
+    align-items: center;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 12px;
+    padding: 14px 16px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  @media (max-width: 767px) {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
+    padding: 14px;
   }
 }
 
@@ -73,6 +117,24 @@
   color: #e2e8f0;
   font-family: 'DM Sans', sans-serif;
   transition: all 0.2s ease;
+  min-width: 200px;
+
+  @media (min-width: 1024px) {
+    min-width: 280px;
+    padding: 12px 16px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    min-width: 200px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 767px) {
+    min-width: auto;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
 
   &::placeholder {
     color: #64748b;
@@ -104,6 +166,21 @@
   font-family: 'DM Sans', sans-serif;
   white-space: nowrap;
 
+  @media (min-width: 1024px) {
+    padding: 10px 18px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 9px 16px;
+    font-size: 12px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+
   &:hover {
     background: rgba(110, 231, 247, 0.1);
     border-color: rgba(110, 231, 247, 0.3);
@@ -129,6 +206,24 @@
   font-family: 'DM Sans', sans-serif;
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 140px;
+
+  @media (min-width: 1024px) {
+    min-width: 150px;
+    padding: 10px 14px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    min-width: 120px;
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 767px) {
+    min-width: auto;
+    padding: 9px 12px;
+    font-size: 13px;
+  }
 
   &:hover {
     border-color: rgba(110, 231, 247, 0.2);
@@ -153,10 +248,61 @@
   padding: 0 4px;
 }
 
+/* Sort Headers */
+.sort-headers {
+  display: none;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(110, 231, 247, 0.08);
+  margin-bottom: 12px;
+
+  @media (min-width: 1200px) {
+    display: flex;
+  }
+}
+
+.sort-header-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-family: 'DM Sans', sans-serif;
+  flex: 1;
+  text-align: left;
+
+  &:hover {
+    background: rgba(110, 231, 247, 0.08);
+    color: #cbd5e1;
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
 .campaigns-list {
   display: flex;
   flex-direction: column;
   gap: 14px;
+
+  @media (min-width: 1024px) {
+    gap: 14px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 12px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 10px;
+  }
 }
 
 .campaign-row {
@@ -166,6 +312,18 @@
   overflow: hidden;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+
+  @media (min-width: 1024px) {
+    border-radius: 12px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    border-radius: 10px;
+  }
+
+  @media (max-width: 767px) {
+    border-radius: 10px;
+  }
 
   &:hover {
     border-color: rgba(110, 231, 247, 0.16);
@@ -181,6 +339,18 @@
   padding: 20px 24px;
   cursor: pointer;
   transition: background 0.2s;
+
+  @media (min-width: 1024px) {
+    padding: 20px 24px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 18px 20px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 16px 16px;
+  }
 
   &:hover {
     background: rgba(110, 231, 247, 0.04);
@@ -229,16 +399,52 @@
   flex-direction: column;
   gap: 4px;
 
+  @media (min-width: 1024px) {
+    gap: 4px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 3px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 2px;
+  }
+
   .campaign-name {
     font-size: 15px;
     font-weight: 600;
     color: #f0f4ff;
+
+    @media (min-width: 1024px) {
+      font-size: 15px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 14px;
+    }
+
+    @media (max-width: 767px) {
+      font-size: 14px;
+    }
   }
 
   .campaign-id {
     font-size: 12px;
     color: #64748b;
     font-family: 'Space Mono', monospace;
+
+    @media (min-width: 1024px) {
+      font-size: 11px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 10px;
+    }
+
+    @media (max-width: 767px) {
+      font-size: 10px;
+    }
   }
 }
 
@@ -247,12 +453,16 @@
   gap: 32px;
   align-items: center;
 
-  @media (max-width: 1200px) {
-    gap: 24px;
+  @media (min-width: 1024px) {
+    gap: 28px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 20px;
     flex-wrap: wrap;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 767px) {
     display: none;
   }
 }
@@ -264,12 +474,26 @@
   gap: 6px;
   min-width: 100px;
 
+  @media (min-width: 1024px) {
+    min-width: 90px;
+    gap: 5px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    min-width: 80px;
+    gap: 4px;
+  }
+
   .metric-label {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #64748b;
     font-weight: 600;
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 10px;
+    }
   }
 
   .metric-value {
@@ -277,6 +501,14 @@
     font-size: 15px;
     font-weight: 700;
     color: #dbeafe;
+
+    @media (min-width: 1024px) {
+      font-size: 14px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 13px;
+    }
   }
 
   .status-pill {
@@ -288,6 +520,11 @@
     border-radius: 20px;
     display: inline-block;
     backdrop-filter: blur(12px);
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 10px;
+      padding: 3px 8px;
+    }
 
     &.status-active {
       background: rgba(52, 211, 153, 0.15);
@@ -313,12 +550,21 @@
     align-items: center;
     gap: 8px;
 
+    @media (max-width: 1023px) and (min-width: 768px) {
+      gap: 6px;
+    }
+
     .score-bar {
       width: 48px;
       height: 4px;
       background: rgba(100, 116, 139, 0.2);
       border-radius: 2px;
       overflow: hidden;
+
+      @media (max-width: 1023px) and (min-width: 768px) {
+        width: 40px;
+        height: 3px;
+      }
 
       .score-fill {
         height: 100%;
@@ -334,6 +580,11 @@
       min-width: 28px;
       text-align: right;
       color: #dbeafe;
+
+      @media (max-width: 1023px) and (min-width: 768px) {
+        font-size: 11px;
+        min-width: 24px;
+      }
     }
   }
 }
@@ -343,6 +594,18 @@
   border-top: 1px solid rgba(110, 231, 247, 0.1);
   padding: 24px;
   animation: slideDown 0.2s ease-out;
+
+  @media (min-width: 1024px) {
+    padding: 24px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 20px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 16px;
+  }
 }
 
 @keyframes slideDown {
@@ -362,12 +625,24 @@
   gap: 16px;
   margin-bottom: 20px;
 
-  @media (max-width: 1200px) {
-    grid-template-columns: repeat(2, 1fr);
+  @media (min-width: 1440px) {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 16px;
   }
 
-  @media (max-width: 768px) {
+  @media (min-width: 1024px) and (max-width: 1439px) {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 767px) {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
 }
 
@@ -378,6 +653,18 @@
   padding: 16px;
   text-align: center;
   transition: all 0.2s ease;
+
+  @media (min-width: 1024px) {
+    padding: 14px 12px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 12px 10px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 12px;
+  }
 
   &:hover {
     border-color: rgba(110, 231, 247, 0.2);
@@ -391,6 +678,16 @@
     color: #64748b;
     font-weight: 600;
     margin-bottom: 8px;
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 10px;
+      margin-bottom: 6px;
+    }
+
+    @media (max-width: 767px) {
+      font-size: 10px;
+      margin-bottom: 4px;
+    }
   }
 
   .detail-value {
@@ -401,6 +698,18 @@
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+
+    @media (min-width: 1024px) {
+      font-size: 16px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      font-size: 14px;
+    }
+
+    @media (max-width: 767px) {
+      font-size: 16px;
+    }
   }
 }
 
@@ -408,6 +717,18 @@
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+
+  @media (min-width: 1024px) {
+    gap: 10px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 8px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 8px;
+  }
 
   .btn {
     padding: 10px 16px;
@@ -420,6 +741,21 @@
     cursor: pointer;
     transition: all 0.2s;
     font-family: 'DM Sans', sans-serif;
+
+    @media (min-width: 1024px) {
+      padding: 9px 16px;
+      font-size: 11px;
+    }
+
+    @media (max-width: 1023px) and (min-width: 768px) {
+      padding: 8px 14px;
+      font-size: 11px;
+    }
+
+    @media (max-width: 767px) {
+      padding: 8px 12px;
+      font-size: 11px;
+    }
 
     &:disabled {
       opacity: 0.5;

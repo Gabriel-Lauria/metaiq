@@ -41,8 +41,23 @@ app-root {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border: none;
-  padding: 10px 20px;
+  padding: 9px 18px;
   font-size: 12px;
+
+  @media (min-width: 1024px) {
+    padding: 9px 18px;
+    font-size: 12px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 8px 16px;
+    font-size: 11px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 8px 14px;
+    font-size: 11px;
+  }
 
   &:disabled {
     opacity: 0.5;

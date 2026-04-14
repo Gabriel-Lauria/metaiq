@@ -1,7 +1,10 @@
-import { Component, OnInit, DestroyRef, signal, computed } from '@angular/core';
+import { Component, OnInit, DestroyRef, signal, computed, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 
 interface CampaignMetric {
@@ -28,6 +31,9 @@ interface Campaign {
   insights?: CampaignInsight[];
 }
 
+type SortField = 'name' | 'ctr' | 'cpa' | 'roas' | 'score' | 'status';
+type SortDirection = 'asc' | 'desc';
+
 @Component({
   selector: 'app-campaigns',
   standalone: true,
@@ -36,6 +42,11 @@ interface Campaign {
   styleUrls: ['./campaigns.component.scss']
 })
 export class CampaignsComponent implements OnInit {
+  private apiService = inject(ApiService);
+  private destroyRef = inject(DestroyRef);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+
   campaigns = signal<Campaign[]>([]);
   loading = signal(true);
   error = signal<string | null>(null);
@@ -44,10 +55,13 @@ export class CampaignsComponent implements OnInit {
   expanded = signal<string | null>(null);
   currentPage = signal(1);
   pageSize = signal(10);
+  sortField = signal<SortField>('name');
+  sortDirection = signal<SortDirection>('asc');
+  private searchSubject = new Subject<string>();
 
   filtered = computed(() => {
     const query = this.searchTerm().trim().toLowerCase();
-    return this.campaigns().filter((campaign) => {
+    let filtered = this.campaigns().filter((campaign) => {
       const matchesStatus =
         this.filter() === 'ALL' || campaign.status === this.filter();
       const matchesSearch =
@@ -56,24 +70,86 @@ export class CampaignsComponent implements OnInit {
         campaign.id.toLowerCase().includes(query);
       return matchesStatus && matchesSearch;
     });
+
+    // Aplicar ordenação
+    const field = this.sortField();
+    const direction = this.sortDirection();
+    const multiplier = direction === 'asc' ? 1 : -1;
+
+    return filtered.sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (field) {
+        case 'name':
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          return multiplier * aVal.localeCompare(bVal);
+        case 'status':
+          aVal = a.status;
+          bVal = b.status;
+          return multiplier * aVal.localeCompare(bVal);
+        case 'ctr':
+        case 'cpa':
+        case 'roas':
+        case 'score':
+          aVal = a.metrics?.[field] ?? 0;
+          bVal = b.metrics?.[field] ?? 0;
+          return multiplier * (aVal - bVal);
+        default:
+          return 0;
+      }
+    });
   });
+
+  sorted = computed(() => this.filtered());
 
   pagedCampaigns = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();
-    return this.filtered().slice(start, start + this.pageSize());
+    return this.sorted().slice(start, start + this.pageSize());
   });
 
-  totalItems = computed(() => this.filtered().length);
+  totalItems = computed(() => this.sorted().length);
   totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
   pageStart = computed(() => (this.currentPage() - 1) * this.pageSize() + 1);
   pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.totalItems()));
 
-  constructor(
-    private apiService: ApiService,
-    private destroyRef: DestroyRef
-  ) {}
+  constructor() {
+    // Setup debounce para busca
+    this.searchSubject
+      .pipe(
+        debounceTime(300),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((term) => {
+        this.searchTerm.set(term);
+        this.currentPage.set(1);
+        this.updateQueryParams();
+      });
+
+    // Sincronizar paginação com URL
+    effect(() => {
+      this.updateQueryParams();
+    });
+  }
 
   ngOnInit(): void {
+    // Restaurar estado da URL
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => {
+        const page = parseInt(params['page'] || '1', 10);
+        if (page >= 1) {
+          this.currentPage.set(page);
+        }
+
+        const sort = params['sort'];
+        if (sort && ['name', 'ctr', 'cpa', 'roas', 'score', 'status'].includes(sort)) {
+          this.toggleSort(sort as SortField);
+        }
+      });
+
     this.loadCampaigns();
   }
 
@@ -84,11 +160,45 @@ export class CampaignsComponent implements OnInit {
   setFilter(filterValue: 'ALL' | 'ACTIVE' | 'PAUSED'): void {
     this.filter.set(filterValue);
     this.currentPage.set(1);
+    this.updateQueryParams();
   }
 
   setSearchTerm(value: string): void {
-    this.searchTerm.set(value);
-    this.currentPage.set(1);
+    this.searchSubject.next(value);
+  }
+
+  toggleSort(field: SortField): void {
+    if (this.sortField() === field) {
+      this.sortDirection.set(this.sortDirection() === 'asc' ? 'desc' : 'asc');
+    } else {
+      this.sortField.set(field);
+      this.sortDirection.set('asc');
+    }
+    this.updateQueryParams();
+  }
+
+  getSortIndicator(field: SortField): string {
+    if (this.sortField() !== field) return '';
+    return this.sortDirection() === 'asc' ? ' ↑' : ' ↓';
+  }
+
+  private updateQueryParams(): void {
+    const queryParams: any = {};
+    if (this.currentPage() > 1) {
+      queryParams['page'] = this.currentPage();
+    }
+    if (this.sortField() !== 'name') {
+      queryParams['sort'] = this.sortField();
+    }
+    if (this.sortDirection() === 'desc') {
+      queryParams['dir'] = 'desc';
+    }
+
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : {},
+      queryParamsHandling: 'merge'
+    });
   }
 
   hasPrev(): boolean {
@@ -146,7 +256,6 @@ export class CampaignsComponent implements OnInit {
         next: (response: Campaign[] | { data: Campaign[] }) => {
           const campaigns = Array.isArray(response) ? response : response.data;
           this.campaigns.set(campaigns);
-          this.currentPage.set(1);
           this.loading.set(false);
         },
         error: (err) => {

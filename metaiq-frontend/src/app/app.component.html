@@ -1,6 +1,9 @@
-<div class="app-layout" *ngIf="isAuthenticated$ | async; else noAuth">
+<div class="app-layout" [class.collapsed]="!sidebarOpen()" *ngIf="isAuthenticated$ | async; else noAuth">
+  <!-- Sidebar Overlay (Mobile) -->
+  <div class="sidebar-overlay" *ngIf="sidebarOverlayOpen()" (click)="closeSidebarOverlay()"></div>
+
   <!-- Sidebar -->
-  <aside class="sidebar" [class.open]="sidebarOpen">
+  <aside class="sidebar" [class.open]="sidebarOpen()">
     <div class="logo-section">
       <h1 class="logo">
         <span>meta</span>IQ
@@ -13,17 +16,19 @@
         routerLink="/dashboard"
         class="nav-item"
         [class.active]="isActive('/dashboard')"
+        title="Dashboard"
       >
-        <span class="nav-dot"></span>
-        <span>Dashboard</span>
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Dashboard</span>
       </a>
       <a
         routerLink="/campaigns"
         class="nav-item"
         [class.active]="isActive('/campaigns')"
+        title="Campanhas"
       >
-        <span class="nav-dot"></span>
-        <span>Campanhas</span>
+        <span class="nav-icon">📢</span>
+        <span class="nav-label">Campanhas</span>
       </a>
     </nav>
 
@@ -31,7 +36,7 @@
       <div class="profile-avatar">{{ user.name?.split(' ').map(n => n[0]).join('') }}</div>
       <div class="profile-meta">
         <span class="profile-name">{{ user.name }}</span>
-        <span class="profile-role">Usuário autenticado</span>
+        <span class="profile-email">{{ user.email || 'Usuário' }}</span>
       </div>
     </div>
 
@@ -43,7 +48,10 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-content">
-        <button class="toggle-sidebar" (click)="toggleSidebar()">☰</button>
+        <button class="toggle-sidebar" (click)="toggleSidebar()" title="Alternar sidebar">☰</button>
+        <div class="page-title-container">
+          <h2 class="page-title-header">{{ currentTitle }}</h2>
+        </div>
         <div class="header-spacer"></div>
         <div class="user-info" *ngIf="currentUser$ | async as user">
           <span class="user-name">{{ user.name }}</span>
