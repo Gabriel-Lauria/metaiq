@@ -90,6 +90,60 @@
 			"type": "shell",
 			"command": "git add .",
 			"group": "build"
+		},
+		{
+			"label": "Commit Refactoring",
+			"type": "shell",
+			"command": "git commit -m refactoring-phase-complete",
+			"group": "build"
+		},
+		{
+			"label": "Git Push Refactoring",
+			"type": "shell",
+			"command": "git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Commit Refactoring Report",
+			"type": "shell",
+			"command": "git add REFACTORING_COMPLETE.md && git commit -m refactoring-report",
+			"group": "build"
+		},
+		{
+			"label": "Final Push",
+			"type": "shell",
+			"command": "git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Commit TypeScript Config Fixes",
+			"type": "shell",
+			"command": "git add metaiq-frontend/tsconfig.json metaiq-backend/tsconfig.json && git commit -m fix-typescript-config-errors",
+			"group": "build"
+		},
+		{
+			"label": "Push TypeScript Fixes",
+			"type": "shell",
+			"command": "git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Run Backend Seed",
+			"type": "shell",
+			"command": "cd metaiq-backend && npm run seed",
+			"group": "test"
+		},
+		{
+			"label": "Run Backend Seed Fixed",
+			"type": "shell",
+			"command": "cd metaiq-backend && npm run seed",
+			"group": "test"
+		},
+		{
+			"label": "Run Backend Seed v2",
+			"type": "shell",
+			"command": "cd metaiq-backend && npm run seed",
+			"group": "test"
 		}
 	]
 }

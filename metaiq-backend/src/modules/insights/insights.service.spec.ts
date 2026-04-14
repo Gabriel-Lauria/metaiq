@@ -61,6 +61,8 @@ describe('InsightsService', () => {
       endTime: null,
       userId: 'user-123',
       adAccountId: 'acc-123',
+      user: {} as any,
+      adAccount: {} as any,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -246,13 +248,17 @@ describe('InsightsService', () => {
       const mockInsight: Insight = {
         id: 'insight-123',
         campaignId: 'camp-123',
+        campaign: {} as any,
         type: 'alert',
         severity: 'warning',
         message: 'Test message',
         recommendation: 'Test recommendation',
         resolved: false,
+        priority: 'medium',
+        lastTriggeredAt: undefined,
+        cooldownInHours: 0,
+        ruleVersion: 1,
         detectedAt: new Date(),
-        createdAt: new Date(),
         updatedAt: new Date(),
       };
 

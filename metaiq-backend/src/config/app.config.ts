@@ -8,7 +8,7 @@ export interface AppConfig {
 }
 
 export default registerAs('app', () => ({
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: 3004, // Forçado temporariamente para evitar conflitos
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
   nodeEnv: process.env.NODE_ENV || 'development',
   cryptoSecret: process.env.CRYPTO_SECRET || 'replace-with-a-secure-secret',
