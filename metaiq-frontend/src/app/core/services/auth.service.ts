@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject } from 'rxjs';
 import { tap, catchError, timeout, retry, map } from 'rxjs/operators';
-import { AuthResponse, LoginRequest, RegisterRequest, User } from '../../models';
+import { AuthResponse, LoginRequest, RegisterRequest, User } from '../models';
 import { environment } from '../environment';
 
 const API = environment.apiUrl;
@@ -39,19 +39,31 @@ export class AuthService {
   }
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/login`, credentials, { withCredentials: true });
+    return this.http.post<AuthResponse>(`${API}/api/auth/login`, credentials).pipe(
+      tap((response) => this.handleAuthResponse(response))
+    );
   }
 
   register(data: RegisterRequest): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/register`, data, { withCredentials: true });
+    return this.http.post<AuthResponse>(`${API}/api/auth/register`, data).pipe(
+      tap((response) => this.handleAuthResponse(response))
+    );
   }
 
   refreshToken(): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/api/auth/refresh`, {}, { withCredentials: true });
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!refreshToken) {
+      return throwError(() => new Error('Refresh token não encontrado'));
+    }
+
+    return this.http.post<AuthResponse>(`${API}/api/auth/refresh`, { refreshToken }).pipe(
+      tap((response) => this.handleAuthResponse(response))
+    );
   }
 
   logout(): void {
     localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     this.currentUserSubject.next(null);
     this.accessTokenSubject.next(null);
@@ -71,6 +83,7 @@ export class AuthService {
 
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.setItem('accessToken', response.accessToken);
+    localStorage.setItem('refreshToken', response.refreshToken);
     localStorage.setItem('user', JSON.stringify(response.user));
     this.currentUserSubject.next(response.user);
     this.accessTokenSubject.next(response.accessToken);

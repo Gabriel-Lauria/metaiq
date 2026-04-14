@@ -1,60 +1,9 @@
-export interface DatabaseConfig {
-  type: 'sqlite' | 'postgres';
-  database?: string;
-  url?: string;
-  host?: string;
-  port?: number;
-  username?: string;
-  password?: string;
-  ssl?: boolean | object;
-}
+export * from './app.config';
+export * from './database.config';
+export * from './jwt.config';
 
-export interface JwtConfig {
-  secret: string;
-  refreshSecret: string;
-  expiresIn: string | number;
-  refreshExpiresIn: string | number;
-}
-
-export interface AppConfig {
-  port: number;
-  frontendUrl: string;
-  nodeEnv: string;
-  cryptoSecret: string;
-}
-
-export interface Config {
-  app: AppConfig;
-  database: DatabaseConfig;
-  jwt: JwtConfig;
-}
-
-export default (): Config => {
-  const nodeEnv = process.env.NODE_ENV || 'development';
-  const usePostgres = true; // Always PostgreSQL
-
-  return {
-    app: {
-      port: parseInt(process.env.PORT || '3000', 10),
-      frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
-      nodeEnv,
-      cryptoSecret: process.env.CRYPTO_SECRET || 'default-key-32-characters-minimum',
-    },
-    database: {
-      type: 'postgres',
-      url: process.env.DATABASE_URL,
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
-      username: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres',
-      database: process.env.POSTGRES_DB || 'metaiq',
-      ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    },
-    jwt: {
-      secret: process.env.JWT_SECRET ?? (() => { throw new Error('JWT_SECRET não configurado'); })(),
-      refreshSecret: process.env.JWT_REFRESH_SECRET ?? (() => { throw new Error('JWT_REFRESH_SECRET não configurado'); })(),
-      expiresIn: process.env.JWT_EXPIRES_IN || '1h',
-      refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-    },
-  };
+export type Config = {
+  app: import('./app.config').AppConfig;
+  database: import('./database.config').DatabaseConfig;
+  jwt: import('./jwt.config').JwtConfig;
 };

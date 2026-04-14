@@ -4,6 +4,7 @@ import { Repository, Between } from 'typeorm';
 import { MetricDaily } from './metric-daily.entity';
 import { MetricsEngine } from './metrics.engine';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
+import { calcCTR, calcCPA, calcROAS } from '../../common/utils/metrics.util';
 
 @Injectable()
 export class MetricsService {
@@ -29,12 +30,26 @@ export class MetricsService {
     });
   }
 
-  private normalizeDate(date: string | Date): string {
-    if (typeof date === 'string') return date;
-    return date.toISOString().split('T')[0];
-  }
+  async getSummary(from: Date, to: Date): Promise<any> {
+    const fromStr = from.toISOString().split('T')[0];
+    const toStr = to.toISOString().split('T')[0];
 
-  private buildAggregatedMetrics(result: any, lastMetricDate: string | null = null) {
+    // Use SQL aggregation instead of loading all records in memory
+    const result = await this.metricRepository
+      .createQueryBuilder('m')
+      .select([
+        'SUM(m.impressions) as impressions',
+        'SUM(m.clicks) as clicks',
+        'SUM(m.spend) as spend',
+        'SUM(m.conversions) as conversions',
+        'SUM(m.revenue) as revenue',
+        'AVG(m.ctr) as ctr',
+        'AVG(m.cpa) as cpa',
+        'AVG(m.roas) as roas'
+      ])
+      .where('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
+      .getRawOne();
+
     if (!result) {
       return {
         impressions: 0,
@@ -51,101 +66,33 @@ export class MetricsService {
         avgRoas: 0,
         avgCpa: 0,
         avgCtr: 0,
-        lastMetricDate,
       };
     }
 
-    const impressions = Number(result.impressions) || 0;
-    const clicks = Number(result.clicks) || 0;
-    const spend = Number(result.spend) || 0;
-    const conversions = Number(result.conversions) || 0;
-    const revenue = Number(result.revenue) || 0;
-    const ctr = Number(result.ctr) || 0;
-    const cpa = Number(result.cpa) || 0;
-    const roas = Number(result.roas) || 0;
-
     const computed = this.engine.compute({
-      impressions,
-      clicks,
-      spend,
-      conversions,
-      revenue,
+      impressions: Number(result.impressions) || 0,
+      clicks: Number(result.clicks) || 0,
+      spend: Number(result.spend) || 0,
+      conversions: Number(result.conversions) || 0,
+      revenue: Number(result.revenue) || 0,
     });
 
     return {
-      impressions,
-      clicks,
-      spend,
-      conversions,
-      revenue,
-      ctr,
-      cpa,
-      roas,
+      impressions: Number(result.impressions) || 0,
+      clicks: Number(result.clicks) || 0,
+      spend: Number(result.spend) || 0,
+      conversions: Number(result.conversions) || 0,
+      revenue: Number(result.revenue) || 0,
+      ctr: Number(result.ctr) || 0,
+      cpa: Number(result.cpa) || 0,
+      roas: Number(result.roas) || 0,
       score: computed.score,
-      totalSpend: spend,
-      totalRevenue: revenue,
-      avgRoas: roas,
-      avgCpa: cpa,
-      avgCtr: ctr,
-      lastMetricDate,
+      totalSpend: Number(result.spend) || 0,
+      totalRevenue: Number(result.revenue) || 0,
+      avgRoas: Number(result.roas) || 0,
+      avgCpa: Number(result.cpa) || 0,
+      avgCtr: Number(result.ctr) || 0,
     };
-  }
-
-  async getSummary(from: string | Date, to: string | Date): Promise<any> {
-    const fromStr = this.normalizeDate(from);
-    const toStr = this.normalizeDate(to);
-
-    const result = await this.metricRepository
-      .createQueryBuilder('m')
-      .select([
-        'SUM(m.impressions) as impressions',
-        'SUM(m.clicks) as clicks',
-        'SUM(m.spend) as spend',
-        'SUM(m.conversions) as conversions',
-        'SUM(m.revenue) as revenue',
-        'AVG(m.ctr) as ctr',
-        'AVG(m.cpa) as cpa',
-        'AVG(m.roas) as roas',
-      ])
-      .where('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
-      .getRawOne();
-
-    return this.buildAggregatedMetrics(result);
-  }
-
-  async getCampaignSummary(
-    campaignId: string,
-    from: string | Date,
-    to: string | Date,
-  ): Promise<any> {
-    const fromStr = this.normalizeDate(from);
-    const toStr = this.normalizeDate(to);
-
-    const result = await this.metricRepository
-      .createQueryBuilder('m')
-      .select([
-        'SUM(m.impressions) as impressions',
-        'SUM(m.clicks) as clicks',
-        'SUM(m.spend) as spend',
-        'SUM(m.conversions) as conversions',
-        'SUM(m.revenue) as revenue',
-        'AVG(m.ctr) as ctr',
-        'AVG(m.cpa) as cpa',
-        'AVG(m.roas) as roas',
-      ])
-      .where('m.campaignId = :campaignId', { campaignId })
-      .andWhere('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
-      .getRawOne();
-
-    const lastMetricRaw = await this.metricRepository
-      .createQueryBuilder('m')
-      .select('MAX(m.date)', 'lastMetricDate')
-      .where('m.campaignId = :campaignId', { campaignId })
-      .andWhere('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
-      .getRawOne();
-
-    const lastMetricDate = lastMetricRaw?.lastMetricDate ?? null;
-    return this.buildAggregatedMetrics(result, lastMetricDate);
   }
 
   async findAllPaginated(pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
@@ -172,6 +119,65 @@ export class MetricsService {
         hasPrev: page > 1,
       },
     };
+  }
+
+  async getCampaignSummary(campaignId: string, from: string, to: string): Promise<any> {
+    const result = await this.metricRepository
+      .createQueryBuilder('m')
+      .select([
+        'SUM(m.impressions) as impressions',
+        'SUM(m.clicks) as clicks',
+        'SUM(m.spend) as spend',
+        'SUM(m.conversions) as conversions',
+        'SUM(m.revenue) as revenue',
+        'AVG(m.ctr) as ctr',
+        'AVG(m.cpa) as cpa',
+        'AVG(m.roas) as roas',
+        'MAX(m.date) as lastMetricDate',
+      ])
+      .where('m.campaignId = :campaignId', { campaignId })
+      .andWhere('m.date BETWEEN :from AND :to', { from, to })
+      .getRawOne();
+
+    if (!result) {
+      return null;
+    }
+
+    const totalSpend = Number(result.spend) || 0;
+    const totalRevenue = Number(result.revenue) || 0;
+    const totalClicks = Number(result.clicks) || 0;
+    const totalImpressions = Number(result.impressions) || 0;
+    const totalConversions = Number(result.conversions) || 0;
+
+    return {
+      ...result,
+      totalSpend,
+      totalRevenue,
+      lastMetricDate: result.lastMetricDate,
+      avgCtr: calcCTR(totalClicks, totalImpressions),
+      avgCpa: calcCPA(totalSpend, totalConversions),
+      avgRoas: calcROAS(totalRevenue, totalSpend),
+    };
+  }
+
+  async upsertDailyMetric(data: Partial<MetricDaily>): Promise<MetricDaily> {
+    const existing = await this.metricRepository.findOne({
+      where: { campaign: { id: data.campaignId }, date: data.date },
+    });
+
+    const enriched = {
+      ...data,
+      ctr: calcCTR(data.clicks ?? 0, data.impressions ?? 0),
+      cpa: calcCPA(data.spend ?? 0, data.conversions ?? 0),
+      roas: calcROAS(data.revenue ?? 0, data.spend ?? 0),
+    } as Partial<MetricDaily>;
+
+    if (existing) {
+      Object.assign(existing, enriched);
+      return this.metricRepository.save(existing);
+    }
+
+    return this.metricRepository.save(this.metricRepository.create(enriched));
   }
 
   async findByCampaignPaginated(campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {

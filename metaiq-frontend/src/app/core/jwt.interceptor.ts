@@ -7,7 +7,7 @@ import {
 } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError, switchMap, map, finalize, shareReplay } from 'rxjs/operators';
-import { AuthService } from './auth.service';
+import { AuthService } from './services/auth.service';
 
 let isRefreshing = false;
 let refreshTokenRequest: Observable<string> | null = null;
@@ -41,6 +41,10 @@ function addToken(req: HttpRequest<any>, token: string): HttpRequest<any> {
       Authorization: `Bearer ${token}`,
     },
   });
+}
+
+function addCredentials(req: HttpRequest<any>): HttpRequest<any> {
+  return req.clone({ withCredentials: true });
 }
 
 function handle401Error(

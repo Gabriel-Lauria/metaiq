@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Commit and Push Project",
+			"type": "shell",
+			"command": "git add . && git commit -m \"Initial commit with complete MetaIQ project\" && git push -u origin main",
+			"group": "build"
+		},
+		{
+			"label": "Commit and Push Project",
+			"type": "shell",
+			"command": "git add . ; git commit -m \"Initial commit with complete MetaIQ project\" ; git push -u origin main",
+			"group": "build"
+		},
+		{
+			"label": "Git Add All",
+			"type": "shell",
+			"command": "git add .",
+			"group": "build"
+		}
+	]
+}

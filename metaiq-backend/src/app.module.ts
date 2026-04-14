@@ -1,94 +1,85 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
-import { AuthController } from './auth/auth.controller';
-import { AuthService } from './auth/auth.service';
-import { JwtStrategy } from './auth/jwt.strategy';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { AdAccountsModule } from './modules/ad-accounts/ad-accounts.module';
+import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { InsightsModule } from './modules/insights/insights.module';
+import { MetaModule } from './modules/meta/meta.module';
+import { SyncCron } from './infrastructure/sync.cron';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import appConfig from './config/app.config';
+import databaseConfig from './config/database.config';
+import jwtConfig from './config/jwt.config';
 import { User } from './modules/users/user.entity';
 import { AdAccount } from './modules/ad-accounts/ad-account.entity';
 import { Campaign } from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
-import { Insight } from './modules/insights/insight.entity';
-import { CampaignsModule } from './modules/campaigns/campaigns.module';
-import { MetricsModule } from './modules/metrics/metrics.module';
-import { UsersModule } from './modules/users/users.module';
-import { AdAccountsModule } from './modules/ad-accounts/ad-accounts.module';
-import { InsightsModule } from './modules/insights/insights.module';
-import { SyncCron } from './infrastructure/sync.cron';
-import configuration from './config/configuration';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration],
+      load: [appConfig, databaseConfig, jwtConfig],
+      envFilePath: '.env',
+      expandVariables: true,
+    }),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          limit: 100,
+          ttl: 60,
+        },
+      ],
     }),
     ScheduleModule.forRoot(),
-    // ── Rate limiting com thresholds diferentes por endpoint ──────────────
-    // auth/login: 5 requisições por minuto (proteção contra brute force)
-    // auth/refresh: 10 requisições por minuto (mais permissivo)
-    // geral: 20 requisições por minuto
-    ThrottlerModule.forRoot([
-      {
-        name: 'auth',
-        ttl: 60000, // 1 minuto
-        limit: 5, // 5 tentativas de login por minuto
-      },
-      {
-        name: 'refresh',
-        ttl: 60000, // 1 minuto
-        limit: 10, // 10 refresh por minuto (mais permissivo)
-      },
-      {
-        name: 'general',
-        ttl: 60000,
-        limit: 20, // 20 requisições gerais por minuto
-      },
-    ]),
-    PassportModule,
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: (config.get<string>('JWT_EXPIRES_IN') || '15m') as any },
-      }),
-    }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const dbConfig = config.get('database');
-        return {
-          type: 'postgres',
-          url: dbConfig.url,
-          host: dbConfig.host,
-          port: dbConfig.port,
-          username: dbConfig.username,
-          password: dbConfig.password,
-          database: dbConfig.database,
-          ssl: dbConfig.ssl,
-          autoLoadEntities: true,
-          synchronize: config.get<string>('NODE_ENV') !== 'production',
-          logging: false,
-          entities: [User, AdAccount, Campaign, MetricDaily, Insight],
+        const dbType = config.get<'sqlite' | 'postgres'>('database.type');
+        const appEnv = config.get<string>('app.nodeEnv');
+
+        const baseConfig = {
+          synchronize: appEnv !== 'production',
+          logging: appEnv !== 'production',
+          entities: [User, AdAccount, Campaign, MetricDaily],
         } as any;
+
+        if (dbType === 'postgres') {
+          return {
+            ...baseConfig,
+            type: 'postgres',
+            host: config.get<string>('database.host'),
+            port: config.get<number>('database.port'),
+            username: config.get<string>('database.username'),
+            password: config.get<string>('database.password'),
+            database: config.get<string>('database.database'),
+            ssl: config.get<any>('database.ssl'),
+          };
+        }
+
+        return {
+          ...baseConfig,
+          type: 'sqlite',
+          database: config.get<string>('database.database') || './data/metaiq.db',
+        };
       },
     }),
-    TypeOrmModule.forFeature([User, AdAccount, Campaign, MetricDaily, Insight]),
-    CampaignsModule,
-    MetricsModule,
+    AuthModule,
     UsersModule,
     AdAccountsModule,
+    CampaignsModule,
+    MetricsModule,
     InsightsModule,
+    MetaModule,
   ],
-  controllers: [AppController, AuthController],
-  providers: [JwtStrategy, AuthService, GlobalExceptionFilter, SyncCron],
+  controllers: [AppController],
+  providers: [GlobalExceptionFilter, SyncCron],
 })
 export class AppModule {}
