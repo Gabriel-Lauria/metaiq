@@ -7,7 +7,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { InsightsService } from './insights.service';
 import { Insight } from './insight.entity';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';

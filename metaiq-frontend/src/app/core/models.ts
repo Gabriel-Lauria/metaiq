@@ -77,9 +77,12 @@ export interface AuthResponse {
 
 export interface Insight {
   id: string;
-  type: 'WARNING' | 'INFO' | 'SUCCESS';
-  title: string;
-  description: string;
+  type: 'alert' | 'warning' | 'opportunity' | 'info';
+  severity: 'danger' | 'warning' | 'success' | 'info';
+  message: string;
+  recommendation: string;
+  title?: string;
+  description?: string;
   metric?: string;
   current?: number;
   previous?: number;

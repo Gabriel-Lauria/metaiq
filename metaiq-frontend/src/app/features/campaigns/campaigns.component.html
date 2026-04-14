@@ -30,7 +30,8 @@
         type="text"
         class="search-input"
         placeholder="Pesquisar por nome ou ID..."
-        [(ngModel)]="searchTerm"
+        [ngModel]="searchTerm()"
+        (ngModelChange)="setSearchTerm($event)"
       />
 
       <div class="status-filter">
@@ -60,12 +61,12 @@
 
     <!-- Pagination Info -->
     <div class="pagination-info" *ngIf="totalItems() > 0">
-      <span>Mostrando {{ ((currentPage() - 1) * pageSize()) + 1 }} - {{ Math.min(currentPage() * pageSize(), totalItems()) }} de {{ totalItems() }} campanhas</span>
+      <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
     </div>
 
     <!-- Campaigns List -->
     <div class="campaigns-list" *ngIf="filtered().length > 0">
-      <div class="campaign-row" *ngFor="let campaign of filtered()">
+      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns()">
         <!-- Summary Row -->
         <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
           <div class="campaign-info">
@@ -209,7 +210,7 @@
       <div class="empty-icon">📊</div>
       <p class="empty-title">Nenhuma campanha encontrada</p>
       <p class="empty-description">
-        Ajuste seus filtros ou crie uma nova campanha
+        Ajuste os filtros ou conecte uma conta Meta para carregar campanhas.
       </p>
     </div>
   </div>

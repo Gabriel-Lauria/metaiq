@@ -1,10 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, throwError, timer } from 'rxjs';
 import { timeout, retry, catchError } from 'rxjs/operators';
 import {
-  Campaign, MetricDaily, AggregatedMetrics,
-  CampaignInsightReport, AdAccount,
+  Campaign, MetricDaily, AggregatedMetrics, Insight, AdAccount,
 } from '../models';
 import { environment } from '../environment';
 
@@ -46,7 +45,7 @@ export class ApiService {
   private http = inject(HttpClient);
 
   private handleError(error: any) {
-    const message = error?.error?.message ?? 'Erro ao conectar ao servidor';
+    const message = error?.message || error?.error?.message || 'Erro ao conectar ao servidor';
     console.error('API Error:', message, error);
     return throwError(() => new Error(message));
   }
@@ -54,7 +53,16 @@ export class ApiService {
   private request<T>(observable: Observable<T>): Observable<T> {
     return observable.pipe(
       timeout(HTTP_TIMEOUT),
-      retry({ count: RETRY_ATTEMPTS, delay: RETRY_DELAY }),
+      retry({
+        count: RETRY_ATTEMPTS,
+        delay: (error, retryCount) => {
+          if (error?.status && error.status < 500) {
+            return throwError(() => error);
+          }
+
+          return timer(RETRY_DELAY * retryCount);
+        }
+      }),
       catchError(err => this.handleError(err)),
     );
   }
@@ -94,26 +102,26 @@ export class ApiService {
   }
 
   getCampaign(id: string): Observable<Campaign> {
-    return this.get<Campaign>(`/api/campaigns/${id}`);
+    return this.get<Campaign>(`/campaigns/${id}`);
   }
 
   // ── Metrics ──────────────────────────────────────────────────
   getMetricsSummary(days = 30): Observable<AggregatedMetrics> {
     const { from, to } = dateRange(days);
     const params = new HttpParams().set('from', from).set('to', to);
-    return this.get<AggregatedMetrics>('/api/metrics/summary', params);
+    return this.get<AggregatedMetrics>('/metrics/summary', params);
   }
 
   getCampaignMetrics(campaignId: string, days = 30): Observable<MetricDaily[]> {
     const { from, to } = dateRange(days);
     const params = new HttpParams().set('from', from).set('to', to);
-    return this.get<MetricDaily[]>(`/api/metrics/campaigns/${campaignId}`, params);
+    return this.get<MetricDaily[]>(`/metrics/campaigns/${campaignId}`, params);
   }
 
   getCampaignAggregate(campaignId: string, days = 30): Observable<AggregatedMetrics> {
     const { from, to } = dateRange(days);
     const params = new HttpParams().set('from', from).set('to', to);
-    return this.get<AggregatedMetrics>(`/api/metrics/campaigns/${campaignId}/aggregate`, params);
+    return this.get<AggregatedMetrics>(`/metrics/campaigns/${campaignId}/aggregate`, params);
   }
 
   getMetricsPaginated(pagination?: PaginationDto): Observable<PaginatedResponse<MetricDaily>> {
@@ -129,25 +137,30 @@ export class ApiService {
     if (pagination?.page) params = params.set('page', pagination.page.toString());
     if (pagination?.limit) params = params.set('limit', pagination.limit.toString());
 
-    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/metrics/campaigns/${campaignId}`, { params }));
+    params = params.set('campaignId', campaignId);
+
+    return this.request(this.http.get<PaginatedResponse<MetricDaily>>(`${API}/metrics`, { params }));
   }
 
   // ── Insights ─────────────────────────────────────────────────
-  getInsights(days = 30): Observable<CampaignInsightReport[]> {
+  getInsights(days = 30): Observable<Insight[]> {
     const { from, to } = dateRange(days);
     const params = new HttpParams().set('from', from).set('to', to);
-    return this.get<CampaignInsightReport[]>('/api/insights', params);
+    return this.get<Insight[]>('/insights', params);
   }
 
-  getCampaignInsights(campaignId: string, days = 30): Observable<any[]> {
+  getCampaignInsights(campaignId: string, days = 30): Observable<Insight[]> {
     const { from, to } = dateRange(days);
-    const params = new HttpParams().set('from', from).set('to', to);
-    return this.get<any[]>(`/api/insights/campaigns/${campaignId}`, params);
+    const params = new HttpParams()
+      .set('from', from)
+      .set('to', to)
+      .set('campaignId', campaignId);
+    return this.get<Insight[]>('/insights', params);
   }
 
   // ── Meta Accounts ─────────────────────────────────────────────
   getAdAccounts(): Observable<AdAccount[]> {
-    return this.get<AdAccount[]>('/api/meta/accounts');
+    return this.get<AdAccount[]>('/ad-accounts');
   }
 
   getMetaConnectUrl(): string {

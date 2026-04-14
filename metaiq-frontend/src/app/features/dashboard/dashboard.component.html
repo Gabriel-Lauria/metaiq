@@ -13,8 +13,18 @@
     <button class="btn btn-secondary" (click)="loadData()">Tentar Novamente</button>
   </div>
 
+  <!-- Empty State -->
+  <div class="empty-state" *ngIf="!loading() && !error() && !hasDashboardData()">
+    <div class="empty-icon">📊</div>
+    <p class="empty-title">Nenhum dado encontrado</p>
+    <p class="empty-description">
+      Não há métricas ou insights para os últimos {{ period() }} dias.
+    </p>
+    <button class="btn btn-secondary" (click)="loadData()">Atualizar</button>
+  </div>
+
   <!-- Main Dashboard -->
-  <div class="dashboard-content" *ngIf="!loading() && !error()">
+  <div class="dashboard-content" *ngIf="!loading() && !error() && hasDashboardData()">
     <!-- Header -->
     <div class="dashboard-header">
       <div class="header-left">
@@ -44,14 +54,13 @@
     </div>
 
     <!-- Metrics Grid -->
-    <div class="metrics-grid" *ngIf="metrics()">
+    <div class="metrics-grid" *ngIf="metrics() && hasMetricsData()">
       <div class="metric-card">
         <div class="metric-header">
           <span class="metric-title">Impressões</span>
           <span class="metric-icon">👁️</span>
         </div>
         <div class="metric-value">{{ metrics()!.impressions.toLocaleString() }}</div>
-        <div class="metric-change">+12.5%</div>
       </div>
 
       <div class="metric-card">
@@ -60,7 +69,6 @@
           <span class="metric-icon">👆</span>
         </div>
         <div class="metric-value">{{ metrics()!.clicks.toLocaleString() }}</div>
-        <div class="metric-change">+8.2%</div>
       </div>
 
       <div class="metric-card">
@@ -69,7 +77,6 @@
           <span class="metric-icon">💰</span>
         </div>
         <div class="metric-value">{{ fmt(metrics()!.spend) }}</div>
-        <div class="metric-change">+15.3%</div>
       </div>
 
       <div class="metric-card">
@@ -78,7 +85,6 @@
           <span class="metric-icon">🎯</span>
         </div>
         <div class="metric-value">{{ metrics()!.conversions.toLocaleString() }}</div>
-        <div class="metric-change">+22.1%</div>
       </div>
 
       <div class="metric-card">
@@ -87,7 +93,6 @@
           <span class="metric-icon">📊</span>
         </div>
         <div class="metric-value">{{ fmtPct(metrics()!.ctr) }}</div>
-        <div class="metric-change">+5.7%</div>
       </div>
 
       <div class="metric-card">
@@ -96,7 +101,6 @@
           <span class="metric-icon">💸</span>
         </div>
         <div class="metric-value">{{ fmt(metrics()!.cpa) }}</div>
-        <div class="metric-change">-3.2%</div>
       </div>
 
       <div class="metric-card">
@@ -104,8 +108,7 @@
           <span class="metric-title">ROAS</span>
           <span class="metric-icon">📈</span>
         </div>
-        <div class="metric-value">{{ fmtPct(metrics()!.roas) }}</div>
-        <div class="metric-change">+18.9%</div>
+        <div class="metric-value">{{ fmtRoas(metrics()!.roas) }}</div>
       </div>
 
       <div class="metric-card">
@@ -114,7 +117,6 @@
           <span class="metric-icon">💵</span>
         </div>
         <div class="metric-value">{{ fmt(metrics()!.revenue) }}</div>
-        <div class="metric-change">+25.4%</div>
       </div>
     </div>
 
@@ -139,9 +141,9 @@
         <div class="insight-card" *ngFor="let insight of allInsights">
           <div class="insight-header">
             <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
-            <span class="insight-title">{{ insight.title }}</span>
+            <span class="insight-title">{{ insight.title || insight.message }}</span>
           </div>
-          <p class="insight-description">{{ insight.description }}</p>
+          <p class="insight-description">{{ insight.description || insight.recommendation }}</p>
         </div>
       </div>
     </div>

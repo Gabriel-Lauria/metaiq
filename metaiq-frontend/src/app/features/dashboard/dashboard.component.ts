@@ -1,11 +1,11 @@
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { UiService } from '../../core/services/ui.service';
-import { AggregatedMetrics, Insight, CampaignInsightReport } from '../../core/models';
+import { AggregatedMetrics, Insight } from '../../core/models';
 
 @Component({
   selector: 'app-dashboard',
@@ -25,6 +25,22 @@ export class DashboardComponent implements OnInit {
   metrics = signal<AggregatedMetrics | null>(null);
   insights = signal<Insight[]>([]);
   lastUpdated = signal<Date | null>(null);
+  hasMetricsData = computed(() => {
+    const metrics = this.metrics();
+    if (!metrics) return false;
+
+    return [
+      metrics.impressions,
+      metrics.clicks,
+      metrics.spend,
+      metrics.conversions,
+      metrics.revenue,
+      metrics.ctr,
+      metrics.cpa,
+      metrics.roas,
+    ].some((value) => Number(value) > 0);
+  });
+  hasDashboardData = computed(() => this.hasMetricsData() || this.insights().length > 0);
 
   ngOnInit(): void {
     this.loadData();
@@ -41,18 +57,18 @@ export class DashboardComponent implements OnInit {
           return of(null);
         })
       ),
-      reports: this.api.getInsights(this.period()).pipe(
+      insights: this.api.getInsights(this.period()).pipe(
         catchError((err) => {
           console.error('Erro ao carregar insights:', err);
-          return of([] as CampaignInsightReport[]);
+          return of([] as Insight[]);
         })
       ),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ metrics, reports }) => {
+        next: ({ metrics, insights }) => {
           this.metrics.set(metrics);
-          this.insights.set(this.transformInsights(reports || []));
+          this.insights.set(insights || []);
           this.lastUpdated.set(new Date());
           this.loading.set(false);
         },
@@ -78,15 +94,15 @@ export class DashboardComponent implements OnInit {
     return `${(value * 100).toFixed(2)}%`;
   }
 
+  fmtRoas(value: number): string {
+    return `${value.toFixed(2)}x`;
+  }
+
   get allInsights(): Insight[] {
     return this.insights();
   }
 
   getLastUpdatedLabel(): string {
     return this.lastUpdated() ? new Date(this.lastUpdated()!).toLocaleTimeString('pt-BR') : 'agora';
-  }
-
-  private transformInsights(reports: CampaignInsightReport[]): Insight[] {
-    return reports.flatMap((report) => report.insights || []);
   }
 }

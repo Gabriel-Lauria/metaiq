@@ -1,16 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Insight } from './insight.entity';
 import { Campaign } from '../campaigns/campaign.entity';
 import { MetricsService } from '../metrics/metrics.service';
-import {
-  calcCTR,
-  calcCPC,
-  calcCPA,
-  calcROAS,
-  safeDiv,
-} from '../../common/utils/metrics.util';
 
 /**
  * InsightsService é o coração inteligente do MetaIQ.
@@ -80,15 +73,11 @@ export class InsightsService {
     }
 
     const totalSpend = summary.totalSpend || 0;
-    const totalImpressions = summary.impressions || 0;
-    const totalClicks = summary.clicks || 0;
     const totalConversions = summary.conversions || 0;
-    const totalRevenue = summary.totalRevenue || 0;
     const lastMetricDate = summary.lastMetricDate || null;
 
     const avgCTR = summary.avgCtr || summary.ctr || 0;
-    const avgCPC = summary.avgCpa || summary.cpa || 0;
-    const avgCPA = summary.avgCpa || summary.cpa || 0;
+    const avgCPA = totalConversions > 0 ? totalSpend / totalConversions : 0;
     const avgROAS = summary.avgRoas || summary.roas || 0;
 
     const rules: Array<() => InsightPayload | null> = [
@@ -174,7 +163,11 @@ export class InsightsService {
       .innerJoinAndSelect('insight.campaign', 'campaign')
       .where('insight.id = :id', { id })
       .andWhere('campaign.userId = :userId', { userId })
-      .getOneOrFail();
+      .getOne();
+
+    if (!insight) {
+      throw new NotFoundException(`Insight ${id} não encontrado`);
+    }
 
     insight.resolved = true;
     return this.insightRepo.save(insight);
@@ -188,12 +181,18 @@ export class InsightsService {
    * Find insight com validação de ownership
    */
   async findOneByUser(id: string, userId: string): Promise<Insight> {
-    return this.insightRepo
+    const insight = await this.insightRepo
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
       .where('insight.id = :id', { id })
       .andWhere('campaign.userId = :userId', { userId })
-      .getOneOrFail();
+      .getOne();
+
+    if (!insight) {
+      throw new NotFoundException(`Insight ${id} não encontrado`);
+    }
+
+    return insight;
   }
 
   async deleteOldResolved(days: number): Promise<void> {

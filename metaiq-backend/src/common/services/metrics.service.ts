@@ -30,7 +30,6 @@ export class MetricsService {
    */
   startTimer(operation: string) {
     const startTime = Date.now();
-    const id = `${operation}-${Date.now()}-${Math.random()}`;
 
     return {
       end: (success: boolean = true, metadata?: Record<string, any>) => {
@@ -84,7 +83,7 @@ export class MetricsService {
    */
   getMetrics(operation: string): MetricStats | null {
     const data = this.metrics.get(operation);
-    if (!data) return null;
+    if (!data || data.count === 0) return null;
 
     return {
       operation,
@@ -102,18 +101,20 @@ export class MetricsService {
    * Obtém todas as métricas
    */
   getAllMetrics(): MetricStats[] {
-    return Array.from(this.metrics.entries()).map(([operation, data]) => {
-      return {
-        operation,
-        totalExecutions: data.count,
-        successCount: data.successCount,
-        errorCount: data.errorCount,
-        successRate: ((data.successCount / data.count) * 100).toFixed(2) + '%',
-        avgDuration: (data.totalDuration / data.count).toFixed(2) + 'ms',
-        minDuration: data.minDuration === Infinity ? '0ms' : data.minDuration + 'ms',
-        maxDuration: data.maxDuration + 'ms',
-      };
-    });
+    return Array.from(this.metrics.entries())
+      .filter(([, data]) => data.count > 0)
+      .map(([operation, data]) => {
+        return {
+          operation,
+          totalExecutions: data.count,
+          successCount: data.successCount,
+          errorCount: data.errorCount,
+          successRate: ((data.successCount / data.count) * 100).toFixed(2) + '%',
+          avgDuration: (data.totalDuration / data.count).toFixed(2) + 'ms',
+          minDuration: data.minDuration === Infinity ? '0ms' : data.minDuration + 'ms',
+          maxDuration: data.maxDuration + 'ms',
+        };
+      });
   }
 
   /**

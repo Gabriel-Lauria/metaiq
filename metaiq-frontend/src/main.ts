@@ -9,7 +9,7 @@ import { errorInterceptor } from './app/core/error.interceptor';
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideHttpClient(withInterceptors([jwtInterceptor, errorInterceptor])),
+    provideHttpClient(withInterceptors([errorInterceptor, jwtInterceptor])),
     provideRouter(routes),
     provideAnimations(),
   ],

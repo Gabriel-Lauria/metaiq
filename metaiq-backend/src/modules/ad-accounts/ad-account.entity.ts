@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { User } from '../users/user.entity';
+import { CryptoTransformer } from '../../common/transformers/crypto.transformer';
 
 @Entity('ad_accounts')
 @Index(['userId'])
@@ -17,8 +18,8 @@ export class AdAccount {
   @Column({ nullable: true })
   currency: string; // USD, BRL, etc.
 
-  @Column({ nullable: true })
-  accessToken: string; // Token de acesso da Meta API
+  @Column({ nullable: true, select: false, transformer: new CryptoTransformer() })
+  accessToken: string; // Token de acesso da Meta API (criptografado no banco)
 
   @Column({ type: 'date', nullable: true })
   tokenExpiresAt: Date;

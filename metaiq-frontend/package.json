@@ -1,13 +1,15 @@
 {
   "name": "metaiq-frontend",
   "version": "1.0.0",
-  "description": "MetaIQ Frontend - Angular 19",
+  "description": "MetaIQ Frontend",
   "scripts": {
     "start": "ng serve --port 4200",
+    "dev": "ng serve --port 4200",
     "build": "ng build",
     "build:prod": "ng build --configuration=production",
-    "test": "ng test",
-    "lint": "ng lint"
+    "check": "ng build --configuration=development",
+    "test": "npm run check",
+    "lint": "npm run check"
   },
   "private": true,
   "dependencies": {

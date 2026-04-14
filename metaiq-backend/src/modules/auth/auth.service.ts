@@ -77,15 +77,15 @@ export class AuthService {
 
   private async validateRefreshToken(refreshToken: string): Promise<JwtPayload> {
     const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ||
-      this.configService.get<string>('JWT_SECRET');
+      this.configService.get<string>('jwt.refreshSecret') ||
+      this.configService.get<string>('jwt.secret');
 
     let payload: JwtPayload;
     try {
       payload = await this.jwtService.verifyAsync(refreshToken, {
         secret: refreshSecret,
       });
-    } catch (error) {
+    } catch {
       throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
 
@@ -105,15 +105,15 @@ export class AuthService {
   private async generateTokens(user: User) {
     const payload = this.buildPayload(user);
     const accessTokenExpiresIn =
-      this.configService.get<string>('JWT_EXPIRES_IN') || '15m';
+      this.configService.get<string>('jwt.expiresIn') || '15m';
     const refreshTokenExpiresIn =
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '7d';
+      this.configService.get<string>('jwt.refreshExpiresIn') || '7d';
     const refreshSecret =
-      this.configService.get<string>('JWT_REFRESH_SECRET') ||
-      this.configService.get<string>('JWT_SECRET');
+      this.configService.get<string>('jwt.refreshSecret') ||
+      this.configService.get<string>('jwt.secret');
 
     const accessToken = this.jwtService.sign({ ...payload, jti: randomUUID() }, {
-      secret: this.configService.get<string>('JWT_SECRET'),
+      secret: this.configService.get<string>('jwt.secret'),
       expiresIn: accessTokenExpiresIn as any,
     });
 

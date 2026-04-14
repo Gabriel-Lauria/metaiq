@@ -1,6 +1,6 @@
 import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
-import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { Campaign } from './campaign.entity';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';

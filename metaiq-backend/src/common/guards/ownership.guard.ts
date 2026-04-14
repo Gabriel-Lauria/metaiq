@@ -4,7 +4,6 @@ import {
   ExecutionContext,
   ForbiddenException,
   NotFoundException,
-  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -42,7 +41,9 @@ export class OwnershipGuard implements CanActivate {
     const user = request.user;
     const { id } = request.params;
 
-    if (!user || !user.sub) {
+    const userId = user?.id ?? user?.sub;
+
+    if (!userId) {
       throw new ForbiddenException('Usuário não autenticado');
     }
 
@@ -83,7 +84,7 @@ export class OwnershipGuard implements CanActivate {
     }
 
     // Verifica ownership
-    if (resource.userId !== user.sub && resource.userId !== user.id) {
+    if (resource.userId !== userId) {
       throw new ForbiddenException(
         'Você não tem permissão para acessar este recurso',
       );

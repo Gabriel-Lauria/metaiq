@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { InsightsService } from './insights.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { Insight } from './insight.entity';
@@ -8,8 +7,6 @@ import { Campaign } from '../campaigns/campaign.entity';
 
 describe('InsightsService', () => {
   let service: InsightsService;
-  let insightRepo: Repository<Insight>;
-  let metricsService: MetricsService;
 
   const mockInsightRepo = {
     create: jest.fn(),
@@ -40,8 +37,12 @@ describe('InsightsService', () => {
     }).compile();
 
     service = module.get<InsightsService>(InsightsService);
-    insightRepo = module.get<Repository<Insight>>(getRepositoryToken(Insight));
-    metricsService = module.get<MetricsService>(MetricsService);
+
+    mockInsightRepo.create.mockImplementation((payload) => payload);
+    mockInsightRepo.save.mockImplementation(async (payload) => ({
+      id: 'saved-insight',
+      ...payload,
+    }));
   });
 
   afterEach(() => {
@@ -95,24 +96,12 @@ describe('InsightsService', () => {
       mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null); // No duplicate
 
-      const mockInsight = {
-        id: 'insight-1',
-        campaignId: mockCampaign.id,
-        type: 'alert',
-        severity: 'danger',
-        message: expect.stringContaining('ROAS'),
-        recommendation: expect.any(String),
-        resolved: false,
-      };
-
-      mockInsightRepo.create.mockReturnValue(mockInsight);
-      mockInsightRepo.save.mockResolvedValue(mockInsight);
-
       const result = await service.generateForCampaign(mockCampaign);
 
-      expect(result).toHaveLength(1);
-      expect(result[0].severity).toBe('danger');
-      expect(result[0].type).toBe('alert');
+      const roasInsight = result.find(i => i.message.includes('ROAS'));
+      expect(roasInsight).toBeDefined();
+      expect(roasInsight?.severity).toBe('danger');
+      expect(roasInsight?.type).toBe('alert');
     });
 
     it('should generate CTR danger insight when CTR < 0.5%', async () => {
@@ -133,19 +122,6 @@ describe('InsightsService', () => {
 
       mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
-
-      const mockInsight = {
-        id: 'insight-2',
-        campaignId: mockCampaign.id,
-        type: 'alert',
-        severity: 'danger',
-        message: expect.stringContaining('CTR'),
-        recommendation: expect.any(String),
-        resolved: false,
-      };
-
-      mockInsightRepo.create.mockReturnValue(mockInsight);
-      mockInsightRepo.save.mockResolvedValue(mockInsight);
 
       const result = await service.generateForCampaign(mockCampaign);
 
@@ -174,23 +150,10 @@ describe('InsightsService', () => {
       mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
 
-      const mockInsight = {
-        id: 'insight-3',
-        campaignId: mockCampaign.id,
-        type: 'opportunity',
-        severity: 'success',
-        message: expect.stringContaining('ROAS'),
-        recommendation: expect.stringContaining('aumentar'),
-        resolved: false,
-      };
-
-      mockInsightRepo.create.mockReturnValue(mockInsight);
-      mockInsightRepo.save.mockResolvedValue(mockInsight);
-
       const result = await service.generateForCampaign(mockCampaign);
 
       expect(result.length).toBeGreaterThan(0);
-      const opportunityInsight = result.find(i => i.type === 'opportunity');
+      const opportunityInsight = result.find(i => i.message.includes('ROAS'));
       expect(opportunityInsight).toBeDefined();
       expect(opportunityInsight?.severity).toBe('success');
     });

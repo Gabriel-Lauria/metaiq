@@ -17,9 +17,9 @@ import { User } from '../users/user.entity';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const expiresIn = configService.get<string>('JWT_EXPIRES_IN') || '1h';
+        const expiresIn = configService.get<string>('jwt.expiresIn') || '1h';
         return {
-          secret: configService.get<string>('JWT_SECRET'),
+          secret: configService.get<string>('jwt.secret'),
           signOptions: { expiresIn: expiresIn as any },
         };
       },
