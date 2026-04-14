@@ -153,6 +153,45 @@
   padding: 0 4px;
 }
 
+/* Sort Headers */
+.sort-headers {
+  display: none;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(110, 231, 247, 0.08);
+  margin-bottom: 12px;
+
+  @media (min-width: 1200px) {
+    display: flex;
+  }
+}
+
+.sort-header-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-family: 'DM Sans', sans-serif;
+  flex: 1;
+  text-align: left;
+
+  &:hover {
+    background: rgba(110, 231, 247, 0.08);
+    color: #cbd5e1;
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
 .campaigns-list {
   display: flex;
   flex-direction: column;

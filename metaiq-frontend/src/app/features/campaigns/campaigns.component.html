@@ -64,6 +64,28 @@
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
     </div>
 
+    <!-- Sort Headers -->
+    <div class="sort-headers" *ngIf="filtered().length > 0">
+      <button class="sort-header-btn" (click)="toggleSort('name')">
+        Nome {{ getSortIndicator('name') }}
+      </button>
+      <button class="sort-header-btn" (click)="toggleSort('ctr')">
+        CTR {{ getSortIndicator('ctr') }}
+      </button>
+      <button class="sort-header-btn" (click)="toggleSort('cpa')">
+        CPA {{ getSortIndicator('cpa') }}
+      </button>
+      <button class="sort-header-btn" (click)="toggleSort('roas')">
+        ROAS {{ getSortIndicator('roas') }}
+      </button>
+      <button class="sort-header-btn" (click)="toggleSort('status')">
+        Status {{ getSortIndicator('status') }}
+      </button>
+      <button class="sort-header-btn" (click)="toggleSort('score')">
+        Score {{ getSortIndicator('score') }}
+      </button>
+    </div>
+
     <!-- Campaigns List -->
     <div class="campaigns-list" *ngIf="filtered().length > 0">
       <div class="campaign-row" *ngFor="let campaign of pagedCampaigns()">
@@ -161,12 +183,12 @@
           </div>
 
           <div class="detail-actions">
-            <button class="btn btn-secondary">Visualizar Relatório</button>
-            <button class="btn btn-secondary">Editar</button>
-            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'">
+            <button class="btn btn-secondary" disabled [title]="'Em desenvolvimento'">Visualizar Relatório</button>
+            <button class="btn btn-secondary" disabled [title]="'Em desenvolvimento'">Editar</button>
+            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" disabled [title]="'Em desenvolvimento'">
               Pausar
             </button>
-            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'">
+            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" disabled [title]="'Em desenvolvimento'">
               Ativar
             </button>
           </div>

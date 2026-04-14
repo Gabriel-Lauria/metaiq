@@ -30,6 +30,89 @@ body {
   min-height: 100vh;
   background: var(--bg-primary);
   color: var(--text-primary);
+  transition: grid-template-columns 0.3s ease;
+
+  &.collapsed {
+    grid-template-columns: 60px 1fr;
+
+    .sidebar {
+      width: 60px;
+
+      .logo-section {
+        padding: 0 12px;
+      }
+
+      .logo span:last-of-type {
+        display: none;
+      }
+
+      .nav-label {
+        display: none;
+      }
+
+      .nav-item {
+        padding: 12px;
+        justify-content: center;
+        border-left: none;
+        border-radius: 8px;
+        margin: 0 8px;
+
+        &.active {
+          border-left: none;
+          background: rgba(110, 231, 247, 0.12);
+
+          .nav-icon {
+            color: #6ee7f7;
+          }
+        }
+      }
+
+      .sidebar-profile {
+        flex-direction: column;
+        padding: 12px;
+        gap: 8px;
+
+        .profile-meta {
+          display: none;
+        }
+      }
+    }
+
+    .main-wrapper {
+      margin-left: 60px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+  animation: fadeIn 0.2s ease-out;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+
+  @media (min-width: 769px) {
+    display: none;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .sidebar {
@@ -137,6 +220,16 @@ body {
   transition: all 0.2s ease;
 }
 
+.nav-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.nav-label {
+  transition: all 0.2s ease;
+}
+
 .sidebar-profile {
   display: flex;
   align-items: center;
@@ -193,6 +286,14 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 600;
+}
+
+.profile-email {
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main-wrapper {
@@ -255,6 +356,25 @@ body {
   @media (max-width: 768px) {
     display: flex;
   }
+}
+
+.page-title-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 1 auto;
+
+  @media (max-width: 1024px) {
+    display: none;
+  }
+}
+
+.page-title-header {
+  font-size: 16px;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .header-spacer {
