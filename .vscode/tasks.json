@@ -66,6 +66,30 @@
 			"type": "shell",
 			"command": "git add .",
 			"group": "build"
+		},
+		{
+			"label": "Git Commit Phase 6",
+			"type": "shell",
+			"command": "git commit -m phase6complete",
+			"group": "build"
+		},
+		{
+			"label": "Git Push",
+			"type": "shell",
+			"command": "git push -u origin feat/copilot-wip",
+			"group": "build"
+		},
+		{
+			"label": "Remove Frontend Duplicata",
+			"type": "shell",
+			"command": "Remove-Item -Path frontend -Recurse -Force",
+			"group": "build"
+		},
+		{
+			"label": "Git Add Security Fixes",
+			"type": "shell",
+			"command": "git add .",
+			"group": "build"
 		}
 	]
 }
