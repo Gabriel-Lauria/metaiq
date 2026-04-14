@@ -1,5 +1,5 @@
 import { CryptoTransformer } from './crypto.transformer';
-import { encrypt, decrypt } from '../crypto.util';
+import { encrypt } from '../crypto.util';
 
 describe('CryptoTransformer', () => {
   let transformer: CryptoTransformer;

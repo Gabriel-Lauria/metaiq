@@ -3,16 +3,32 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import * as bcrypt from 'bcryptjs';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
-export interface CreateUserDto {
+export class CreateUserDto {
+  @IsEmail()
   email: string;
+
+  @IsString()
+  @MinLength(6)
   password: string;
+
+  @IsString()
   name: string;
 }
 
-export interface UpdateUserDto {
+export class UpdateUserDto {
+  @IsOptional()
+  @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
   password?: string;
 }
 

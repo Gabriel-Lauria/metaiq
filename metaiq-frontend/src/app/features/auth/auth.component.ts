@@ -1,4 +1,4 @@
-import { Component, OnInit, DestroyRef } from '@angular/core';
+import { Component, DestroyRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -18,7 +18,9 @@ export class AuthComponent implements OnInit {
   registerForm!: FormGroup;
   isLogin = true;
   loading = false;
-  error = '';
+  message = '';
+  messageType: 'error' | 'success' | 'info' = 'info';
+  apiOffline = false;
 
   constructor(
     private fb: FormBuilder,
@@ -32,7 +34,7 @@ export class AuthComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.authService.isAuthenticated()) {
-      this.router.navigate(['/dashboard']);
+      queueMicrotask(() => this.router.navigate(['/dashboard']));
     }
   }
 
@@ -43,6 +45,7 @@ export class AuthComponent implements OnInit {
     });
 
     this.registerForm = this.fb.group({
+      name: ['', [Validators.required, Validators.minLength(2)]],
       email: ['', [Validators.required, Validators.email]],
       password: ['', [Validators.required, Validators.minLength(6)]],
       confirmPassword: ['', [Validators.required]]
@@ -51,18 +54,28 @@ export class AuthComponent implements OnInit {
 
   toggleMode(): void {
     this.isLogin = !this.isLogin;
-    this.error = '';
+    this.clearMessage();
+    this.loginForm.markAsPristine();
+    this.registerForm.markAsPristine();
   }
 
   onSubmit(): void {
     const form = this.isLogin ? this.loginForm : this.registerForm;
     if (form.invalid) {
-      this.error = 'Por favor, preencha todos os campos corretamente';
+      form.markAllAsTouched();
+      this.setMessage('error', 'Revise os campos marcados antes de continuar.');
+      return;
+    }
+
+    if (!this.isLogin && form.value.password !== form.value.confirmPassword) {
+      form.get('confirmPassword')?.setErrors({ mismatch: true });
+      form.get('confirmPassword')?.markAsTouched();
+      this.setMessage('error', 'As senhas precisam ser iguais.');
       return;
     }
 
     this.loading = true;
-    this.error = '';
+    this.clearMessage();
 
     if (this.isLogin) {
       this.authService
@@ -74,43 +87,70 @@ export class AuthComponent implements OnInit {
             this.router.navigate(['/dashboard']);
           },
           error: (err) => {
-            this.loading = false;
-            this.error = err?.message || 'Erro ao fazer login. Verifique suas credenciais.';
+            this.deferAuthError(err, 'Erro ao fazer login. Verifique suas credenciais.');
           }
         });
     } else {
+      const { name, email, password } = form.value;
       this.authService
-        .register(form.value)
+        .register({ name, email, password })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: () => {
+            this.loading = false;
             this.uiService.showSuccess('Conta criada', 'Sua conta foi criada com sucesso! Faça login para continuar.');
             this.isLogin = true;
             this.loginForm.patchValue({
-              email: form.value.email,
-              password: form.value.password
+              email,
+              password
             });
-            this.error = '';
-            setTimeout(() => (this.error = ''), 3000);
+            this.setMessage('success', 'Conta criada. Confira os dados e entre.');
           },
           error: (err) => {
-            this.loading = false;
-            this.error = err?.message || 'Erro ao criar conta. Tente novamente.';
+            this.deferAuthError(err, 'Erro ao criar conta. Tente novamente.');
           }
         });
     }
   }
 
-  getFieldError(fieldName: string): string {
-    const form = this.isLogin ? this.loginForm : this.registerForm;
+  getFieldError(form: FormGroup, fieldName: string): string {
     const field = form.get(fieldName);
     if (!field || !field.errors || !field.touched) return '';
 
     if (field.errors['required']) return 'Este campo é obrigatório';
     if (field.errors['email']) return 'Email inválido';
+    if (field.errors['mismatch']) return 'As senhas não conferem';
     if (field.errors['minlength'])
       return `Mínimo ${field.errors['minlength'].requiredLength} caracteres`;
 
     return '';
+  }
+
+  isInvalid(form: FormGroup, fieldName: string): boolean {
+    const field = form.get(fieldName);
+    return Boolean(field?.touched && field.invalid);
+  }
+
+  private clearMessage(): void {
+    this.message = '';
+    this.apiOffline = false;
+  }
+
+  private setMessage(type: 'error' | 'success' | 'info', message: string): void {
+    this.messageType = type;
+    this.message = message;
+  }
+
+  private handleAuthError(err: any, fallback: string): void {
+    this.apiOffline = err?.status === 0;
+    const offlineMessage = 'Backend offline. Inicie o backend em http://localhost:3004 e tente novamente.';
+    this.setMessage('error', this.apiOffline ? offlineMessage : err?.message || fallback);
+  }
+
+  private deferAuthError(err: any, fallback: string): void {
+    setTimeout(() => {
+      this.loading = false;
+      this.handleAuthError(err, fallback);
+    });
   }
 }

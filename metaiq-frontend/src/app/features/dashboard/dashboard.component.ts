@@ -5,7 +5,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { UiService } from '../../core/services/ui.service';
-import { AggregatedMetrics, Insight, CampaignInsightReport } from '../../core/models';
+import { AggregatedMetrics, Insight } from '../../core/models';
 
 @Component({
   selector: 'app-dashboard',
@@ -41,18 +41,18 @@ export class DashboardComponent implements OnInit {
           return of(null);
         })
       ),
-      reports: this.api.getInsights(this.period()).pipe(
+      insights: this.api.getInsights(this.period()).pipe(
         catchError((err) => {
           console.error('Erro ao carregar insights:', err);
-          return of([] as CampaignInsightReport[]);
+          return of([] as Insight[]);
         })
       ),
     })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ metrics, reports }) => {
+        next: ({ metrics, insights }) => {
           this.metrics.set(metrics);
-          this.insights.set(this.transformInsights(reports || []));
+          this.insights.set(insights || []);
           this.lastUpdated.set(new Date());
           this.loading.set(false);
         },
@@ -84,9 +84,5 @@ export class DashboardComponent implements OnInit {
 
   getLastUpdatedLabel(): string {
     return this.lastUpdated() ? new Date(this.lastUpdated()!).toLocaleTimeString('pt-BR') : 'agora';
-  }
-
-  private transformInsights(reports: CampaignInsightReport[]): Insight[] {
-    return reports.flatMap((report) => report.insights || []);
   }
 }

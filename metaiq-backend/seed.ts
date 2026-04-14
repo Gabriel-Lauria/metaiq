@@ -16,14 +16,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ quiet: true } as dotenv.DotenvConfigOptions & { quiet: true });
 
 import { User }        from './src/modules/users/user.entity';
 import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
 import { Campaign }    from './src/modules/campaigns/campaign.entity';
 import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
+import { Insight }      from './src/modules/insights/insight.entity';
 import { MetricsEngine } from './src/modules/metrics/metrics.engine';
-import { encrypt }     from './src/common/crypto.util';
+import { InitialSchema1776170000000 } from './src/migrations/1776170000000-InitialSchema';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
@@ -54,12 +55,14 @@ async function seed() {
     type: 'sqlite',
     database: DB_PATH,
     busyTimeout: 5000,
-    entities: [User, AdAccount, Campaign, MetricDaily],
-    synchronize: true,
+    entities: [User, AdAccount, Campaign, MetricDaily, Insight],
+    migrations: [InitialSchema1776170000000],
+    synchronize: false,
     logging: false,
   });
 
   await ds.initialize();
+  await ds.runMigrations();
   console.log('🗄️  Banco SQLite pronto em:', DB_PATH);
 
   const engine = new MetricsEngine();
@@ -85,7 +88,7 @@ async function seed() {
     account = accRepo.create({
       metaId: 'act_123456789',
       name: 'Conta Demo — E-commerce',
-      accessToken: encrypt('demo_token_nao_funcional'),
+      accessToken: 'demo_token_nao_funcional',
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       userId: user.id,
     });

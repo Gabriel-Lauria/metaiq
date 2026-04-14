@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { LoggerService } from './services/logger.service';
 import { RetryService } from './services/retry.service';
 import { MetricsService } from './services/metrics.service';
+import { CurrentUserService } from './services/current-user.service';
 
 /**
  * CommonModule fornece serviços compartilhados usados por toda a aplicação.
@@ -10,12 +11,13 @@ import { MetricsService } from './services/metrics.service';
  * - LoggerService: logging estruturado e consistente
  * - RetryService: retry com exponential backoff
  * - MetricsService: coleta de métricas de performance
+ * - CurrentUserService: abstração do usuário autenticado
  * - Guards: JWT, Ownership, etc
  * - Decorators: CurrentUser, Throttle, etc
  * - Utils: crypto, metrics, pagination
  */
 @Module({
-  providers: [LoggerService, RetryService, MetricsService],
-  exports: [LoggerService, RetryService, MetricsService],
+  providers: [LoggerService, RetryService, MetricsService, CurrentUserService],
+  exports: [LoggerService, RetryService, MetricsService, CurrentUserService],
 })
 export class CommonModule {}

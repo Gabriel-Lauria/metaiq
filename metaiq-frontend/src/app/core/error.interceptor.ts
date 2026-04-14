@@ -50,20 +50,21 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         }
       } else if (error.status === 0) {
         // Conexão falhou
-        userFriendlyMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+        userFriendlyMessage = 'Backend indisponível. Inicie o servidor em http://localhost:3004 e tente novamente.';
         if (shouldShowNotification) {
-          uiService.showError('Erro de conexão', userFriendlyMessage);
+          uiService.showError('API offline', userFriendlyMessage);
           shouldShowNotification = false;
         }
       }
 
       // Log do erro técnico (apenas para desenvolvimento)
-      console.error('HTTP Error:', {
+      const logPayload = {
         status: error.status,
         message: error.message,
         url: req.url,
         userMessage: userFriendlyMessage
-      });
+      };
+      error.status === 0 ? console.warn('HTTP Error:', logPayload) : console.error('HTTP Error:', logPayload);
 
       // Retornar erro padronizado
       return throwError(() => ({

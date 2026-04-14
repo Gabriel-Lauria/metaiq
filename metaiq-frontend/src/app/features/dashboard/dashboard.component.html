@@ -139,9 +139,9 @@
         <div class="insight-card" *ngFor="let insight of allInsights">
           <div class="insight-header">
             <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
-            <span class="insight-title">{{ insight.title }}</span>
+            <span class="insight-title">{{ insight.title || insight.message }}</span>
           </div>
-          <p class="insight-description">{{ insight.description }}</p>
+          <p class="insight-description">{{ insight.description || insight.recommendation }}</p>
         </div>
       </div>
     </div>

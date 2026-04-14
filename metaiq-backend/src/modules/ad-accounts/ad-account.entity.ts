@@ -18,7 +18,7 @@ export class AdAccount {
   @Column({ nullable: true })
   currency: string; // USD, BRL, etc.
 
-  @Column({ nullable: true, transformer: new CryptoTransformer() })
+  @Column({ nullable: true, select: false, transformer: new CryptoTransformer() })
   accessToken: string; // Token de acesso da Meta API (criptografado no banco)
 
   @Column({ type: 'date', nullable: true })

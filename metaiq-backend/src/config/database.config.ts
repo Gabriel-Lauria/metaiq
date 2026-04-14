@@ -9,7 +9,14 @@ export interface DatabaseConfig {
   username?: string;
   password?: string;
   ssl?: boolean | object;
+  synchronize: boolean;
+  migrationsRun: boolean;
 }
+
+const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
+  if (value === undefined) return fallback;
+  return value === 'true';
+};
 
 export default registerAs('database', () => ({
   type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
@@ -24,4 +31,9 @@ export default registerAs('database', () => ({
   username: process.env.POSTGRES_USER || 'postgres',
   password: process.env.POSTGRES_PASSWORD || 'postgres',
   ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  synchronize: parseBoolean(
+    process.env.TYPEORM_SYNCHRONIZE,
+    process.env.NODE_ENV !== 'production',
+  ),
+  migrationsRun: parseBoolean(process.env.TYPEORM_MIGRATIONS_RUN, false),
 }));

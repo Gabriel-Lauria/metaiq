@@ -30,7 +30,6 @@ export class MetricsService {
    */
   startTimer(operation: string) {
     const startTime = Date.now();
-    const id = `${operation}-${Date.now()}-${Math.random()}`;
 
     return {
       end: (success: boolean = true, metadata?: Record<string, any>) => {

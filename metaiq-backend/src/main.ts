@@ -39,15 +39,23 @@ async function bootstrap() {
     disableErrorMessages: appConfig.nodeEnv === 'production',
   }));
 
-const allowedOrigins = [
-  'http://localhost:4200',
-  'http://localhost:63769',
-];
+  const allowedOrigins = [
+    appConfig.frontendUrl,
+    'http://localhost:4200',
+    'http://localhost:63769',
+  ].filter(Boolean);
 
-app.enableCors({
-  origin: true,
-  credentials: true,
-});
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origin not allowed by CORS'));
+    },
+    credentials: true,
+  });
   app.setGlobalPrefix('api');
 
   await app.listen(appConfig.port);

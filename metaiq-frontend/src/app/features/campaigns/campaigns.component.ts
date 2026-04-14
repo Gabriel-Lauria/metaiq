@@ -125,11 +125,12 @@ export class CampaignsComponent implements OnInit {
     this.error.set(null);
 
     this.apiService
-      .get('/api/campaigns')
+      .get('/campaigns')
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (data: Campaign[]) => {
-          this.campaigns.set(data);
+        next: (response: Campaign[] | { data: Campaign[] }) => {
+          const campaigns = Array.isArray(response) ? response : response.data;
+          this.campaigns.set(campaigns);
           this.currentPage.set(1);
           this.loading.set(false);
         },

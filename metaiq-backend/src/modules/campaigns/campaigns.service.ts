@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Campaign } from './campaign.entity';
@@ -47,10 +47,16 @@ export class CampaignsService {
   }
 
   async findOne(id: string, userId: string): Promise<Campaign> {
-    return this.campaignRepository.findOne({
+    const campaign = await this.campaignRepository.findOne({
       where: { id, userId },
       relations: ['adAccount'],
     });
+
+    if (!campaign) {
+      throw new NotFoundException(`Campanha ${id} não encontrada`);
+    }
+
+    return campaign;
   }
 
   async findAllActive(): Promise<Campaign[]> {

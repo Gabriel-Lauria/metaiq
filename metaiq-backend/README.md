@@ -1,186 +1,146 @@
-# metaIQ — Plataforma de Inteligência para Meta Ads
+# MetaIQ Backend
 
-Sistema completo: NestJS + SQLite + Angular 19.
-Sem dependências externas — roda direto no seu PC.
+NestJS API for MetaIQ with JWT auth, TypeORM, SQLite for local development, and PostgreSQL-ready production settings.
 
----
-
-## Início em 4 comandos
+## Quick Start
 
 ```bash
-# 1. Backend
-cd metaiq-backend
 npm install
-cp .env.example .env      # editar JWT_SECRET, CRYPTO_SECRET, META_APP_ID
-npm run seed              # cria banco + dados de demo
-npm run start:dev         # http://localhost:3000
-
-# 2. Frontend (outro terminal)
-cd metaiq-frontend
-npm install
-ng serve                  # http://localhost:4200
+copy .env.example .env
+npm run seed
+npm run start:dev
 ```
 
-Login com dados de demo:
-  Email:  demo@metaiq.dev
-  Senha:  Demo@1234
+Default API URL:
 
----
-
-## Stack
-
-| Camada | Tecnologia |
-|---|---|
-| Backend | NestJS 11 + TypeORM |
-| Banco | SQLite via sql.js (arquivo .db local) |
-| Auth | JWT access (15min) + refresh (7d) + bcrypt |
-| Tokens Meta | AES-256 criptografado em repouso |
-| Coleta | Cron job a cada 1h (@nestjs/schedule) |
-| API Meta | Graph API v19 via OAuth 2.0 |
-| Frontend | Angular 19 + Chart.js + SCSS |
-| Testes | Jest — 14/14 passando |
-
----
-
-## Estrutura
-
-```
-metaiq/
-├── metaiq-backend/
-│   ├── src/
-│   │   ├── modules/
-│   │   │   ├── auth/          JWT, login, registro, refresh
-│   │   │   ├── users/         Perfil
-│   │   │   ├── meta/          OAuth Meta + Graph API
-│   │   │   ├── campaigns/     Campanhas sincronizadas
-│   │   │   ├── metrics/       Métricas diárias + engine CTR/CPA/ROAS
-│   │   │   └── insights/      12 regras de negócio + scores
-│   │   ├── infrastructure/
-│   │   │   └── cron/          Coleta automática a cada 1h
-│   │   ├── common/            Guards, decorators, filtros, crypto
-│   │   └── seed.ts            Dados de demonstração
-│   └── .env.example
-│
-├── metaiq-frontend/
-│   └── src/app/
-│       ├── core/              Models, services, guards, interceptors
-│       └── features/
-│           ├── auth/          Login + Registro
-│           ├── dashboard/     KPIs, gráficos, insights
-│           ├── campaigns/     Tabela com score e drill-down
-│           └── accounts/      Contas Meta conectadas
-│
-└── docker-compose.yml         Ambiente containerizado (opcional)
+```text
+http://localhost:3004/api
 ```
 
----
+Demo user created by `npm run seed`:
 
-## Configurar Meta API (para dados reais)
+```text
+Email: demo@metaiq.dev
+Senha: Demo@1234
+```
 
-1. Acesse developers.facebook.com → criar App → tipo Business
-2. Adicionar produto: Marketing API
-3. Em OAuth → Redirect URIs: `http://localhost:3000/meta/callback`
-4. Copiar App ID e App Secret para o `.env`
-5. Acesse `/accounts` no frontend → clicar "Conectar com Facebook"
-6. O cron job coleta automaticamente a cada hora
+## Environment
 
-Enquanto não conectar uma conta Meta, use os dados do seed.
+Copy [.env.example](./.env.example) to `.env` and replace all secrets.
 
----
-
-## Variáveis do .env
+Required in production:
 
 ```env
-SQLITE_PATH=./data/metaiq.db
+NODE_ENV=production
+PORT=3004
+FRONTEND_URL=https://your-frontend.example
 
-JWT_SECRET=gere_com_node_crypto_randomBytes_48
-JWT_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=outro_segredo_diferente
-JWT_REFRESH_EXPIRES_IN=7d
-
-CRYPTO_SECRET=minimo_32_caracteres_aqui!!!!
-
-META_APP_ID=seu_app_id
-META_APP_SECRET=seu_app_secret
-META_REDIRECT_URI=http://localhost:3000/meta/callback
-META_API_VERSION=v19.0
-
-PORT=3000
-NODE_ENV=development
+JWT_SECRET=long-random-secret
+JWT_REFRESH_SECRET=another-long-random-secret
+CRYPTO_SECRET=another-long-random-secret
 ```
 
-Gerar segredos:
+Generate secrets:
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
----
+The app intentionally refuses to boot in production if `JWT_SECRET`, `JWT_REFRESH_SECRET`, or `CRYPTO_SECRET` are left as defaults.
 
-## Scripts do Backend
+## Database
+
+Local SQLite:
+
+```env
+DATABASE_TYPE=sqlite
+SQLITE_PATH=./data/metaiq.db
+TYPEORM_SYNCHRONIZE=true
+TYPEORM_MIGRATIONS_RUN=false
+```
+
+Production PostgreSQL:
+
+```env
+DATABASE_TYPE=postgres
+DATABASE_URL=postgres://user:password@host:5432/metaiq
+TYPEORM_SYNCHRONIZE=false
+TYPEORM_MIGRATIONS_RUN=false
+```
+
+Run migrations manually before starting production:
 
 ```bash
-npm run start:dev    # desenvolvimento com hot-reload
-npm run start:prod   # produção
-npm run build        # compilar TypeScript
-npm run seed         # popular banco com dados demo
-npm test             # 14/14 testes
-npm run test:cov     # com cobertura
+npm run migration:run
+npm run start:prod
 ```
 
----
+Or allow the app to run pending migrations on boot:
 
-## Engine de Score (0–100)
-
-| Pilar | Peso | Referência |
-|---|---|---|
-| CTR  | 30% | 2% = máximo |
-| CPA  | 40% | ≤ R$10 = máximo · > R$100 = zero |
-| ROAS | 30% | 3x = máximo |
-
----
-
-## Regras de Insights (12 regras)
-
-| Código | Tipo | Condição |
-|---|---|---|
-| ROAS_EXCELLENT | success | ROAS ≥ 5x |
-| ROAS_GOOD | success | ROAS ≥ 3x |
-| ROAS_LOW | warning | 0 < ROAS < 3x |
-| ROAS_NEGATIVE | danger | ROAS < 1x |
-| CPA_EXCELLENT | success | CPA ≤ R$20 |
-| CPA_HIGH | warning | CPA > R$50 |
-| CPA_CRITICAL | danger | CPA > R$100 |
-| NO_CONVERSIONS | warning | gasto > 0 e conversões = 0 |
-| CTR_LOW | warning | CTR < 0,5% |
-| CTR_HIGH | success | CTR ≥ 3% |
-| SCORE_HIGH | success | score ≥ 80 |
-| SCORE_LOW | danger | score < 30 |
-
----
-
-## Endpoints da API
-
+```env
+TYPEORM_MIGRATIONS_RUN=true
 ```
-GET  /health
 
-POST /auth/register        { name, email, password }
-POST /auth/login           { email, password }
-POST /auth/refresh         { refreshToken }
+Prefer manual migrations for controlled production deploys.
 
-GET  /users/me             🔒
-PATCH /users/me            🔒
+## Scripts
 
-GET  /meta/connect         🔒 → OAuth Facebook
-GET  /meta/callback
-GET  /meta/accounts        🔒
+```bash
+npm run start:dev       # development server
+npm run build           # compile TypeScript
+npm run start:prod      # run dist/main.js
+npm run seed            # run migrations and seed demo data
+npm test -- --runInBand # unit tests
+npm run test:e2e -- --runInBand
+npm run lint
+```
 
-GET  /campaigns            🔒
-GET  /campaigns/:id        🔒
+Migration scripts:
 
-GET  /metrics/summary               🔒 ?from=&to=
-GET  /metrics/campaigns/:id         🔒
-GET  /metrics/campaigns/:id/aggregate 🔒
+```bash
+npm run migration:show
+npm run migration:run
+npm run migration:revert
+npm run migration:generate -- src/migrations/MeaningfulName
+```
 
-GET  /insights             🔒 ?from=&to=
-GET  /insights/campaigns/:id 🔒
+## Security Notes
+
+- Every user-facing data route must filter by authenticated `userId` directly or through a campaign ownership join.
+- Meta `accessToken` is encrypted at rest and excluded from default selects.
+- CORS uses an allowlist from `FRONTEND_URL` plus local development origins.
+- `/api/meta/*` operational endpoints require JWT.
+- `synchronize` must stay disabled in production.
+
+## Current API Surface
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/refresh
+
+GET    /api/users/me
+PATCH  /api/users/me
+DELETE /api/users/me
+
+GET    /api/ad-accounts
+GET    /api/ad-accounts/:id
+POST   /api/ad-accounts
+PATCH  /api/ad-accounts/:id
+DELETE /api/ad-accounts/:id
+
+GET /api/campaigns
+GET /api/campaigns/:id
+
+GET /api/metrics
+GET /api/metrics/summary
+GET /api/metrics/campaigns/:campaignId
+GET /api/metrics/campaigns/:campaignId/aggregate
+
+GET   /api/insights
+GET   /api/insights/:id
+PATCH /api/insights/:id/resolve
+
+GET  /api/meta/status
+POST /api/meta/sync
 ```

@@ -41,7 +41,7 @@ export class RetryService {
     } = options || {};
 
     let lastError: Error | null = null;
-    let delay = baseDelayMs;
+    const delay = baseDelayMs;
 
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
