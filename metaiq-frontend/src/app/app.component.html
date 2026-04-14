@@ -27,15 +27,15 @@
       </a>
     </nav>
 
-    <div class="sidebar-footer">
-      <div class="account-badge">
-        <div class="account-dot"></div>
-        <div>
-          <div class="account-name">Conta #12847</div>
-          <div class="account-status">Conectada · Meta Ads</div>
-        </div>
+    <div class="sidebar-profile" *ngIf="currentUser$ | async as user">
+      <div class="profile-avatar">{{ user.name?.split(' ').map(n => n[0]).join('') }}</div>
+      <div class="profile-meta">
+        <span class="profile-name">{{ user.name }}</span>
+        <span class="profile-role">Usuário autenticado</span>
       </div>
     </div>
+
+    <div class="sidebar-footer"></div>
   </aside>
 
   <!-- Main Content -->

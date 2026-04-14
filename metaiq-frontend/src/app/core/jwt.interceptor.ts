@@ -5,6 +5,7 @@ import {
   HttpHandlerFn,
   HttpErrorResponse,
 } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { Observable, throwError } from 'rxjs';
 import { catchError, switchMap, map, finalize, shareReplay } from 'rxjs/operators';
 import { AuthService } from './services/auth.service';
@@ -14,21 +15,25 @@ let refreshTokenRequest: Observable<string> | null = null;
 
 export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
+  const router = inject(Router);
   const token = authService.getAccessToken();
 
-  if (token && !isWhitelistedUrl(req.url)) {
+  if (token && !isAuthUrl(req.url)) {
     req = addToken(req, token);
   }
 
   // Add credentials for auth endpoints
-  if (isWhitelistedUrl(req.url)) {
+  if (isAuthUrl(req.url)) {
     req = addCredentials(req);
   }
 
   return next(req).pipe(
     catchError(error => {
       if (error instanceof HttpErrorResponse && error.status === 401) {
-        return handle401Error(req, next, authService);
+        if (isAuthUrl(req.url)) {
+          return throwError(() => error);
+        }
+        return handle401Error(req, next, authService, router);
       }
       return throwError(() => error);
     })
@@ -50,7 +55,8 @@ function addCredentials(req: HttpRequest<any>): HttpRequest<any> {
 function handle401Error(
   req: HttpRequest<any>,
   next: HttpHandlerFn,
-  authService: AuthService
+  authService: AuthService,
+  router: Router
 ): Observable<any> {
   if (!isRefreshing) {
     isRefreshing = true;
@@ -75,12 +81,15 @@ function handle401Error(
     }),
     catchError(err => {
       authService.logout();
+      if (router.url !== '/auth') {
+        router.navigate(['/auth']);
+      }
       return throwError(() => err);
     })
   );
 }
 
-function isWhitelistedUrl(url: string): boolean {
+function isAuthUrl(url: string): boolean {
   const whitelist = ['/auth/login', '/auth/register', '/auth/refresh'];
   return whitelist.some(path => url.includes(path));
 }

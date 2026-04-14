@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
@@ -25,6 +25,22 @@ export class DashboardComponent implements OnInit {
   metrics = signal<AggregatedMetrics | null>(null);
   insights = signal<Insight[]>([]);
   lastUpdated = signal<Date | null>(null);
+  hasMetricsData = computed(() => {
+    const metrics = this.metrics();
+    if (!metrics) return false;
+
+    return [
+      metrics.impressions,
+      metrics.clicks,
+      metrics.spend,
+      metrics.conversions,
+      metrics.revenue,
+      metrics.ctr,
+      metrics.cpa,
+      metrics.roas,
+    ].some((value) => Number(value) > 0);
+  });
+  hasDashboardData = computed(() => this.hasMetricsData() || this.insights().length > 0);
 
   ngOnInit(): void {
     this.loadData();
@@ -76,6 +92,10 @@ export class DashboardComponent implements OnInit {
 
   fmtPct(value: number): string {
     return `${(value * 100).toFixed(2)}%`;
+  }
+
+  fmtRoas(value: number): string {
+    return `${value.toFixed(2)}x`;
   }
 
   get allInsights(): Insight[] {
