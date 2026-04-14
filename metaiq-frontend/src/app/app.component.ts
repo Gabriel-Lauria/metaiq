@@ -37,14 +37,20 @@ export class AppComponent {
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe(() => {
         this.updatePageTitle();
-        // Fechar overlay ao navegar
-        this.sidebarOverlayOpen.set(false);
+        // Fechar overlay ao navegar em mobile
+        if (this.isSmallScreen()) {
+          this.sidebarOpen.set(false);
+          this.sidebarOverlayOpen.set(false);
+        }
       });
 
     // Persistir estado da sidebar quando mudar
     effect(() => {
       const state = this.sidebarOpen();
-      localStorage.setItem('sidebar-state', state ? 'open' : 'collapsed');
+      // Só salvar estado collapsed em desktop (mobile sempre volta collapsed)
+      if (!this.isSmallScreen()) {
+        localStorage.setItem('sidebar-state', state ? 'open' : 'collapsed');
+      }
     });
   }
 

@@ -3,6 +3,17 @@
   flex-direction: column;
   gap: 28px;
   animation: fadeIn 0.3s ease-in;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 20px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 16px;
+  }
 }
 
 @keyframes fadeIn {
@@ -22,7 +33,12 @@
   justify-content: space-between;
   gap: 20px;
 
-  @media (min-width: 1024px) {
+  @media (min-width: 1440px) {
+    gap: 32px;
+    align-items: center;
+  }
+
+  @media (min-width: 1024px) and (max-width: 1439px) {
     gap: 24px;
   }
 
@@ -256,7 +272,7 @@
   border-bottom: 1px solid rgba(110, 231, 247, 0.08);
   margin-bottom: 12px;
 
-  @media (min-width: 1200px) {
+  @media (min-width: 1024px) {
     display: flex;
   }
 }
@@ -450,15 +466,19 @@
 
 .campaign-metrics {
   display: flex;
-  gap: 32px;
+  gap: 16px;
   align-items: center;
 
-  @media (min-width: 1024px) {
-    gap: 28px;
+  @media (min-width: 1440px) {
+    gap: 24px;
   }
 
-  @media (max-width: 1023px) and (min-width: 768px) {
+  @media (min-width: 1024px) and (max-width: 1439px) {
     gap: 20px;
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
+    gap: 16px;
     flex-wrap: wrap;
   }
 
@@ -471,17 +491,22 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-width: 100px;
+  gap: 4px;
+  min-width: 70px;
 
-  @media (min-width: 1024px) {
-    min-width: 90px;
+  @media (min-width: 1440px) {
+    min-width: 80px;
     gap: 5px;
   }
 
-  @media (max-width: 1023px) and (min-width: 768px) {
-    min-width: 80px;
+  @media (min-width: 1024px) and (max-width: 1439px) {
+    min-width: 70px;
     gap: 4px;
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
+    min-width: 60px;
+    gap: 3px;
   }
 
   .metric-label {
