@@ -30,15 +30,26 @@
   flex-direction: column;
   gap: 32px;
   padding: 32px;
-  max-width: 1600px;
+  max-width: 1800px;
   margin: 0 auto;
+  width: 100%;
 
-  @media (max-width: 1024px) {
+  @media (min-width: 1440px) {
+    padding: 36px 40px;
+    gap: 36px;
+  }
+
+  @media (min-width: 1024px) and (max-width: 1439px) {
+    padding: 28px 32px;
+    gap: 28px;
+  }
+
+  @media (min-width: 768px) and (max-width: 1023px) {
     padding: 24px;
     gap: 24px;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 767px) {
     padding: 16px;
     gap: 16px;
   }
@@ -48,14 +59,26 @@
 .dashboard-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  padding-bottom: 24px;
+  align-items: center;
+  padding-bottom: 28px;
   border-bottom: 1px solid rgba(30, 37, 53, 0.5);
+  gap: 20px;
 
-  @media (max-width: 768px) {
+  @media (min-width: 1024px) {
+    padding-bottom: 28px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-bottom: 24px;
+  }
+
+  @media (max-width: 767px) {
     flex-direction: column;
     gap: 16px;
     align-items: flex-start;
+    padding-bottom: 20px;
   }
 }
 
@@ -71,8 +94,19 @@
   margin-bottom: 4px;
   letter-spacing: -0.5px;
 
-  @media (max-width: 768px) {
+  @media (min-width: 1024px) {
+    font-size: 32px;
+    margin-bottom: 6px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+
+  @media (max-width: 767px) {
     font-size: 24px;
+    margin-bottom: 2px;
   }
 }
 
@@ -87,6 +121,18 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+
+  @media (min-width: 1024px) {
+    gap: 10px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 8px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 6px;
+  }
 }
 
 .btn-time-range {
@@ -103,6 +149,23 @@
   min-width: 80px;
   text-align: center;
 
+  @media (min-width: 1024px) {
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 9px 16px;
+    font-size: 12px;
+    min-width: 70px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 8px 14px;
+    font-size: 12px;
+    min-width: auto;
+  }
+
   &:hover {
     background: rgba(110, 231, 247, 0.12);
     border-color: rgba(110, 231, 247, 0.3);
@@ -116,11 +179,6 @@
     font-weight: 600;
     box-shadow: 0 8px 22px rgba(110, 231, 247, 0.18);
   }
-
-  @media (max-width: 768px) {
-    padding: 8px 14px;
-    font-size: 12px;
-  }
 }
 
 /* Metrics Grid */
@@ -130,14 +188,24 @@
   gap: 28px;
   animation: fadeIn 0.5s ease-out;
 
-  @media (max-width: 1024px) {
-    grid-template-columns: repeat(2, 1fr);
+  @media (min-width: 1440px) {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 28px;
+  }
+
+  @media (min-width: 1024px) and (max-width: 1439px) {
+    grid-template-columns: repeat(3, 1fr);
     gap: 24px;
   }
 
-  @media (max-width: 768px) {
-    grid-template-columns: 1fr;
+  @media (min-width: 768px) and (max-width: 1023px) {
+    grid-template-columns: repeat(2, 1fr);
     gap: 20px;
+  }
+
+  @media (max-width: 767px) {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 
@@ -153,6 +221,21 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+
+  @media (min-width: 1024px) {
+    padding: 28px 24px;
+    gap: 16px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    padding: 24px 20px;
+    gap: 14px;
+  }
+
+  @media (max-width: 767px) {
+    padding: 20px 18px;
+    gap: 12px;
+  }
 
   &::before {
     content: '';
@@ -201,6 +284,18 @@
   background-clip: text;
   letter-spacing: -1px;
   line-height: 1.2;
+
+  @media (min-width: 1024px) {
+    font-size: 34px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    font-size: 30px;
+  }
+
+  @media (max-width: 767px) {
+    font-size: 28px;
+  }
 }
 
 /* Dashboard Main */
@@ -208,6 +303,18 @@
   display: flex;
   flex-direction: column;
   gap: 32px;
+
+  @media (min-width: 1024px) {
+    gap: 32px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    gap: 24px;
+  }
+
+  @media (max-width: 767px) {
+    gap: 20px;
+  }
 }
 
 .charts-section {
@@ -215,9 +322,19 @@
   grid-template-columns: 1fr 1fr;
   gap: 24px;
 
-  @media (max-width: 1024px) {
+  @media (min-width: 1024px) {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
     grid-template-columns: 1fr;
     gap: 20px;
+  }
+
+  @media (max-width: 767px) {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 
