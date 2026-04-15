@@ -11,10 +11,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/enums/role.enum';
+import { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
 import { UsersService, UpdateUserDto } from './users.service';
 import { User } from './user.entity';
 
 @Controller('users')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
@@ -25,8 +30,8 @@ export class UsersController {
    * Retorna dados do usuário autenticado
    */
   @Get('me')
-  @UseGuards(JwtAuthGuard)
-  async getCurrentUser(@Request() req: any): Promise<Omit<User, 'password'>> {
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  async getCurrentUser(@Request() req: AuthenticatedRequest): Promise<Omit<User, 'password'>> {
     const user = await this.usersService.findOne(req.user.id);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
@@ -37,9 +42,9 @@ export class UsersController {
    * Atualiza dados do usuário autenticado
    */
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   async updateCurrentUser(
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Body() dto: UpdateUserDto,
   ): Promise<Omit<User, 'password'>> {
     const updated = await this.usersService.update(req.user.id, dto);
@@ -52,8 +57,8 @@ export class UsersController {
    * Desativa a conta do usuário
    */
   @Delete('me')
-  @UseGuards(JwtAuthGuard)
-  async deleteCurrentUser(@Request() req: any): Promise<{ message: string }> {
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  async deleteCurrentUser(@Request() req: AuthenticatedRequest): Promise<{ message: string }> {
     await this.usersService.remove(req.user.id);
     this.logger.log(`Usuário ${req.user.email} deletou sua conta`);
     return { message: 'Conta deletada' };
@@ -64,13 +69,13 @@ export class UsersController {
    * Busca usuário por ID
    */
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   async findOne(
     @Param('id') id: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ): Promise<Omit<User, 'password'>> {
     // Só admin ou o próprio usuário pode ver
-    if (req.user.id !== id) {
+    if (![Role.ADMIN, Role.MANAGER].includes(req.user.role) && req.user.id !== id) {
       throw new ForbiddenException('Acesso negado');
     }
 
@@ -84,7 +89,7 @@ export class UsersController {
    * Lista todos os usuários
    */
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @Roles(Role.ADMIN, Role.MANAGER)
   async findAll(): Promise<Omit<User, 'password'>[]> {
     const users = await this.usersService.findAll();
     return users.map(({ password: _password, ...user }) => user);

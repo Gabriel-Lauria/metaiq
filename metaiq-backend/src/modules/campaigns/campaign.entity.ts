@@ -1,9 +1,12 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from '../users/user.entity';
 import { AdAccount } from '../ad-accounts/ad-account.entity';
+import { Store } from '../stores/store.entity';
 
 @Entity('campaigns')
 @Index(['userId'])
+@Index(['storeId'])
+@Index(['createdByUserId'])
 @Index(['adAccountId'])
 @Index(['metaId'])
 export class Campaign {
@@ -37,12 +40,26 @@ export class Campaign {
   @Column()
   userId: string;
 
+  @Column({ nullable: true })
+  storeId?: string | null;
+
+  @Column({ nullable: true })
+  createdByUserId?: string | null;
+
   @Column()
   adAccountId: string;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'userId' })
   user: User;
+
+  @ManyToOne(() => Store, (store) => store.campaigns, { nullable: true })
+  @JoinColumn({ name: 'storeId' })
+  store?: Store | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'createdByUserId' })
+  createdByUser?: User | null;
 
   @ManyToOne(() => AdAccount)
   @JoinColumn({ name: 'adAccountId' })

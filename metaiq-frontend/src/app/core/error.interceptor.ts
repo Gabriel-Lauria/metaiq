@@ -58,7 +58,7 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         }
       } else if (error.status === 0) {
         // Conexão falhou
-        userFriendlyMessage = 'Backend indisponível. Inicie o servidor em http://localhost:3004 e tente novamente.';
+        userFriendlyMessage = 'Backend indisponível. Inicie o servidor em http://localhost:3000 e tente novamente.';
         if (shouldShowNotification) {
           uiService.showError('API offline', userFriendlyMessage);
           shouldShowNotification = false;

@@ -22,9 +22,11 @@
         <span class="nav-label">Dashboard</span>
       </a>
       <a
+        *ngIf="(currentUser$ | async) as navUser"
         routerLink="/campaigns"
         class="nav-item"
         [class.active]="isActive('/campaigns')"
+        [hidden]="!canSeeCampaigns(navUser.role)"
         title="Campanhas"
       >
         <span class="nav-icon">📢</span>
@@ -36,6 +38,7 @@
       <div class="profile-avatar">{{ user.name?.split(' ').map(n => n[0]).join('') }}</div>
       <div class="profile-meta">
         <span class="profile-name">{{ user.name }}</span>
+        <span class="profile-role">{{ user.role }}</span>
         <span class="profile-email">{{ user.email || 'Usuário' }}</span>
       </div>
     </div>

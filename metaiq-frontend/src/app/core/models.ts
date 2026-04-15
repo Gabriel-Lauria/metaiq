@@ -6,8 +6,34 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  role: Role;
+  managerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface Manager {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  managerId: string;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export enum Role {
+  ADMIN = 'ADMIN',
+  MANAGER = 'MANAGER',
+  OPERATIONAL = 'OPERATIONAL',
+  CLIENT = 'CLIENT',
 }
 
 export interface Campaign {
@@ -21,6 +47,8 @@ export interface Campaign {
   startTime: Date;
   endTime?: Date;
   userId: string;
+  storeId?: string | null;
+  createdByUserId?: string | null;
   adAccountId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +61,7 @@ export interface AdAccount {
   accessToken: string;
   tokenExpiresAt: Date;
   userId: string;
+  storeId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

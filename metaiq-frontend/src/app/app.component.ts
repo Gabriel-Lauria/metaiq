@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule, Router, NavigationEnd, ActivatedRoute } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import { UiService } from './core/services/ui.service';
+import { Role } from './core/models';
 import { NotificationContainerComponent } from './core/components/notification-container.component';
 import { GlobalLoadingComponent } from './core/components/global-loading.component';
 import { filter } from 'rxjs';
@@ -20,6 +21,7 @@ import { filter } from 'rxjs';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent {
+  protected readonly Role = Role;
   private authService = inject(AuthService);
   private uiService = inject(UiService);
   private router = inject(Router);
@@ -92,5 +94,9 @@ export class AppComponent {
 
   isActive(route: string): boolean {
     return this.router.url === route;
+  }
+
+  canSeeCampaigns(userRole: Role | undefined): boolean {
+    return !!userRole && [Role.ADMIN, Role.MANAGER, Role.OPERATIONAL].includes(userRole);
   }
 }

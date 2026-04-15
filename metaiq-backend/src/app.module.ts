@@ -12,6 +12,9 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { MetaModule } from './modules/meta/meta.module';
+import { ManagersModule } from './modules/managers/managers.module';
+import { StoresModule } from './modules/stores/stores.module';
+import { UserStoresModule } from './modules/user-stores/user-stores.module';
 import { SyncCron } from './infrastructure/sync.cron';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import appConfig from './config/app.config';
@@ -22,6 +25,9 @@ import { AdAccount } from './modules/ad-accounts/ad-account.entity';
 import { Campaign } from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { Insight } from './modules/insights/insight.entity';
+import { Manager } from './modules/managers/manager.entity';
+import { Store } from './modules/stores/store.entity';
+import { UserStore } from './modules/user-stores/user-store.entity';
 
 @Module({
   imports: [
@@ -51,7 +57,7 @@ import { Insight } from './modules/insights/insight.entity';
         const baseConfig = {
           synchronize: config.get<boolean>('database.synchronize'),
           logging: appEnv !== 'production' && appEnv !== 'test',
-          entities: [User, AdAccount, Campaign, MetricDaily, Insight],
+          entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
           migrationsRun: config.get<boolean>('database.migrationsRun'),
         } as any;
@@ -82,6 +88,9 @@ import { Insight } from './modules/insights/insight.entity';
       },
     }),
     AuthModule,
+    ManagersModule,
+    StoresModule,
+    UserStoresModule,
     UsersModule,
     AdAccountsModule,
     CampaignsModule,

@@ -17,6 +17,10 @@ export class CreateAdAccountDto {
   @IsOptional()
   @IsString()
   accessToken?: string;
+
+  @IsOptional()
+  @IsString()
+  storeId?: string;
 }
 
 export class UpdateAdAccountDto {
@@ -28,4 +32,8 @@ export class UpdateAdAccountDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsString()
+  storeId?: string;
 }

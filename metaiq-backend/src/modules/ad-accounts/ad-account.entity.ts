@@ -1,9 +1,11 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { User } from '../users/user.entity';
+import { Store } from '../stores/store.entity';
 import { CryptoTransformer } from '../../common/transformers/crypto.transformer';
 
 @Entity('ad_accounts')
 @Index(['userId'])
+@Index(['storeId'])
 @Index(['metaId'])
 export class AdAccount {
   @PrimaryGeneratedColumn('uuid')
@@ -30,9 +32,16 @@ export class AdAccount {
   @Column()
   userId: string;
 
+  @Column({ nullable: true })
+  storeId?: string | null;
+
   @ManyToOne(() => User)
   @JoinColumn({ name: 'userId' })
   user: User;
+
+  @ManyToOne(() => Store, (store) => store.adAccounts, { nullable: true })
+  @JoinColumn({ name: 'storeId' })
+  store?: Store | null;
 
   @CreateDateColumn()
   createdAt: Date;

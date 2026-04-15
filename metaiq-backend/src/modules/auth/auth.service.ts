@@ -6,10 +6,12 @@ import { Repository } from 'typeorm';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/user.entity';
+import { Role } from '../../common/enums/role.enum';
 
 interface JwtPayload {
   sub: string;
   email: string;
+  role: Role;
   jti?: string;
 }
 
@@ -24,7 +26,7 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) {
+    if (!user || !user.active) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
@@ -50,6 +52,7 @@ export class AuthService {
       email,
       name,
       password: hashedPassword,
+      role: Role.OPERATIONAL,
       active: true,
     });
 
@@ -67,7 +70,7 @@ export class AuthService {
 
     const payload = await this.validateRefreshToken(refreshToken);
     const user = await this.userRepository.findOne({ where: { id: payload.sub } });
-    if (!user) {
+    if (!user || !user.active) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
 
@@ -90,7 +93,7 @@ export class AuthService {
     }
 
     const user = await this.userRepository.findOne({ where: { id: payload.sub } });
-    if (!user || !user.refreshToken) {
+    if (!user || !user.active || !user.refreshToken) {
       throw new UnauthorizedException('Usuário não encontrado ou refresh token inválido');
     }
 
@@ -140,13 +143,13 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: 'admin',
+        role: user.role ?? Role.OPERATIONAL,
       },
     };
   }
 
   private buildPayload(user: User): JwtPayload {
-    return { sub: user.id, email: user.email };
+    return { sub: user.id, email: user.email, role: user.role ?? Role.OPERATIONAL };
   }
 
   private async updateRefreshToken(userId: string, refreshToken: string | null) {

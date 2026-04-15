@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject } from 'rxjs';
 import { tap, catchError, timeout, retry, map } from 'rxjs/operators';
-import { AuthResponse, LoginRequest, RegisterRequest, User } from '../models';
+import { AuthResponse, LoginRequest, RegisterRequest, Role, User } from '../models';
 import { environment } from '../environment';
 
 const API = environment.apiUrl;
@@ -13,6 +13,7 @@ export class AuthService {
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
+  public role$ = this.currentUser$.pipe(map(user => user?.role ?? null));
 
   private accessTokenSubject = new BehaviorSubject<string | null>(
     localStorage.getItem('accessToken')
@@ -30,7 +31,7 @@ export class AuthService {
     const user = localStorage.getItem('user');
     if (user) {
       try {
-        this.currentUserSubject.next(JSON.parse(user));
+        this.currentUserSubject.next(this.normalizeUser(JSON.parse(user)));
       } catch (e) {
         console.error('Erro ao carregar usuário do localStorage:', e);
         this.logout();
@@ -73,6 +74,15 @@ export class AuthService {
     return this.currentUserSubject.value;
   }
 
+  getCurrentRole(): Role | null {
+    return this.currentUserSubject.value?.role ?? null;
+  }
+
+  hasRole(roles: Role[]): boolean {
+    const role = this.getCurrentRole();
+    return !!role && roles.includes(role);
+  }
+
   getAccessToken(): string | null {
     return this.accessTokenSubject.value;
   }
@@ -84,8 +94,16 @@ export class AuthService {
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.setItem('accessToken', response.accessToken);
     localStorage.setItem('refreshToken', response.refreshToken);
-    localStorage.setItem('user', JSON.stringify(response.user));
-    this.currentUserSubject.next(response.user);
+    const user = this.normalizeUser(response.user);
+    localStorage.setItem('user', JSON.stringify(user));
+    this.currentUserSubject.next(user);
     this.accessTokenSubject.next(response.accessToken);
+  }
+
+  private normalizeUser(user: User): User {
+    return {
+      ...user,
+      role: Object.values(Role).includes(user.role) ? user.role : Role.OPERATIONAL,
+    };
   }
 }

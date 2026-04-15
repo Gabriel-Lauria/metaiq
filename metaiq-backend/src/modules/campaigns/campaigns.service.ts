@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { Campaign } from './campaign.entity';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 
@@ -13,8 +13,8 @@ export class CampaignsService {
 
   async findAll(userId: string): Promise<Campaign[]> {
     return this.campaignRepository.find({
-      where: { userId },
-      relations: ['adAccount'],
+      where: this.buildOwnershipWhere(userId),
+      relations: ['adAccount', 'store'],
       order: { createdAt: 'DESC' },
     });
   }
@@ -24,8 +24,8 @@ export class CampaignsService {
     const skip = (page - 1) * limit;
 
     const [data, total] = await this.campaignRepository.findAndCount({
-      where: { userId },
-      relations: ['adAccount'],
+      where: this.buildOwnershipWhere(userId),
+      relations: ['adAccount', 'store'],
       order: { createdAt: 'DESC' },
       skip,
       take: limit,
@@ -48,8 +48,8 @@ export class CampaignsService {
 
   async findOne(id: string, userId: string): Promise<Campaign> {
     const campaign = await this.campaignRepository.findOne({
-      where: { id, userId },
-      relations: ['adAccount'],
+      where: this.buildOwnershipWhere(userId, { id }),
+      relations: ['adAccount', 'store'],
     });
 
     if (!campaign) {
@@ -62,8 +62,18 @@ export class CampaignsService {
   async findAllActive(): Promise<Campaign[]> {
     return this.campaignRepository.find({
       where: { status: 'ACTIVE' },
-      relations: ['adAccount'],
+      relations: ['adAccount', 'store'],
       order: { createdAt: 'DESC' },
     });
+  }
+
+  private buildOwnershipWhere(
+    userId: string,
+    extra: Partial<Pick<Campaign, 'id'>> = {},
+  ): FindOptionsWhere<Campaign>[] {
+    return [
+      { ...extra, userId },
+      { ...extra, store: { userStores: { userId } } },
+    ];
   }
 }

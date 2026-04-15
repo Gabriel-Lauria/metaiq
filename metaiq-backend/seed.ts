@@ -19,12 +19,18 @@ import * as dotenv from 'dotenv';
 dotenv.config({ quiet: true } as dotenv.DotenvConfigOptions & { quiet: true });
 
 import { User }        from './src/modules/users/user.entity';
+import { Manager }     from './src/modules/managers/manager.entity';
+import { Store }       from './src/modules/stores/store.entity';
+import { UserStore }   from './src/modules/user-stores/user-store.entity';
 import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
 import { Campaign }    from './src/modules/campaigns/campaign.entity';
 import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
 import { Insight }      from './src/modules/insights/insight.entity';
 import { MetricsEngine } from './src/modules/metrics/metrics.engine';
 import { InitialSchema1776170000000 } from './src/migrations/1776170000000-InitialSchema';
+import { AddRoleToUsers1776260000000 } from './src/migrations/1776260000000-AddRoleToUsers';
+import { AddTenantStoreModel1776350000000 } from './src/migrations/1776350000000-AddTenantStoreModel';
+import { Role } from './src/common/enums/role.enum';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
@@ -55,8 +61,8 @@ async function seed() {
     type: 'sqlite',
     database: DB_PATH,
     busyTimeout: 5000,
-    entities: [User, AdAccount, Campaign, MetricDaily, Insight],
-    migrations: [InitialSchema1776170000000],
+    entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
+    migrations: [InitialSchema1776170000000, AddRoleToUsers1776260000000, AddTenantStoreModel1776350000000],
     synchronize: false,
     logging: false,
   });
@@ -73,11 +79,41 @@ async function seed() {
 
   if (!user) {
     const password = await bcrypt.hash('Demo@1234', 12);
-    user = userRepo.create({ name: 'Demo User', email: 'demo@metaiq.dev', password });
+    user = userRepo.create({ name: 'Demo User', email: 'demo@metaiq.dev', password, role: Role.MANAGER });
     await userRepo.save(user);
     console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
   } else {
     console.log('👤 Usuário demo já existe — pulando criação.');
+  }
+
+  const managerRepo = ds.getRepository(Manager);
+  let manager = await managerRepo.findOne({ where: { name: 'Manager Demo' } });
+
+  if (!manager) {
+    manager = await managerRepo.save(managerRepo.create({ name: 'Manager Demo' }));
+    console.log('🏢 Manager criado:', manager.name);
+  }
+
+  if (!user.managerId) {
+    user.managerId = manager.id;
+    user.role = user.role ?? Role.MANAGER;
+    await userRepo.save(user);
+  }
+
+  const storeRepo = ds.getRepository(Store);
+  let store = await storeRepo.findOne({ where: { name: 'Loja Demo - E-commerce', managerId: manager.id } });
+
+  if (!store) {
+    store = await storeRepo.save(storeRepo.create({ name: 'Loja Demo - E-commerce', managerId: manager.id }));
+    console.log('🏬 Loja criada:', store.name);
+  }
+
+  const userStoreRepo = ds.getRepository(UserStore);
+  const existingUserStore = await userStoreRepo.findOne({ where: { userId: user.id, storeId: store.id } });
+
+  if (!existingUserStore) {
+    await userStoreRepo.save(userStoreRepo.create({ userId: user.id, storeId: store.id }));
+    console.log('🔗 Usuário vinculado à loja demo');
   }
 
   // ── Conta de anúncio ──────────────────────────────────────
@@ -91,9 +127,13 @@ async function seed() {
       accessToken: 'demo_token_nao_funcional',
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       userId: user.id,
+      storeId: store.id,
     });
     await accRepo.save(account);
     console.log('🔗 Conta Meta criada:', account.metaId);
+  } else if (!account.storeId) {
+    account.storeId = store.id;
+    await accRepo.save(account);
   }
 
   // ── Campanhas ─────────────────────────────────────────────
@@ -119,9 +159,15 @@ async function seed() {
         objective:  def.cpaBase > 0 ? 'CONVERSIONS' : 'REACH',
         dailyBudget: def.budget,
         userId:     user.id,
+        storeId:    store.id,
+        createdByUserId: user.id,
         adAccountId: account.id,
         startTime:  new Date('2026-03-01'),
       });
+      await campRepo.save(camp);
+    } else if (!camp.storeId || !camp.createdByUserId) {
+      camp.storeId = camp.storeId ?? store.id;
+      camp.createdByUserId = camp.createdByUserId ?? user.id;
       await campRepo.save(camp);
     }
 

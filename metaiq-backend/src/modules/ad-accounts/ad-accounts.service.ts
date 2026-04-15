@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { AdAccount } from './ad-account.entity';
 import { CreateAdAccountDto, UpdateAdAccountDto } from './dto/ad-account.dto';
 
@@ -14,7 +14,7 @@ export class AdAccountsService {
   /**
    * Cria uma nova conta de anúncios
    */
-  async create(dto: CreateAdAccountDto & { userId: string }): Promise<AdAccount> {
+  async create(dto: CreateAdAccountDto & { userId: string; storeId?: string | null }): Promise<AdAccount> {
     const adAccount = this.adAccountRepository.create(dto);
     const saved = await this.adAccountRepository.save(adAccount);
     delete (saved as Partial<AdAccount>).accessToken;
@@ -30,7 +30,8 @@ export class AdAccountsService {
     }
 
     const adAccount = await this.adAccountRepository.findOne({
-      where: { id, userId },
+      where: this.buildOwnershipWhere(userId, { id }),
+      relations: ['store'],
     });
     if (!adAccount) {
       throw new NotFoundException(`Conta de anúncios ${id} não encontrada`);
@@ -47,7 +48,10 @@ export class AdAccountsService {
       throw new ForbiddenException('Usuário autenticado inválido');
     }
 
-    return this.adAccountRepository.find({ where: { userId } });
+    return this.adAccountRepository.find({
+      where: this.buildOwnershipWhere(userId),
+      relations: ['store'],
+    });
   }
 
   /**
@@ -83,6 +87,19 @@ export class AdAccountsService {
       throw new ForbiddenException('Usuário autenticado inválido');
     }
 
-    return this.adAccountRepository.findOne({ where: { metaId, userId } });
+    return this.adAccountRepository.findOne({
+      where: this.buildOwnershipWhere(userId, { metaId }),
+      relations: ['store'],
+    });
+  }
+
+  private buildOwnershipWhere(
+    userId: string,
+    extra: Partial<Pick<AdAccount, 'id' | 'metaId'>> = {},
+  ): FindOptionsWhere<AdAccount>[] {
+    return [
+      { ...extra, userId },
+      { ...extra, store: { userStores: { userId } } },
+    ];
   }
 }

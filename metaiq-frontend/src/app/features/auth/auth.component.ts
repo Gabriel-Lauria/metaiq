@@ -143,7 +143,7 @@ export class AuthComponent implements OnInit {
 
   private handleAuthError(err: any, fallback: string): void {
     this.apiOffline = err?.status === 0;
-    const offlineMessage = 'Backend offline. Inicie o backend em http://localhost:3004 e tente novamente.';
+    const offlineMessage = 'Backend offline. Inicie o backend em http://localhost:3000 e tente novamente.';
     this.setMessage('error', this.apiOffline ? offlineMessage : err?.message || fallback);
   }
 
