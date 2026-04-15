@@ -57,6 +57,15 @@
           Pausadas
         </button>
       </div>
+
+      <select
+        class="search-input"
+        [ngModel]="storeContext.selectedStoreId()"
+        (ngModelChange)="setStoreFilter($event)"
+      >
+        <option value="">Todas as stores</option>
+        <option *ngFor="let store of storeContext.stores()" [value]="store.id">{{ store.name }}</option>
+      </select>
     </div>
 
     <!-- Pagination Info -->
@@ -101,7 +110,10 @@
               </button>
               <div class="campaign-names">
                 <div class="campaign-name">{{ campaign.name }}</div>
-                <div class="campaign-id">#{{ campaign.id }}</div>
+                <div class="campaign-id">
+                  #{{ campaign.id }}
+                  <span *ngIf="campaign.store"> · {{ campaign.store.name }}</span>
+                </div>
               </div>
             </div>
           </div>

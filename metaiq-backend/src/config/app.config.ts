@@ -5,6 +5,7 @@ export interface AppConfig {
   frontendUrl: string;
   nodeEnv: string;
   cryptoSecret: string;
+  enablePublicRegister: boolean;
 }
 
 function requireProductionSecret(name: string, fallback: string): string {
@@ -20,4 +21,5 @@ export default registerAs('app', () => ({
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
   nodeEnv: process.env.NODE_ENV || 'development',
   cryptoSecret: requireProductionSecret('CRYPTO_SECRET', 'replace-with-a-secure-secret'),
+  enablePublicRegister: process.env.AUTH_ENABLE_PUBLIC_REGISTER === 'true',
 }));

@@ -6,6 +6,7 @@
  *   npm run seed
  *
  * Credenciais criadas:
+ *   Admin:  admin@metaiq.dev / Admin@1234
  *   Email:  demo@metaiq.dev
  *   Senha:  Demo@1234
  */
@@ -19,12 +20,21 @@ import * as dotenv from 'dotenv';
 dotenv.config({ quiet: true } as dotenv.DotenvConfigOptions & { quiet: true });
 
 import { User }        from './src/modules/users/user.entity';
+import { Role }        from './src/common/enums';
+import { Manager }     from './src/modules/managers/manager.entity';
+import { Store }       from './src/modules/stores/store.entity';
+import { UserStore }   from './src/modules/user-stores/user-store.entity';
 import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
 import { Campaign }    from './src/modules/campaigns/campaign.entity';
 import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
 import { Insight }      from './src/modules/insights/insight.entity';
 import { MetricsEngine } from './src/modules/metrics/metrics.engine';
 import { InitialSchema1776170000000 } from './src/migrations/1776170000000-InitialSchema';
+import { AddUserRole1776260000000 } from './src/migrations/1776260000000-AddUserRole';
+import { CreateManagersStoresUserStores1776270000000 } from './src/migrations/1776270000000-CreateManagersStoresUserStores';
+import { AddUserManager1776271000000 } from './src/migrations/1776271000000-AddUserManager';
+import { AddAdAccountStore1776272000000 } from './src/migrations/1776272000000-AddAdAccountStore';
+import { AddCampaignStore1776273000000 } from './src/migrations/1776273000000-AddCampaignStore';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
@@ -55,8 +65,15 @@ async function seed() {
     type: 'sqlite',
     database: DB_PATH,
     busyTimeout: 5000,
-    entities: [User, AdAccount, Campaign, MetricDaily, Insight],
-    migrations: [InitialSchema1776170000000],
+    entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
+    migrations: [
+      InitialSchema1776170000000,
+      AddUserRole1776260000000,
+      CreateManagersStoresUserStores1776270000000,
+      AddUserManager1776271000000,
+      AddAdAccountStore1776272000000,
+      AddCampaignStore1776273000000,
+    ],
     synchronize: false,
     logging: false,
   });
@@ -67,17 +84,81 @@ async function seed() {
 
   const engine = new MetricsEngine();
 
+  // ── Manager e loja demo ───────────────────────────────────
+  const managerRepo = ds.getRepository(Manager);
+  let manager = await managerRepo.findOne({ where: { name: 'Gestor Demo' } });
+
+  if (!manager) {
+    manager = managerRepo.create({ name: 'Gestor Demo', active: true });
+    await managerRepo.save(manager);
+    console.log('🏢 Manager criado: Gestor Demo');
+  } else {
+    console.log('🏢 Manager demo já existe — pulando criação.');
+  }
+
+  const storeRepo = ds.getRepository(Store);
+  let store = await storeRepo.findOne({ where: { name: 'Loja Demo', managerId: manager.id } });
+
+  if (!store) {
+    store = storeRepo.create({ name: 'Loja Demo', managerId: manager.id, active: true });
+    await storeRepo.save(store);
+    console.log('🏬 Loja criada: Loja Demo');
+  } else {
+    console.log('🏬 Loja demo já existe — pulando criação.');
+  }
+
   // ── Usuário demo ──────────────────────────────────────────
   const userRepo = ds.getRepository(User);
+  let admin = await userRepo.findOne({ where: { email: 'admin@metaiq.dev' } });
+
+  if (!admin) {
+    const password = await bcrypt.hash('Admin@1234', 12);
+    admin = userRepo.create({
+      name: 'Admin MetaIQ',
+      email: 'admin@metaiq.dev',
+      password,
+      role: Role.ADMIN,
+      managerId: null,
+      active: true,
+    });
+    await userRepo.save(admin);
+    console.log('👑 Admin criado: admin@metaiq.dev / Admin@1234');
+  } else {
+    admin.role = Role.ADMIN;
+    admin.managerId = null;
+    admin.active = true;
+    await userRepo.save(admin);
+    console.log('👑 Admin já existe — credenciais preservadas.');
+  }
+
   let user = await userRepo.findOne({ where: { email: 'demo@metaiq.dev' } });
 
   if (!user) {
     const password = await bcrypt.hash('Demo@1234', 12);
-    user = userRepo.create({ name: 'Demo User', email: 'demo@metaiq.dev', password });
+    user = userRepo.create({
+      name: 'Demo User',
+      email: 'demo@metaiq.dev',
+      password,
+      managerId: manager.id,
+    });
     await userRepo.save(user);
     console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
   } else {
+    if (!user.managerId) {
+      user.managerId = manager.id;
+      await userRepo.save(user);
+    }
     console.log('👤 Usuário demo já existe — pulando criação.');
+  }
+
+  const userStoreRepo = ds.getRepository(UserStore);
+  const userStore = await userStoreRepo.findOne({
+    where: { userId: user.id, storeId: store.id },
+  });
+
+  if (!userStore) {
+    await userStoreRepo.save(userStoreRepo.create({ userId: user.id, storeId: store.id }));
+    console.log('🔐 Usuário vinculado à Loja Demo');
   }
 
   // ── Conta de anúncio ──────────────────────────────────────
@@ -91,9 +172,13 @@ async function seed() {
       accessToken: 'demo_token_nao_funcional',
       tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
       userId: user.id,
+      storeId: store.id,
     });
     await accRepo.save(account);
     console.log('🔗 Conta Meta criada:', account.metaId);
+  } else if (!account.storeId) {
+    account.storeId = store.id;
+    await accRepo.save(account);
   }
 
   // ── Campanhas ─────────────────────────────────────────────
@@ -119,9 +204,15 @@ async function seed() {
         objective:  def.cpaBase > 0 ? 'CONVERSIONS' : 'REACH',
         dailyBudget: def.budget,
         userId:     user.id,
+        storeId:    store.id,
+        createdByUserId: user.id,
         adAccountId: account.id,
         startTime:  new Date('2026-03-01'),
       });
+      await campRepo.save(camp);
+    } else if (!camp.storeId || !camp.createdByUserId) {
+      camp.storeId = camp.storeId ?? store.id;
+      camp.createdByUserId = camp.createdByUserId ?? user.id;
       await campRepo.save(camp);
     }
 

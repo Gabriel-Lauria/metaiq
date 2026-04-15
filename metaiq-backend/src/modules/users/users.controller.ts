@@ -5,16 +5,26 @@ import {
   Delete,
   Param,
   Body,
+  Post,
   UseGuards,
   Request,
   Logger,
-  ForbiddenException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { UsersService, UpdateUserDto } from './users.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/enums';
+import {
+  UsersService,
+  UpdateMeDto,
+  AdminUpdateUserDto,
+  CreateUserDto,
+  ResetUserPasswordDto,
+} from './users.service';
 import { User } from './user.entity';
 
 @Controller('users')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
 
@@ -25,9 +35,8 @@ export class UsersController {
    * Retorna dados do usuário autenticado
    */
   @Get('me')
-  @UseGuards(JwtAuthGuard)
   async getCurrentUser(@Request() req: any): Promise<Omit<User, 'password'>> {
-    const user = await this.usersService.findOne(req.user.id);
+    const user = await this.usersService.findOneUnsafeInternal(req.user.id);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
@@ -37,12 +46,11 @@ export class UsersController {
    * Atualiza dados do usuário autenticado
    */
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
   async updateCurrentUser(
     @Request() req: any,
-    @Body() dto: UpdateUserDto,
+    @Body() dto: UpdateMeDto,
   ): Promise<Omit<User, 'password'>> {
-    const updated = await this.usersService.update(req.user.id, dto);
+    const updated = await this.usersService.updateMe(req.user.id, dto);
     const { password: _password, ...userWithoutPassword } = updated;
     return userWithoutPassword;
   }
@@ -52,7 +60,6 @@ export class UsersController {
    * Desativa a conta do usuário
    */
   @Delete('me')
-  @UseGuards(JwtAuthGuard)
   async deleteCurrentUser(@Request() req: any): Promise<{ message: string }> {
     await this.usersService.remove(req.user.id);
     this.logger.log(`Usuário ${req.user.email} deletou sua conta`);
@@ -60,33 +67,62 @@ export class UsersController {
   }
 
   /**
-   * GET /users/:id (ADMIN ONLY)
+   * GET /users/:id
    * Busca usuário por ID
    */
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
   async findOne(
     @Param('id') id: string,
     @Request() req: any,
   ): Promise<Omit<User, 'password'>> {
-    // Só admin ou o próprio usuário pode ver
-    if (req.user.id !== id) {
-      throw new ForbiddenException('Acesso negado');
-    }
-
-    const user = await this.usersService.findOne(id);
+    const user = await this.usersService.findOneForUser(id, req.user);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
 
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async updateUser(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() dto: AdminUpdateUserDto,
+  ): Promise<Omit<User, 'password'>> {
+    const updated = await this.usersService.updateForUser(id, req.user, dto);
+    const { password: _password, ...userWithoutPassword } = updated;
+    return userWithoutPassword;
+  }
+
+  @Patch(':id/password')
+  @Roles(Role.ADMIN)
+  async resetUserPassword(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Body() dto: ResetUserPasswordDto,
+  ): Promise<Omit<User, 'password'>> {
+    const updated = await this.usersService.resetPasswordAsAdmin(id, req.user, dto);
+    const { password: _password, ...userWithoutPassword } = updated;
+    return userWithoutPassword;
+  }
+
+  @Post()
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async createUser(
+    @Request() req: any,
+    @Body() dto: CreateUserDto,
+  ): Promise<Omit<User, 'password'>> {
+    const created = await this.usersService.createForUser(req.user, dto);
+    const { password: _password, ...userWithoutPassword } = created;
+    return userWithoutPassword;
+  }
+
   /**
-   * GET /users (ADMIN ONLY)
+   * GET /users (ADMIN/MANAGER)
    * Lista todos os usuários
    */
   @Get()
-  @UseGuards(JwtAuthGuard)
-  async findAll(): Promise<Omit<User, 'password'>[]> {
-    const users = await this.usersService.findAll();
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async findAll(@Request() req: any): Promise<Omit<User, 'password'>[]> {
+    const users = await this.usersService.findAllForUser(req.user);
     return users.map(({ password: _password, ...user }) => user);
   }
 }

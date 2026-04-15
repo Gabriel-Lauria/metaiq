@@ -6,6 +6,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
+import { Store } from '../../core/models';
+import { StoreContextService } from '../../core/services/store-context.service';
 
 interface CampaignMetric {
   ctr: number;
@@ -26,7 +28,9 @@ interface CampaignInsight {
 interface Campaign {
   id: string;
   name: string;
-  status: 'ACTIVE' | 'PAUSED' | 'ENDED';
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  storeId?: string | null;
+  store?: Store | null;
   metrics?: CampaignMetric;
   insights?: CampaignInsight[];
 }
@@ -46,6 +50,7 @@ export class CampaignsComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
+  storeContext = inject(StoreContextService);
 
   campaigns = signal<Campaign[]>([]);
   loading = signal(true);
@@ -135,6 +140,7 @@ export class CampaignsComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.storeContext.load();
     // Restaurar estado da URL
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -161,6 +167,12 @@ export class CampaignsComponent implements OnInit {
     this.filter.set(filterValue);
     this.currentPage.set(1);
     this.updateQueryParams();
+  }
+
+  setStoreFilter(storeId: string): void {
+    this.storeContext.select(storeId);
+    this.currentPage.set(1);
+    this.loadCampaigns();
   }
 
   setSearchTerm(value: string): void {
@@ -250,12 +262,11 @@ export class CampaignsComponent implements OnInit {
     this.error.set(null);
 
     this.apiService
-      .get('/campaigns')
+      .getCampaigns(undefined, this.storeContext.selectedStoreId())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (response: Campaign[] | { data: Campaign[] }) => {
-          const campaigns = Array.isArray(response) ? response : response.data;
-          this.campaigns.set(campaigns);
+        next: (response) => {
+          this.campaigns.set(response.data);
           this.loading.set(false);
         },
         error: (err) => {

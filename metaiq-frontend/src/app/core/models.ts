@@ -2,12 +2,45 @@
  * Modelos de dados compartilhados entre frontend e backend
  */
 
+export enum Role {
+  ADMIN = 'ADMIN',
+  MANAGER = 'MANAGER',
+  OPERATIONAL = 'OPERATIONAL',
+  CLIENT = 'CLIENT',
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
+  role: Role;
+  managerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface Manager {
+  id: string;
+  name: string;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  managerId: string;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserStore {
+  id: string;
+  userId: string;
+  storeId: string;
+  createdAt: Date;
 }
 
 export interface Campaign {
@@ -21,6 +54,9 @@ export interface Campaign {
   startTime: Date;
   endTime?: Date;
   userId: string;
+  storeId?: string | null;
+  store?: Store | null;
+  createdByUserId?: string | null;
   adAccountId: string;
   createdAt: Date;
   updatedAt: Date;
@@ -28,11 +64,14 @@ export interface Campaign {
 
 export interface AdAccount {
   id: string;
-  metaAccountId: string;
+  metaId?: string;
+  metaAccountId?: string;
   name: string;
-  accessToken: string;
-  tokenExpiresAt: Date;
+  accessToken?: string;
+  tokenExpiresAt?: Date;
   userId: string;
+  storeId?: string | null;
+  store?: Store | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +106,32 @@ export interface AggregatedMetrics {
   avgRoas?: number;
   avgCpa?: number;
   avgCtr?: number;
+}
+
+export interface DashboardSummary {
+  period: {
+    days: number;
+    from: string;
+    to: string;
+  };
+  scope: {
+    storeId: string | null;
+  };
+  counts: {
+    stores: number;
+    users: number;
+    campaigns: number;
+    activeCampaigns: number;
+  };
+  metrics: AggregatedMetrics & {
+    cpc?: number;
+  };
+  highlights: {
+    best: Campaign | null;
+    attention: Campaign | null;
+    campaigns: Campaign[];
+  };
+  insights: Insight[];
 }
 
 export interface AuthResponse {
@@ -106,6 +171,39 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name: string;
+}
+
+export interface CreateManagerRequest {
+  name: string;
+}
+
+export interface UpdateManagerRequest {
+  name?: string;
+  active?: boolean;
+}
+
+export interface CreateStoreRequest {
+  name: string;
+  managerId?: string;
+}
+
+export interface UpdateStoreRequest {
+  name?: string;
+  managerId?: string;
+  active?: boolean;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  password: string;
+  name: string;
+  role?: Role;
+  managerId?: string;
+  active?: boolean;
+}
+
+export interface ResetUserPasswordRequest {
+  password: string;
 }
 
 export interface PaginatedResponse<T> {

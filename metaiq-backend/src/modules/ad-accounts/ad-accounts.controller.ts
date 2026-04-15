@@ -6,17 +6,22 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/enums';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AdAccountsService } from './ad-accounts.service';
 import { CreateAdAccountDto, UpdateAdAccountDto } from './dto/ad-account.dto';
 import { AdAccount } from './ad-account.entity';
+import { AuthenticatedUser } from '../../common/interfaces';
 
 @Controller('ad-accounts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AdAccountsController {
   private readonly logger = new Logger(AdAccountsController.name);
 
@@ -27,8 +32,12 @@ export class AdAccountsController {
    * Lista todas as contas do usuário
    */
   @Get()
-  async findByUser(@CurrentUser() userId: string): Promise<AdAccount[]> {
-    return this.adAccountsService.findByUser(userId);
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  async findByUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('storeId') storeId?: string,
+  ): Promise<AdAccount[]> {
+    return this.adAccountsService.findByUser(user, storeId);
   }
 
   /**
@@ -36,11 +45,12 @@ export class AdAccountsController {
    * Busca uma conta específica (com validação de ownership)
    */
   @Get(':id')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async findOne(
     @Param('id') id: string,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.findOne(id, userId);
+    return this.adAccountsService.findOne(id, user);
   }
 
   /**
@@ -48,11 +58,12 @@ export class AdAccountsController {
    * Cria uma nova conta de anúncios
    */
   @Post()
+  @Roles(Role.ADMIN, Role.MANAGER)
   async create(
     @Body() dto: CreateAdAccountDto,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.create({ ...dto, userId });
+    return this.adAccountsService.create(dto, user);
   }
 
   /**
@@ -60,12 +71,13 @@ export class AdAccountsController {
    * Atualiza dados da conta
    */
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.MANAGER)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateAdAccountDto,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.update(id, userId, dto);
+    return this.adAccountsService.update(id, user, dto);
   }
 
   /**
@@ -73,12 +85,13 @@ export class AdAccountsController {
    * Desativa a conta
    */
   @Delete(':id')
+  @Roles(Role.ADMIN, Role.MANAGER)
   async remove(
     @Param('id') id: string,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ message: string }> {
-    await this.adAccountsService.remove(id, userId);
-    this.logger.log(`Conta de anúncios ${id} desativada por usuário ${userId}`);
+    await this.adAccountsService.remove(id, user);
+    this.logger.log(`Conta de anúncios ${id} desativada por usuário ${user.id}`);
     return { message: 'Conta desativada' };
   }
 }

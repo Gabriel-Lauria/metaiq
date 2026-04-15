@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { CanActivateFn, Router, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 import { AuthService } from '../services/auth.service';
+import { Role } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class AuthGuard {
@@ -12,7 +13,13 @@ export class AuthGuard {
     state: RouterStateSnapshot
   ): boolean {
     if (this.authService.isAuthenticated()) {
-      return true;
+      const allowedRoles = route.data?.['roles'] as Role[] | undefined;
+      if (!allowedRoles?.length || this.authService.hasAnyRole(allowedRoles)) {
+        return true;
+      }
+
+      this.router.navigate(['/dashboard']);
+      return false;
     }
 
     this.router.navigate(['/auth'], {

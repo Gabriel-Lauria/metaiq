@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerService } from './services/logger.service';
 import { RetryService } from './services/retry.service';
 import { MetricsService } from './services/metrics.service';
 import { CurrentUserService } from './services/current-user.service';
+import { AccessScopeService } from './services/access-scope.service';
+import { Store } from '../modules/stores/store.entity';
+import { UserStore } from '../modules/user-stores/user-store.entity';
 
 /**
  * CommonModule fornece serviços compartilhados usados por toda a aplicação.
@@ -17,7 +21,20 @@ import { CurrentUserService } from './services/current-user.service';
  * - Utils: crypto, metrics, pagination
  */
 @Module({
-  providers: [LoggerService, RetryService, MetricsService, CurrentUserService],
-  exports: [LoggerService, RetryService, MetricsService, CurrentUserService],
+  imports: [TypeOrmModule.forFeature([Store, UserStore])],
+  providers: [
+    LoggerService,
+    RetryService,
+    MetricsService,
+    CurrentUserService,
+    AccessScopeService,
+  ],
+  exports: [
+    LoggerService,
+    RetryService,
+    MetricsService,
+    CurrentUserService,
+    AccessScopeService,
+  ],
 })
 export class CommonModule {}

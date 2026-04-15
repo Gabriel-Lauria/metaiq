@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { Insight } from './insight.entity';
 import { Campaign } from '../campaigns/campaign.entity';
 import { MetricsService } from '../metrics/metrics.service';
+import { AuthenticatedUser } from '../../common/interfaces';
+import { AccessScopeService } from '../../common/services/access-scope.service';
 
 /**
  * InsightsService é o coração inteligente do MetaIQ.
@@ -48,6 +50,7 @@ export class InsightsService {
     @InjectRepository(Insight)
     private readonly insightRepo: Repository<Insight>,
     private readonly metricsService: MetricsService,
+    private readonly accessScope: AccessScopeService,
   ) {}
 
   /**
@@ -62,7 +65,7 @@ export class InsightsService {
       .toISOString()
       .split('T')[0];
 
-    const summary = await this.metricsService.getCampaignSummary(
+    const summary = await this.metricsService.getCampaignSummaryUnsafeInternal(
       campaign.id,
       from,
       to,
@@ -148,7 +151,7 @@ export class InsightsService {
     return newInsights;
   }
 
-  async resolveInsight(id: string): Promise<Insight> {
+  async resolveInsightUnsafeInternal(id: string): Promise<Insight> {
     const insight = await this.insightRepo.findOneOrFail({ where: { id } });
     insight.resolved = true;
     return this.insightRepo.save(insight);
@@ -157,13 +160,13 @@ export class InsightsService {
   /**
    * Resolve insight com validação de ownership
    */
-  async resolveInsightByUser(id: string, userId: string): Promise<Insight> {
-    const insight = await this.insightRepo
+  async resolveInsightByUser(id: string, user: AuthenticatedUser): Promise<Insight> {
+    const query = this.insightRepo
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('insight.id = :id', { id })
-      .andWhere('campaign.userId = :userId', { userId })
-      .getOne();
+      .where('insight.id = :id', { id });
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    const insight = await query.getOne();
 
     if (!insight) {
       throw new NotFoundException(`Insight ${id} não encontrado`);
@@ -173,20 +176,20 @@ export class InsightsService {
     return this.insightRepo.save(insight);
   }
 
-  async findOne(id: string): Promise<Insight> {
+  async findOneUnsafeInternal(id: string): Promise<Insight> {
     return this.insightRepo.findOneOrFail({ where: { id } });
   }
 
   /**
    * Find insight com validação de ownership
    */
-  async findOneByUser(id: string, userId: string): Promise<Insight> {
-    const insight = await this.insightRepo
+  async findOneByUser(id: string, user: AuthenticatedUser): Promise<Insight> {
+    const query = this.insightRepo
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('insight.id = :id', { id })
-      .andWhere('campaign.userId = :userId', { userId })
-      .getOne();
+      .where('insight.id = :id', { id });
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    const insight = await query.getOne();
 
     if (!insight) {
       throw new NotFoundException(`Insight ${id} não encontrado`);
@@ -208,13 +211,22 @@ export class InsightsService {
       .execute();
   }
 
-  async findAll(filters: {
+  async findAllUnsafeInternal(filters: {
     campaignId?: string;
+    storeId?: string;
     type?: string;
     severity?: string;
     resolved?: boolean;
   }): Promise<Insight[]> {
     const query = this.insightRepo.createQueryBuilder('insight');
+
+    if (filters.storeId) {
+      query
+        .innerJoin('insight.campaign', 'campaign')
+        .andWhere('campaign.storeId = :filterStoreId', {
+          filterStoreId: filters.storeId,
+        });
+    }
 
     if (filters.campaignId) {
       query.andWhere('insight.campaignId = :campaignId', {
@@ -248,9 +260,10 @@ export class InsightsService {
    * SEGURANÇA: usa JOIN com Campaign para validar ownership
    */
   async findAllByUser(
-    userId: string,
+    user: AuthenticatedUser,
     filters: {
       campaignId?: string;
+      storeId?: string;
       type?: string;
       severity?: string;
       resolved?: boolean;
@@ -258,8 +271,15 @@ export class InsightsService {
   ): Promise<Insight[]> {
     const query = this.insightRepo
       .createQueryBuilder('insight')
-      .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('campaign.userId = :userId', { userId });
+      .innerJoinAndSelect('insight.campaign', 'campaign');
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+
+    if (filters.storeId) {
+      await this.accessScope.validateStoreAccess(user, filters.storeId);
+      query.andWhere('campaign.storeId = :filterStoreId', {
+        filterStoreId: filters.storeId,
+      });
+    }
 
     if (filters.campaignId) {
       query.andWhere('insight.campaignId = :campaignId', {

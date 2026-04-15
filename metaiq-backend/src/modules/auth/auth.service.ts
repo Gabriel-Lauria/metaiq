@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,10 +11,12 @@ import { Repository } from 'typeorm';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/user.entity';
+import { Role } from '../../common/enums';
 
 interface JwtPayload {
   sub: string;
   email: string;
+  role: Role;
   jti?: string;
 }
 
@@ -28,6 +35,12 @@ export class AuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
+    if (!user.active) {
+      await this.clearRefreshTokenForInactiveUser(user);
+      throw new UnauthorizedException('Usuário inativo');
+    }
+    this.assertValidRole(user);
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciais inválidas');
@@ -40,6 +53,10 @@ export class AuthService {
   }
 
   async register(email: string, password: string, name: string) {
+    if (!this.isPublicRegisterEnabled()) {
+      throw new ForbiddenException('Registro público desabilitado');
+    }
+
     const existing = await this.userRepository.findOne({ where: { email } });
     if (existing) {
       throw new ConflictException('Email já cadastrado');
@@ -71,6 +88,12 @@ export class AuthService {
       throw new UnauthorizedException('Usuário não encontrado');
     }
 
+    if (!user.active) {
+      await this.clearRefreshTokenForInactiveUser(user);
+      throw new UnauthorizedException('Usuário inativo');
+    }
+    this.assertValidRole(user);
+
     const tokens = await this.rotateRefreshToken(user, refreshToken);
     return this.buildAuthResponse(user, tokens);
   }
@@ -93,6 +116,12 @@ export class AuthService {
     if (!user || !user.refreshToken) {
       throw new UnauthorizedException('Usuário não encontrado ou refresh token inválido');
     }
+
+    if (!user.active) {
+      await this.clearRefreshTokenForInactiveUser(user);
+      throw new UnauthorizedException('Usuário inativo');
+    }
+    this.assertValidRole(user);
 
     if (!this.isRefreshTokenValid(refreshToken, user.refreshToken)) {
       await this.updateRefreshToken(user.id, null);
@@ -140,13 +169,30 @@ export class AuthService {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: 'admin',
+        role: user.role,
+        managerId: user.managerId,
       },
     };
   }
 
   private buildPayload(user: User): JwtPayload {
-    return { sub: user.id, email: user.email };
+    return { sub: user.id, email: user.email, role: user.role };
+  }
+
+  private isPublicRegisterEnabled(): boolean {
+    return this.configService.get<boolean>('app.enablePublicRegister') === true;
+  }
+
+  private assertValidRole(user: User): void {
+    if (!Object.values(Role).includes(user.role)) {
+      throw new UnauthorizedException('Role do usuário inválida');
+    }
+  }
+
+  private async clearRefreshTokenForInactiveUser(user: User): Promise<void> {
+    if (user.refreshToken) {
+      await this.updateRefreshToken(user.id, null);
+    }
   }
 
   private async updateRefreshToken(userId: string, refreshToken: string | null) {

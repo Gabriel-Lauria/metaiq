@@ -13,12 +13,12 @@ describe('CurrentUserService', () => {
   });
 
   it('should return user payload fields when present', () => {
-    const request = { user: { id: 'user-123', email: 'test@example.com', role: 'admin' } };
+    const request = { user: { id: 'user-123', email: 'test@example.com', role: 'ADMIN' } };
 
     expect(service.getUser(request)).toEqual(request.user);
     expect(service.getUserId(request)).toBe('user-123');
     expect(service.getUserField(request, 'email')).toBe('test@example.com');
-    expect(service.getUserField(request, 'role')).toBe('admin');
+    expect(service.getUserField(request, 'role')).toBe('ADMIN');
   });
 
   it('should validate ownership correctly', () => {

@@ -8,12 +8,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Role } from '../../common/enums';
 import { InsightsService } from './insights.service';
 import { Insight } from './insight.entity';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../common/interfaces';
 
 @Controller('insights')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class InsightsController {
   private readonly logger = new Logger(InsightsController.name);
 
@@ -25,15 +29,18 @@ export class InsightsController {
    * VALIDAÇÃO: apenas insights de campanhas do usuário autenticado
    */
   @Get()
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   async findAll(
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('campaignId') campaignId?: string,
     @Query('type') type?: string,
     @Query('severity') severity?: string,
     @Query('resolved') resolved?: string,
+    @Query('storeId') storeId?: string,
   ): Promise<Insight[]> {
-    return this.insightsService.findAllByUser(userId, {
+    return this.insightsService.findAllByUser(user, {
       campaignId,
+      storeId,
       type,
       severity,
       resolved: resolved === 'true' ? true : resolved === 'false' ? false : undefined,
@@ -46,11 +53,12 @@ export class InsightsController {
    * VALIDAÇÃO: apenas se a campanha pertence ao usuário
    */
   @Get(':id')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   async findOne(
     @Param('id') id: string,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<Insight> {
-    return this.insightsService.findOneByUser(id, userId);
+    return this.insightsService.findOneByUser(id, user);
   }
 
   /**
@@ -59,11 +67,12 @@ export class InsightsController {
    * VALIDAÇÃO: apenas se a campanha pertence ao usuário
    */
   @Patch(':id/resolve')
+  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async resolve(
     @Param('id') id: string,
-    @CurrentUser() userId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<Insight> {
-    this.logger.log(`Insight ${id} marcado como resolvido por usuário ${userId}`);
-    return this.insightsService.resolveInsightByUser(id, userId);
+    this.logger.log(`Insight ${id} marcado como resolvido por usuário ${user.id}`);
+    return this.insightsService.resolveInsightByUser(id, user);
   }
 }

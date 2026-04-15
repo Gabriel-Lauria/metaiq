@@ -38,7 +38,7 @@ export class SyncCron {
     const operation = this.logger.startOperation('Cron: Geração de insights');
     
     try {
-      const campaigns = await this.campaignsService.findAllActive();
+      const campaigns = await this.campaignsService.findAllActiveUnsafeInternal();
       let success = 0;
       let errors = 0;
 

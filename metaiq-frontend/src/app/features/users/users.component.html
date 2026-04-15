@@ -1,0 +1,57 @@
+<section class="management-page">
+  <div class="management-header">
+    <div>
+      <h2>Usuarios</h2>
+      <p>Crie usuarios do tenant e acompanhe os papeis ativos.</p>
+    </div>
+    <button class="btn secondary" (click)="load()">Atualizar</button>
+  </div>
+
+  <form class="toolbar" (ngSubmit)="create()">
+    <input name="name" [(ngModel)]="name" placeholder="Nome" />
+    <input name="email" [(ngModel)]="email" placeholder="Email" type="email" />
+    <input name="password" [(ngModel)]="password" placeholder="Senha" type="password" />
+    <select name="role" [(ngModel)]="role">
+      <option *ngFor="let option of (isAdmin() ? adminRoles : roles)" [ngValue]="option">{{ option }}</option>
+    </select>
+    <select *ngIf="isAdmin() && role !== 'ADMIN'" name="managerId" [(ngModel)]="managerId">
+      <option value="">Manager</option>
+      <option *ngFor="let manager of managers()" [value]="manager.id">{{ manager.name }}</option>
+    </select>
+    <button class="btn primary" type="submit">Criar usuario</button>
+  </form>
+
+  <form class="toolbar" *ngIf="isAdmin()" (ngSubmit)="resetPassword()">
+    <select name="passwordUserId" [(ngModel)]="passwordUserId">
+      <option value="">Usuario para alterar senha</option>
+      <option *ngFor="let user of users()" [value]="user.id">{{ user.name }} - {{ user.email }}</option>
+    </select>
+    <input
+      name="newPassword"
+      [(ngModel)]="newPassword"
+      placeholder="Nova senha"
+      type="password"
+    />
+    <button class="btn primary" type="submit">Alterar senha</button>
+  </form>
+
+  <p class="error" *ngIf="error()">{{ error() }}</p>
+  <p class="muted" *ngIf="success()">{{ success() }}</p>
+  <p class="muted" *ngIf="loading()">Carregando...</p>
+  <p class="muted" *ngIf="!loading() && !users().length">Nenhum usuário encontrado.</p>
+
+  <div class="table" *ngIf="!loading() && users().length">
+    <div class="table-head">
+      <span>Nome</span>
+      <span>Email</span>
+      <span>Role</span>
+      <span>Tenant</span>
+    </div>
+    <div class="table-row" *ngFor="let user of users()">
+      <span>{{ user.name }}</span>
+      <span>{{ user.email }}</span>
+      <span>{{ user.role }}</span>
+      <span>{{ user.managerId || 'Sem tenant' }}</span>
+    </div>
+  </div>
+</section>

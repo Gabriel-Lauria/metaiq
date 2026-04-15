@@ -16,9 +16,9 @@
   <!-- Empty State -->
   <div class="empty-state" *ngIf="!loading() && !error() && !hasDashboardData()">
     <div class="empty-icon">📊</div>
-    <p class="empty-title">Nenhum dado encontrado</p>
+    <p class="empty-title">{{ isClient() ? 'Nenhum resultado disponível' : 'Nenhum dado encontrado' }}</p>
     <p class="empty-description">
-      Não há métricas ou insights para os últimos {{ period() }} dias.
+      {{ isClient() ? 'Ainda não há resultados para o período escolhido.' : 'Não há métricas ou insights para o período escolhido.' }}
     </p>
     <button class="btn btn-secondary" (click)="loadData()">Atualizar</button>
   </div>
@@ -28,10 +28,22 @@
     <!-- Header -->
     <div class="dashboard-header">
       <div class="header-left">
-        <h1 class="page-title">Dashboard de Performance</h1>
-        <p class="page-subtitle">Últimos {{ period() }} dias • Atualizado há alguns instantes</p>
+        <h1 class="page-title">{{ dashboardTitle() }}</h1>
+        <p class="page-subtitle">
+          Últimos {{ period() }} dias
+          <span *ngIf="storeContext.selectedStore()"> • {{ storeContext.selectedStore()!.name }}</span>
+        </p>
       </div>
       <div class="time-range-buttons">
+        <select
+          class="store-select"
+          *ngIf="storeContext.stores().length > 1 && !isClient()"
+          [ngModel]="storeContext.selectedStoreId()"
+          (ngModelChange)="setStore($event)"
+        >
+          <option value="">Todas as stores</option>
+          <option *ngFor="let store of storeContext.stores()" [value]="store.id">{{ store.name }}</option>
+        </select>
         <button
           class="btn-time-range"
           [class.active]="period() === 7"
@@ -57,7 +69,7 @@
     <div class="metrics-grid" *ngIf="metrics() && hasMetricsData()">
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">Impressões</span>
+          <span class="metric-title">{{ isClient() ? 'Pessoas alcançadas' : 'Impressões' }}</span>
           <span class="metric-icon">👁️</span>
         </div>
         <div class="metric-value">{{ metrics()!.impressions.toLocaleString() }}</div>
@@ -65,7 +77,7 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">Cliques</span>
+          <span class="metric-title">{{ kpiLabel('clicks') }}</span>
           <span class="metric-icon">👆</span>
         </div>
         <div class="metric-value">{{ metrics()!.clicks.toLocaleString() }}</div>
@@ -73,7 +85,7 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">Gasto Total</span>
+          <span class="metric-title">{{ kpiLabel('spend') }}</span>
           <span class="metric-icon">💰</span>
         </div>
         <div class="metric-value">{{ fmt(metrics()!.spend) }}</div>
@@ -81,7 +93,7 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">Conversões</span>
+          <span class="metric-title">{{ kpiLabel('conversions') }}</span>
           <span class="metric-icon">🎯</span>
         </div>
         <div class="metric-value">{{ metrics()!.conversions.toLocaleString() }}</div>
@@ -89,7 +101,7 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">CTR</span>
+          <span class="metric-title">{{ kpiLabel('ctr') }}</span>
           <span class="metric-icon">📊</span>
         </div>
         <div class="metric-value">{{ fmtPct(metrics()!.ctr) }}</div>
@@ -97,15 +109,15 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">CPA</span>
+          <span class="metric-title">{{ kpiLabel('cpc') }}</span>
           <span class="metric-icon">💸</span>
         </div>
-        <div class="metric-value">{{ fmt(metrics()!.cpa) }}</div>
+        <div class="metric-value">{{ fmt(metrics()!.cpc || 0) }}</div>
       </div>
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-title">ROAS</span>
+          <span class="metric-title">{{ isClient() ? 'Retorno' : 'ROAS' }}</span>
           <span class="metric-icon">📈</span>
         </div>
         <div class="metric-value">{{ fmtRoas(metrics()!.roas) }}</div>
@@ -117,6 +129,37 @@
           <span class="metric-icon">💵</span>
         </div>
         <div class="metric-value">{{ fmt(metrics()!.revenue) }}</div>
+      </div>
+    </div>
+
+    <div class="metrics-grid" *ngIf="summary() && (isAdmin() || isManager())">
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Stores</span>
+          <span class="metric-icon">S</span>
+        </div>
+        <div class="metric-value">{{ summary()!.counts.stores }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Usuários</span>
+          <span class="metric-icon">U</span>
+        </div>
+        <div class="metric-value">{{ summary()!.counts.users }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Campanhas</span>
+          <span class="metric-icon">C</span>
+        </div>
+        <div class="metric-value">{{ summary()!.counts.campaigns }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-title">Ativas</span>
+          <span class="metric-icon">A</span>
+        </div>
+        <div class="metric-value">{{ summary()!.counts.activeCampaigns }}</div>
       </div>
     </div>
 
@@ -136,7 +179,7 @@
 
     <!-- Insights Section -->
     <div class="insights-section" *ngIf="allInsights.length > 0">
-      <h3>Insights e Recomendações</h3>
+      <h3>{{ isClient() ? 'Pontos importantes' : 'Insights e recomendações' }}</h3>
       <div class="insights-grid">
         <div class="insight-card" *ngFor="let insight of allInsights">
           <div class="insight-header">
@@ -144,6 +187,21 @@
             <span class="insight-title">{{ insight.title || insight.message }}</span>
           </div>
           <p class="insight-description">{{ insight.description || insight.recommendation }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="insights-section" *ngIf="highlightedCampaigns.length > 0">
+      <h3>{{ isClient() ? 'Campanhas em andamento' : 'Campanhas em destaque' }}</h3>
+      <div class="insights-grid">
+        <div class="insight-card" *ngFor="let campaign of highlightedCampaigns">
+          <div class="insight-header">
+            <span class="insight-type">{{ campaign.status }}</span>
+            <span class="insight-title">{{ campaign.name }}</span>
+          </div>
+          <p class="insight-description">
+            {{ isClient() ? 'Acompanhamento de resultado ativo.' : 'Score atual: ' + campaign.score }}
+          </p>
         </div>
       </div>
     </div>

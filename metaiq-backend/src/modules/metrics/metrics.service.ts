@@ -5,24 +5,27 @@ import { MetricDaily } from './metric-daily.entity';
 import { MetricsEngine } from './metrics.engine';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { calcCTR, calcCPA, calcROAS } from '../../common/utils/metrics.util';
+import { AuthenticatedUser } from '../../common/interfaces';
+import { AccessScopeService } from '../../common/services/access-scope.service';
 
 @Injectable()
 export class MetricsService {
   constructor(
     @InjectRepository(MetricDaily)
     private metricRepository: Repository<MetricDaily>,
+    private readonly accessScope: AccessScopeService,
   ) {}
 
   private engine = new MetricsEngine();
 
-  async findAll(): Promise<MetricDaily[]> {
+  async findAllUnsafeInternal(): Promise<MetricDaily[]> {
     return this.metricRepository.find({
       relations: ['campaign'],
       order: { date: 'DESC' },
     });
   }
 
-  async findByCampaign(campaignId: string): Promise<MetricDaily[]> {
+  async findByCampaignUnsafeInternal(campaignId: string): Promise<MetricDaily[]> {
     return this.metricRepository.find({
       where: { campaign: { id: campaignId } },
       relations: ['campaign'],
@@ -30,12 +33,17 @@ export class MetricsService {
     });
   }
 
-  async getSummary(userId: string, from: Date, to: Date): Promise<any> {
+  async getSummary(
+    user: AuthenticatedUser,
+    from: Date,
+    to: Date,
+    storeId?: string,
+  ): Promise<any> {
     const fromStr = from.toISOString().split('T')[0];
     const toStr = to.toISOString().split('T')[0];
 
-    // Use SQL aggregation with userId filter to prevent data leakage
-    const result = await this.metricRepository
+    // Scope is applied through Campaign -> Store first, with legacy userId fallback centralized in AccessScopeService.
+    const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoinAndSelect('m.campaign', 'campaign')
       .select([
@@ -45,9 +53,10 @@ export class MetricsService {
         'SUM(m.conversions) as conversions',
         'SUM(m.revenue) as revenue',
       ])
-      .where('campaign.userId = :userId', { userId })
-      .andWhere('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr })
-      .getRawOne();
+      .where('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr });
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.applyStoreFilter(query, user, storeId);
+    const result = await query.getRawOne();
 
     if (!result) {
       return {
@@ -103,20 +112,25 @@ export class MetricsService {
     };
   }
 
-  async findAllPaginated(userId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
+  async findAllPaginated(
+    user: AuthenticatedUser,
+    pagination: PaginationDto,
+    filters: { storeId?: string } = {},
+  ): Promise<PaginatedResponse<MetricDaily>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    // Filter metrics by user's campaigns to prevent data leakage
-    const [data, total] = await this.metricRepository
+    // Filter metrics through the campaign scope to prevent data leakage.
+    const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
       .addSelect('campaign.id')
-      .where('campaign.userId = :userId', { userId })
       .orderBy('m.date', 'DESC')
       .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+      .take(limit);
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.applyStoreFilter(query, user, filters.storeId);
+    const [data, total] = await query.getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -133,7 +147,7 @@ export class MetricsService {
     };
   }
 
-  async getCampaignSummary(campaignId: string, from: string, to: string): Promise<any> {
+  async getCampaignSummaryUnsafeInternal(campaignId: string, from: string, to: string): Promise<any> {
     const result = await this.metricRepository
       .createQueryBuilder('m')
       .select([
@@ -173,12 +187,12 @@ export class MetricsService {
   }
 
   async getCampaignSummaryForUser(
-    userId: string,
+    user: AuthenticatedUser,
     campaignId: string,
     from: string,
     to: string,
   ): Promise<any> {
-    const result = await this.metricRepository
+    const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
       .select([
@@ -193,9 +207,9 @@ export class MetricsService {
         'MAX(m.date) as lastMetricDate',
       ])
       .where('m.campaignId = :campaignId', { campaignId })
-      .andWhere('campaign.userId = :userId', { userId })
-      .andWhere('m.date BETWEEN :from AND :to', { from, to })
-      .getRawOne();
+      .andWhere('m.date BETWEEN :from AND :to', { from, to });
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    const result = await query.getRawOne();
 
     if (!result) {
       return null;
@@ -226,19 +240,19 @@ export class MetricsService {
   }
 
   async findByCampaignForUser(
-    userId: string,
+    user: AuthenticatedUser,
     campaignId: string,
     from: string,
     to: string,
   ): Promise<MetricDaily[]> {
-    return this.metricRepository
+    const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
       .where('m.campaignId = :campaignId', { campaignId })
-      .andWhere('campaign.userId = :userId', { userId })
       .andWhere('m.date BETWEEN :from AND :to', { from, to })
-      .orderBy('m.date', 'DESC')
-      .getMany();
+      .orderBy('m.date', 'DESC');
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    return query.getMany();
   }
 
   async upsertDailyMetric(data: Partial<MetricDaily>): Promise<MetricDaily> {
@@ -261,19 +275,19 @@ export class MetricsService {
     return this.metricRepository.save(this.metricRepository.create(enriched));
   }
 
-  async findByCampaignPaginated(userId: string, campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
+  async findByCampaignPaginated(user: AuthenticatedUser, campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    const [data, total] = await this.metricRepository
+    const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
       .where('campaign.id = :campaignId', { campaignId })
-      .andWhere('campaign.userId = :userId', { userId })
       .orderBy('m.date', 'DESC')
       .skip(skip)
-      .take(limit)
-      .getManyAndCount();
+      .take(limit);
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    const [data, total] = await query.getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -288,5 +302,18 @@ export class MetricsService {
         hasPrev: page > 1,
       },
     };
+  }
+
+  private async applyStoreFilter<T>(
+    query: any,
+    user: AuthenticatedUser,
+    storeId?: string,
+  ): Promise<void> {
+    if (!storeId) {
+      return;
+    }
+
+    await this.accessScope.validateStoreAccess(user, storeId);
+    query.andWhere('campaign.storeId = :filterStoreId', { filterStoreId: storeId });
   }
 }

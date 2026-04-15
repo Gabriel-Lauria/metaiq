@@ -4,6 +4,7 @@ import { InsightsService } from './insights.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { Insight } from './insight.entity';
 import { Campaign } from '../campaigns/campaign.entity';
+import { AccessScopeService } from '../../common/services/access-scope.service';
 
 describe('InsightsService', () => {
   let service: InsightsService;
@@ -18,7 +19,11 @@ describe('InsightsService', () => {
   };
 
   const mockMetricsService = {
-    getCampaignSummary: jest.fn(),
+    getCampaignSummaryUnsafeInternal: jest.fn(),
+  };
+
+  const mockAccessScopeService = {
+    applyCampaignScope: jest.fn(async (query) => query),
   };
 
   beforeEach(async () => {
@@ -32,6 +37,10 @@ describe('InsightsService', () => {
         {
           provide: MetricsService,
           useValue: mockMetricsService,
+        },
+        {
+          provide: AccessScopeService,
+          useValue: mockAccessScopeService,
         },
       ],
     }).compile();
@@ -61,20 +70,24 @@ describe('InsightsService', () => {
       startTime: new Date('2026-01-01'),
       endTime: null,
       userId: 'user-123',
+      storeId: 'store-123',
+      createdByUserId: 'user-123',
       adAccountId: 'acc-123',
       user: {} as any,
+      store: {} as any,
+      createdByUser: {} as any,
       adAccount: {} as any,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
     it('should generate no insights when metrics are unavailable', async () => {
-      mockMetricsService.getCampaignSummary.mockResolvedValue(null);
+      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
 
       expect(result).toEqual([]);
-      expect(mockMetricsService.getCampaignSummary).toHaveBeenCalled();
+      expect(mockMetricsService.getCampaignSummaryUnsafeInternal).toHaveBeenCalled();
     });
 
     it('should generate ROAS danger insight when ROAS < 1.0', async () => {
@@ -93,7 +106,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null); // No duplicate
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -120,7 +133,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -147,7 +160,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -174,7 +187,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummary.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
 
       const existingInsight = {
         id: 'existing-insight',
@@ -230,7 +243,7 @@ describe('InsightsService', () => {
       mockInsightRepo.findOneOrFail.mockResolvedValue(mockInsight);
       mockInsightRepo.save.mockResolvedValue(resolvedInsight);
 
-      const result = await service.resolveInsight('insight-123');
+      const result = await service.resolveInsightUnsafeInternal('insight-123');
 
       expect(result.resolved).toBe(true);
       expect(mockInsightRepo.save).toHaveBeenCalled();
@@ -257,7 +270,7 @@ describe('InsightsService', () => {
 
       mockInsightRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
-      const result = await service.findAll({
+      const result = await service.findAllUnsafeInternal({
         campaignId: 'camp-123',
         resolved: false,
       });

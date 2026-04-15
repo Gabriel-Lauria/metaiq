@@ -1,0 +1,45 @@
+<section class="management-page">
+  <div class="management-header">
+    <div>
+      <h2>Managers</h2>
+      <p>Crie e mantenha os tenants operacionais.</p>
+    </div>
+    <button class="btn secondary" (click)="load()">Atualizar</button>
+  </div>
+
+  <form class="toolbar" (ngSubmit)="create()">
+    <input name="name" [(ngModel)]="name" placeholder="Nome do manager" />
+    <button class="btn primary" type="submit">Criar manager</button>
+  </form>
+
+  <p class="error" *ngIf="error()">{{ error() }}</p>
+  <p class="muted" *ngIf="success()">{{ success() }}</p>
+  <p class="muted" *ngIf="loading()">Carregando...</p>
+
+  <p class="muted" *ngIf="!loading() && !managers().length">Nenhum manager cadastrado ainda.</p>
+
+  <div class="table" *ngIf="!loading() && managers().length">
+    <div class="table-head">
+      <span>Nome</span>
+      <span>Status</span>
+      <span>Acoes</span>
+    </div>
+
+    <div class="table-row" *ngFor="let manager of managers()">
+      <span *ngIf="editingId !== manager.id">{{ manager.name }}</span>
+      <input
+        *ngIf="editingId === manager.id"
+        name="editingName"
+        [(ngModel)]="editingName"
+      />
+      <span>{{ manager.active ? 'Ativo' : 'Inativo' }}</span>
+      <span class="actions">
+        <button class="btn secondary" *ngIf="editingId !== manager.id" (click)="startEdit(manager)">Editar</button>
+        <button class="btn primary" *ngIf="editingId === manager.id" (click)="saveEdit(manager)">Salvar</button>
+        <button class="btn secondary" (click)="toggle(manager)">
+          {{ manager.active ? 'Desativar' : 'Ativar' }}
+        </button>
+      </span>
+    </div>
+  </div>
+</section>

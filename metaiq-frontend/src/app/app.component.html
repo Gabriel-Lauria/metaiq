@@ -19,9 +19,10 @@
         title="Dashboard"
       >
         <span class="nav-icon">📊</span>
-        <span class="nav-label">Dashboard</span>
+        <span class="nav-label">{{ dashboardLabel() }}</span>
       </a>
       <a
+        *ngIf="canSeeCampaigns()"
         routerLink="/campaigns"
         class="nav-item"
         [class.active]="isActive('/campaigns')"
@@ -30,6 +31,36 @@
         <span class="nav-icon">📢</span>
         <span class="nav-label">Campanhas</span>
       </a>
+      <a
+        *ngIf="canSeeManagers()"
+        routerLink="/admin/managers"
+        class="nav-item"
+        [class.active]="isActive('/admin/managers')"
+        title="Managers"
+      >
+        <span class="nav-icon">M</span>
+        <span class="nav-label">Managers</span>
+      </a>
+      <a
+        *ngIf="canSeeTenantManagement()"
+        routerLink="/manager/stores"
+        class="nav-item"
+        [class.active]="isActive('/manager/stores')"
+        title="Stores"
+      >
+        <span class="nav-icon">S</span>
+        <span class="nav-label">Stores</span>
+      </a>
+      <a
+        *ngIf="canSeeTenantManagement()"
+        routerLink="/manager/users"
+        class="nav-item"
+        [class.active]="isActive('/manager/users')"
+        title="Usuarios"
+      >
+        <span class="nav-icon">U</span>
+        <span class="nav-label">Usuarios</span>
+      </a>
     </nav>
 
     <div class="sidebar-profile" *ngIf="currentUser$ | async as user">
@@ -37,6 +68,7 @@
       <div class="profile-meta">
         <span class="profile-name">{{ user.name }}</span>
         <span class="profile-email">{{ user.email || 'Usuário' }}</span>
+        <span class="profile-role">{{ user.role }}</span>
       </div>
     </div>
 

@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString, Length } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, Length } from 'class-validator';
 
 export class CreateAdAccountDto {
   @IsString()
@@ -17,6 +17,10 @@ export class CreateAdAccountDto {
   @IsOptional()
   @IsString()
   accessToken?: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  storeId: string;
 }
 
 export class UpdateAdAccountDto {
@@ -28,4 +32,9 @@ export class UpdateAdAccountDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  @IsNotEmpty()
+  storeId?: string;
 }

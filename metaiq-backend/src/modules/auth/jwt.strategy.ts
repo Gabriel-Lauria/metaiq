@@ -5,6 +5,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Repository } from 'typeorm';
 import { User } from '../users/user.entity';
+import { Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces';
+
+interface JwtPayload {
+  sub: string;
+  email: string;
+  role?: Role;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -20,15 +28,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const { sub: userId } = payload;
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
-    if (!user) {
+    if (!user || !user.active) {
       throw new UnauthorizedException();
     }
 
-    const { password: _password, refreshToken: _refreshToken, ...safeUser } = user;
-    return safeUser;
+    if (!this.isValidRole(user.role)) {
+      throw new UnauthorizedException();
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      managerId: user.managerId,
+    };
+  }
+
+  private isValidRole(role: unknown): role is Role {
+    return Object.values(Role).includes(role as Role);
   }
 }

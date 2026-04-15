@@ -3,7 +3,22 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { timeout, retry, catchError } from 'rxjs/operators';
 import {
-  Campaign, MetricDaily, AggregatedMetrics, Insight, AdAccount,
+  Campaign,
+  MetricDaily,
+  AggregatedMetrics,
+  Insight,
+  AdAccount,
+  Manager,
+  Store,
+  User,
+  UserStore,
+  CreateManagerRequest,
+  UpdateManagerRequest,
+  CreateStoreRequest,
+  UpdateStoreRequest,
+  CreateUserRequest,
+  ResetUserPasswordRequest,
+  DashboardSummary,
 } from '../models';
 import { environment } from '../environment';
 
@@ -93,10 +108,11 @@ export class ApiService {
   }
 
   // ── Campaigns ────────────────────────────────────────────────
-  getCampaigns(pagination?: PaginationDto): Observable<PaginatedResponse<Campaign>> {
+  getCampaigns(pagination?: PaginationDto, storeId?: string): Observable<PaginatedResponse<Campaign>> {
     let params = new HttpParams();
     if (pagination?.page) params = params.set('page', pagination.page.toString());
     if (pagination?.limit) params = params.set('limit', pagination.limit.toString());
+    if (storeId) params = params.set('storeId', storeId);
 
     return this.request(this.http.get<PaginatedResponse<Campaign>>(`${API}/campaigns`, { params }));
   }
@@ -109,6 +125,13 @@ export class ApiService {
   getMetricsSummary(days = 30): Observable<AggregatedMetrics> {
     const { from, to } = dateRange(days);
     const params = new HttpParams().set('from', from).set('to', to);
+    return this.get<AggregatedMetrics>('/metrics/summary', params);
+  }
+
+  getMetricsSummaryForStore(days = 30, storeId?: string): Observable<AggregatedMetrics> {
+    const { from, to } = dateRange(days);
+    let params = new HttpParams().set('from', from).set('to', to);
+    if (storeId) params = params.set('storeId', storeId);
     return this.get<AggregatedMetrics>('/metrics/summary', params);
   }
 
@@ -149,6 +172,19 @@ export class ApiService {
     return this.get<Insight[]>('/insights', params);
   }
 
+  getInsightsForStore(days = 30, storeId?: string): Observable<Insight[]> {
+    const { from, to } = dateRange(days);
+    let params = new HttpParams().set('from', from).set('to', to);
+    if (storeId) params = params.set('storeId', storeId);
+    return this.get<Insight[]>('/insights', params);
+  }
+
+  getDashboardSummary(days = 30, storeId?: string): Observable<DashboardSummary> {
+    let params = new HttpParams().set('days', days.toString());
+    if (storeId) params = params.set('storeId', storeId);
+    return this.get<DashboardSummary>('/dashboard/summary', params);
+  }
+
   getCampaignInsights(campaignId: string, days = 30): Observable<Insight[]> {
     const { from, to } = dateRange(days);
     const params = new HttpParams()
@@ -165,5 +201,66 @@ export class ApiService {
 
   getMetaConnectUrl(): string {
     return `${API}/meta/connect`;
+  }
+
+  // ── Management ───────────────────────────────────────────────
+  getManagers(): Observable<Manager[]> {
+    return this.get<Manager[]>('/managers');
+  }
+
+  createManager(body: CreateManagerRequest): Observable<Manager> {
+    return this.post<Manager>('/managers', body);
+  }
+
+  updateManager(id: string, body: UpdateManagerRequest): Observable<Manager> {
+    return this.patch<Manager>(`/managers/${id}`, body);
+  }
+
+  toggleManagerActive(id: string): Observable<Manager> {
+    return this.patch<Manager>(`/managers/${id}/toggle-active`, {});
+  }
+
+  getStores(): Observable<Store[]> {
+    return this.get<Store[]>('/stores');
+  }
+
+  getAccessibleStores(): Observable<Store[]> {
+    return this.get<Store[]>('/stores/accessible');
+  }
+
+  createStore(body: CreateStoreRequest): Observable<Store> {
+    return this.post<Store>('/stores', body);
+  }
+
+  updateStore(id: string, body: UpdateStoreRequest): Observable<Store> {
+    return this.patch<Store>(`/stores/${id}`, body);
+  }
+
+  toggleStoreActive(id: string): Observable<Store> {
+    return this.patch<Store>(`/stores/${id}/toggle-active`, {});
+  }
+
+  getUsers(): Observable<User[]> {
+    return this.get<User[]>('/users');
+  }
+
+  createUser(body: CreateUserRequest): Observable<User> {
+    return this.post<User>('/users', body);
+  }
+
+  resetUserPassword(id: string, body: ResetUserPasswordRequest): Observable<User> {
+    return this.patch<User>(`/users/${id}/password`, body);
+  }
+
+  getStoreUsers(storeId: string): Observable<User[]> {
+    return this.get<User[]>(`/stores/${storeId}/users`);
+  }
+
+  linkUserToStore(storeId: string, userId: string): Observable<UserStore> {
+    return this.post<UserStore>(`/stores/${storeId}/users/${userId}`, {});
+  }
+
+  unlinkUserFromStore(storeId: string, userId: string): Observable<{ message: string }> {
+    return this.delete<{ message: string }>(`/stores/${storeId}/users/${userId}`);
   }
 }

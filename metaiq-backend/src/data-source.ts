@@ -2,6 +2,9 @@ import 'reflect-metadata';
 import * as dotenv from 'dotenv';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { User } from './modules/users/user.entity';
+import { Manager } from './modules/managers/manager.entity';
+import { Store } from './modules/stores/store.entity';
+import { UserStore } from './modules/user-stores/user-store.entity';
 import { AdAccount } from './modules/ad-accounts/ad-account.entity';
 import { Campaign } from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
@@ -15,7 +18,7 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
 };
 
 const commonOptions = {
-  entities: [User, AdAccount, Campaign, MetricDaily, Insight],
+  entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
   migrations: ['src/migrations/*{.ts,.js}'],
   synchronize: false,
   logging: parseBoolean(process.env.TYPEORM_LOGGING, false),
