@@ -47,10 +47,48 @@ const validateEnv = () => {
 validateEnv();
 
 const DB_PATH = process.env.SQLITE_PATH ?? './data/metaiq.db';
+const DB_TYPE = process.env.DATABASE_TYPE ?? (process.env.POSTGRES_DB ? 'postgres' : 'sqlite');
 
 // ── Utilitários para cálculos monetários ────────────────────────
 const roundMoney = (n: number): number => Math.round(n * 100) / 100;
 const safeCharAt = (str: string, idx: number): number => str.charCodeAt(idx) ?? 65; // 65 = 'A'
+
+const DEMO_PASSWORD = 'Demo@1234';
+
+async function ensureDemoUser(
+  userRepo: ReturnType<DataSource['getRepository']>,
+  data: {
+    name: string;
+    email: string;
+    role: Role;
+    managerId?: string | null;
+  },
+): Promise<User> {
+  let user = await userRepo.findOne({ where: { email: data.email } }) as User | null;
+
+  if (!user) {
+    const password = await bcrypt.hash(DEMO_PASSWORD, 12);
+    user = userRepo.create({
+      name: data.name,
+      email: data.email,
+      password,
+      role: data.role,
+      managerId: data.managerId ?? null,
+      active: true,
+    }) as User;
+    await userRepo.save(user);
+    console.log(`👤 Usuário criado: ${data.email} / ${DEMO_PASSWORD} (${data.role})`);
+    return user;
+  }
+
+  user.role = data.role;
+  user.managerId = data.managerId ?? null;
+  user.active = true;
+  user.password = await bcrypt.hash(DEMO_PASSWORD, 12);
+  await userRepo.save(user);
+  console.log(`👤 Usuário demo atualizado: ${data.email} (${data.role})`);
+  return user;
+}
 
 async function seed() {
   // Garante que a pasta existe
@@ -58,34 +96,35 @@ async function seed() {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
   const ds = new DataSource({
-    type: 'sqlite',
-    database: DB_PATH,
-    busyTimeout: 5000,
+    type: DB_TYPE === 'postgres' ? 'postgres' : 'sqlite',
+    ...(DB_TYPE === 'postgres'
+      ? {
+          host: process.env.POSTGRES_HOST || 'localhost',
+          port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+          username: process.env.POSTGRES_USER || 'postgres',
+          password: process.env.POSTGRES_PASSWORD || 'postgres',
+          database: process.env.POSTGRES_DB || 'metaiq',
+        }
+      : {
+          database: DB_PATH,
+          busyTimeout: 5000,
+        }),
     entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
     migrations: [InitialSchema1776170000000, AddRoleToUsers1776260000000, AddTenantStoreModel1776350000000],
     synchronize: false,
     logging: false,
-  });
+  } as any);
 
   await ds.initialize();
   await ds.runMigrations();
-  console.log('🗄️  Banco SQLite pronto em:', DB_PATH);
+  console.log(DB_TYPE === 'postgres'
+    ? `🗄️  Banco PostgreSQL pronto em: ${process.env.POSTGRES_DB || 'metaiq'}`
+    : `🗄️  Banco SQLite pronto em: ${DB_PATH}`);
 
   const engine = new MetricsEngine();
 
-  // ── Usuário demo ──────────────────────────────────────────
+  // ── Usuários e tenant demo ────────────────────────────────
   const userRepo = ds.getRepository(User);
-  let user = await userRepo.findOne({ where: { email: 'demo@metaiq.dev' } });
-
-  if (!user) {
-    const password = await bcrypt.hash('Demo@1234', 12);
-    user = userRepo.create({ name: 'Demo User', email: 'demo@metaiq.dev', password, role: Role.MANAGER });
-    await userRepo.save(user);
-    console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
-  } else {
-    console.log('👤 Usuário demo já existe — pulando criação.');
-  }
-
   const managerRepo = ds.getRepository(Manager);
   let manager = await managerRepo.findOne({ where: { name: 'Manager Demo' } });
 
@@ -94,11 +133,40 @@ async function seed() {
     console.log('🏢 Manager criado:', manager.name);
   }
 
-  if (!user.managerId) {
-    user.managerId = manager.id;
-    user.role = user.role ?? Role.MANAGER;
-    await userRepo.save(user);
-  }
+  const adminUser = await ensureDemoUser(userRepo, {
+    name: 'Admin Demo',
+    email: 'admin@metaiq.dev',
+    role: Role.ADMIN,
+    managerId: null,
+  });
+
+  const managerUser = await ensureDemoUser(userRepo, {
+    name: 'Manager Demo',
+    email: 'manager@metaiq.dev',
+    role: Role.MANAGER,
+    managerId: manager.id,
+  });
+
+  const operationalUser = await ensureDemoUser(userRepo, {
+    name: 'Operacional Demo',
+    email: 'operational@metaiq.dev',
+    role: Role.OPERATIONAL,
+    managerId: manager.id,
+  });
+
+  const clientUser = await ensureDemoUser(userRepo, {
+    name: 'Cliente Demo',
+    email: 'client@metaiq.dev',
+    role: Role.CLIENT,
+    managerId: manager.id,
+  });
+
+  const user = await ensureDemoUser(userRepo, {
+    name: 'Demo User',
+    email: 'demo@metaiq.dev',
+    role: Role.MANAGER,
+    managerId: manager.id,
+  });
 
   const storeRepo = ds.getRepository(Store);
   let store = await storeRepo.findOne({ where: { name: 'Loja Demo - E-commerce', managerId: manager.id } });
@@ -109,11 +177,17 @@ async function seed() {
   }
 
   const userStoreRepo = ds.getRepository(UserStore);
-  const existingUserStore = await userStoreRepo.findOne({ where: { userId: user.id, storeId: store.id } });
+  const storeUsers = [managerUser, operationalUser, clientUser, user];
 
-  if (!existingUserStore) {
-    await userStoreRepo.save(userStoreRepo.create({ userId: user.id, storeId: store.id }));
-    console.log('🔗 Usuário vinculado à loja demo');
+  for (const storeUser of storeUsers) {
+    const existingUserStore = await userStoreRepo.findOne({
+      where: { userId: storeUser.id, storeId: store.id },
+    });
+
+    if (!existingUserStore) {
+      await userStoreRepo.save(userStoreRepo.create({ userId: storeUser.id, storeId: store.id }));
+      console.log(`🔗 ${storeUser.email} vinculado à loja demo`);
+    }
   }
 
   // ── Conta de anúncio ──────────────────────────────────────

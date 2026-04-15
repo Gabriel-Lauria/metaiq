@@ -12,6 +12,7 @@ interface JwtPayload {
   sub: string;
   email: string;
   role: Role;
+  managerId?: string | null;
   jti?: string;
 }
 
@@ -144,12 +145,18 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role ?? Role.OPERATIONAL,
+        managerId: user.managerId ?? null,
       },
     };
   }
 
   private buildPayload(user: User): JwtPayload {
-    return { sub: user.id, email: user.email, role: user.role ?? Role.OPERATIONAL };
+    return {
+      sub: user.id,
+      email: user.email,
+      role: user.role ?? Role.OPERATIONAL,
+      managerId: user.managerId ?? null,
+    };
   }
 
   private async updateRefreshToken(userId: string, refreshToken: string | null) {

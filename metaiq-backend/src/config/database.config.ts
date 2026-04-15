@@ -19,7 +19,9 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
 };
 
 export default registerAs('database', () => ({
-  type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
+  type:
+    (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') ||
+    (process.env.POSTGRES_DB ? 'postgres' : 'sqlite'),
   database:
     process.env.SQLITE_PATH ||
     process.env.DATABASE ||

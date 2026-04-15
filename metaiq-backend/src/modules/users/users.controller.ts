@@ -79,7 +79,7 @@ export class UsersController {
       throw new ForbiddenException('Acesso negado');
     }
 
-    const user = await this.usersService.findOne(id);
+    const user = await this.usersService.findOneScoped(id, req.user);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
@@ -90,8 +90,8 @@ export class UsersController {
    */
   @Get()
   @Roles(Role.ADMIN, Role.MANAGER)
-  async findAll(): Promise<Omit<User, 'password'>[]> {
-    const users = await this.usersService.findAll();
+  async findAll(@Request() req: AuthenticatedRequest): Promise<Omit<User, 'password'>[]> {
+    const users = await this.usersService.findAllScoped(req.user);
     return users.map(({ password: _password, ...user }) => user);
   }
 }

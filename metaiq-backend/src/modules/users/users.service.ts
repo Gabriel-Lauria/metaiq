@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import * as bcrypt from 'bcryptjs';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
+import { AccessScopeService } from '../../common/services/access-scope.service';
 
 export class CreateUserDto {
   @IsEmail()
@@ -39,6 +41,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly accessScope: AccessScopeService,
   ) {}
 
   /**
@@ -83,11 +86,35 @@ export class UsersService {
     return user;
   }
 
+  async findOneScoped(id: string, currentUser: AuthenticatedUser): Promise<User> {
+    const user = await this.accessScope
+      .applyUserScope(
+        this.userRepository.createQueryBuilder('user').where('user.id = :id', { id }),
+        currentUser,
+      )
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException(`Usuário ${id} não encontrado`);
+    }
+
+    return user;
+  }
+
   /**
    * Lista todos os usuários (apenas para admin)
    */
   async findAll(): Promise<User[]> {
     return this.userRepository.find();
+  }
+
+  async findAllScoped(currentUser: AuthenticatedUser): Promise<User[]> {
+    return this.accessScope
+      .applyUserScope(
+        this.userRepository.createQueryBuilder('user').orderBy('user.createdAt', 'DESC'),
+        currentUser,
+      )
+      .getMany();
   }
 
   /**

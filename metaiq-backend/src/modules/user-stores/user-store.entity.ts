@@ -22,7 +22,6 @@ export class UserStore {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @Index()
   @ManyToOne(() => Store, (store) => store.userStores, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'storeId' })
   store: Store;

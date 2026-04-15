@@ -21,7 +21,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string; role?: Role }) {
+  async validate(payload: { sub: string; email: string; role?: Role; managerId?: string | null }) {
     const { sub: userId } = payload;
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
@@ -33,6 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       ...safeUser,
       role: safeUser.role ?? payload.role ?? Role.OPERATIONAL,
+      managerId: safeUser.managerId ?? payload.managerId ?? null,
     };
   }
 }

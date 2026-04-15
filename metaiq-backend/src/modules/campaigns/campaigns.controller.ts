@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Param, Request } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -6,7 +6,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums/role.enum';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { Campaign } from './campaign.entity';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedRequest } from '../../common/interfaces/authenticated-request.interface';
 
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -16,17 +16,17 @@ export class CampaignsController {
 
   @Get()
   async findAll(
-    @CurrentUser() userId: string,
+    @Request() req: AuthenticatedRequest,
     @Query() pagination: PaginationDto,
   ): Promise<PaginatedResponse<Campaign>> {
-    return this.campaignsService.findAllPaginated(userId, pagination);
+    return this.campaignsService.findAllPaginated(req.user, pagination);
   }
 
   @Get(':id')
   async findOne(
     @Param('id') id: string,
-    @CurrentUser() userId: string,
+    @Request() req: AuthenticatedRequest,
   ) {
-    return this.campaignsService.findOne(id, userId);
+    return this.campaignsService.findOne(id, req.user);
   }
 }

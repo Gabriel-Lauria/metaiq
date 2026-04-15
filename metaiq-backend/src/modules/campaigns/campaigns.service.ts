@@ -1,35 +1,48 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Campaign } from './campaign.entity';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
+import { AuthenticatedUser } from '../../common/interfaces/authenticated-user.interface';
+import { AccessScopeService } from '../../common/services/access-scope.service';
 
 @Injectable()
 export class CampaignsService {
   constructor(
     @InjectRepository(Campaign)
     private campaignRepository: Repository<Campaign>,
+    private readonly accessScope: AccessScopeService,
   ) {}
 
-  async findAll(userId: string): Promise<Campaign[]> {
-    return this.campaignRepository.find({
-      where: this.buildOwnershipWhere(userId),
-      relations: ['adAccount', 'store'],
-      order: { createdAt: 'DESC' },
-    });
+  async findAll(user: AuthenticatedUser): Promise<Campaign[]> {
+    return this.accessScope
+      .applyCampaignScope(
+        this.campaignRepository
+          .createQueryBuilder('campaign')
+          .leftJoinAndSelect('campaign.adAccount', 'adAccount')
+          .leftJoinAndSelect('campaign.store', 'store')
+          .orderBy('campaign.createdAt', 'DESC'),
+        user,
+      )
+      .getMany();
   }
 
-  async findAllPaginated(userId: string, pagination: PaginationDto): Promise<PaginatedResponse<Campaign>> {
+  async findAllPaginated(user: AuthenticatedUser, pagination: PaginationDto): Promise<PaginatedResponse<Campaign>> {
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
-    const [data, total] = await this.campaignRepository.findAndCount({
-      where: this.buildOwnershipWhere(userId),
-      relations: ['adAccount', 'store'],
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limit,
-    });
+    const query = this.accessScope.applyCampaignScope(
+      this.campaignRepository
+        .createQueryBuilder('campaign')
+        .leftJoinAndSelect('campaign.adAccount', 'adAccount')
+        .leftJoinAndSelect('campaign.store', 'store')
+        .orderBy('campaign.createdAt', 'DESC')
+        .skip(skip)
+        .take(limit),
+      user,
+    );
+
+    const [data, total] = await query.getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
 
@@ -46,11 +59,17 @@ export class CampaignsService {
     };
   }
 
-  async findOne(id: string, userId: string): Promise<Campaign> {
-    const campaign = await this.campaignRepository.findOne({
-      where: this.buildOwnershipWhere(userId, { id }),
-      relations: ['adAccount', 'store'],
-    });
+  async findOne(id: string, user: AuthenticatedUser): Promise<Campaign> {
+    const campaign = await this.accessScope
+      .applyCampaignScope(
+        this.campaignRepository
+          .createQueryBuilder('campaign')
+          .leftJoinAndSelect('campaign.adAccount', 'adAccount')
+          .leftJoinAndSelect('campaign.store', 'store')
+          .where('campaign.id = :id', { id }),
+        user,
+      )
+      .getOne();
 
     if (!campaign) {
       throw new NotFoundException(`Campanha ${id} não encontrada`);
@@ -67,13 +86,4 @@ export class CampaignsService {
     });
   }
 
-  private buildOwnershipWhere(
-    userId: string,
-    extra: Partial<Pick<Campaign, 'id'>> = {},
-  ): FindOptionsWhere<Campaign>[] {
-    return [
-      { ...extra, userId },
-      { ...extra, store: { userStores: { userId } } },
-    ];
-  }
 }

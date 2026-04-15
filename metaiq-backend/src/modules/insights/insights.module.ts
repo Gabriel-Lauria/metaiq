@@ -4,9 +4,10 @@ import { Insight } from './insight.entity';
 import { InsightsService } from './insights.service';
 import { InsightsController } from './insights.controller';
 import { MetricsModule } from '../metrics/metrics.module';
+import { CommonModule } from '../../common/common.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Insight]), MetricsModule],
+  imports: [CommonModule, TypeOrmModule.forFeature([Insight]), MetricsModule],
   providers: [InsightsService],
   controllers: [InsightsController],
   exports: [InsightsService],
