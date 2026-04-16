@@ -48,18 +48,13 @@ export class MetaSyncService {
     }
   }
 
-  async syncAdAccounts(storeId: string, requester: AuthenticatedUser): Promise<MetaAdAccountDto[]> {
+  async syncAdAccounts(storeId: string, requester: AuthenticatedUser, requestId?: string): Promise<MetaAdAccountDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
 
-    if (integration.lastSyncStatus === SyncStatus.IN_PROGRESS) {
-      throw new ConflictException('Sincronização já em andamento');
-    }
-
-    this.logger.log(`Meta ad account sync started | storeId=${storeId} | requester=${requester.id}`);
-    integration.lastSyncStatus = SyncStatus.IN_PROGRESS;
-    integration.lastSyncError = null;
-    await this.integrationRepository.save(integration);
+    await this.acquireSyncLock(integration);
+    const startedAt = Date.now();
+    this.logSync('Meta ad account sync started', { requestId, storeId, requesterId: requester.id, status: SyncStatus.IN_PROGRESS });
 
     try {
       const accounts = this.metaService.normalizeAdAccounts(
@@ -105,11 +100,11 @@ export class MetaSyncService {
       integration.lastSyncStatus = SyncStatus.SUCCESS;
       integration.lastSyncError = null;
       await this.integrationRepository.save(integration);
-      this.logger.log(`Meta ad account sync finished | storeId=${storeId} | accounts=${accounts.length}`);
+      this.logSync('Meta ad account sync finished', { requestId, storeId, requesterId: requester.id, status: SyncStatus.SUCCESS, accounts: accounts.length, duration: Date.now() - startedAt });
       return accounts;
     } catch (err) {
       await this.recordSyncFailure(integration, this.resolveMetaErrorCode(err), err);
-      this.logger.error(`Meta ad account sync failed | storeId=${storeId} | error=${this.errorMessage(err)}`);
+      this.logSync('Meta ad account sync failed', { requestId, storeId, requesterId: requester.id, status: SyncStatus.ERROR, error: this.errorMessage(err), duration: Date.now() - startedAt }, 'error');
       throw this.toHttpError(err, 'Erro ao sincronizar Ad Accounts da Meta');
     }
   }
@@ -137,19 +132,15 @@ export class MetaSyncService {
     storeId: string,
     adAccountId: string,
     requester: AuthenticatedUser,
+    requestId?: string,
   ): Promise<MetaCampaignDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
     const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId);
 
-    if (integration.lastSyncStatus === SyncStatus.IN_PROGRESS) {
-      throw new ConflictException('Sincronização já em andamento');
-    }
-
-    this.logger.log(`Meta campaign sync started | storeId=${storeId} | adAccountId=${adAccountId} | requester=${requester.id}`);
-    integration.lastSyncStatus = SyncStatus.IN_PROGRESS;
-    integration.lastSyncError = null;
-    await this.integrationRepository.save(integration);
+    await this.acquireSyncLock(integration);
+    const startedAt = Date.now();
+    this.logSync('Meta campaign sync started', { requestId, storeId, adAccountId, requesterId: requester.id, status: SyncStatus.IN_PROGRESS });
 
     try {
       const campaigns = this.metaService.normalizeCampaigns(
@@ -196,13 +187,33 @@ export class MetaSyncService {
       integration.lastSyncStatus = SyncStatus.SUCCESS;
       integration.lastSyncError = null;
       await this.integrationRepository.save(integration);
-      this.logger.log(`Meta campaign sync finished | storeId=${storeId} | adAccountId=${adAccountId} | campaigns=${campaigns.length}`);
+      this.logSync('Meta campaign sync finished', { requestId, storeId, adAccountId, requesterId: requester.id, status: SyncStatus.SUCCESS, campaigns: campaigns.length, duration: Date.now() - startedAt });
       return campaigns;
     } catch (err) {
       await this.recordSyncFailure(integration, this.resolveMetaErrorCode(err), err);
-      this.logger.error(`Meta campaign sync failed | storeId=${storeId} | adAccountId=${adAccountId} | error=${this.errorMessage(err)}`);
+      this.logSync('Meta campaign sync failed', { requestId, storeId, adAccountId, requesterId: requester.id, status: SyncStatus.ERROR, error: this.errorMessage(err), duration: Date.now() - startedAt }, 'error');
       throw this.toHttpError(err, 'Erro ao sincronizar campaigns da Meta');
     }
+  }
+
+  private async acquireSyncLock(integration: StoreIntegration): Promise<void> {
+    const result = await this.integrationRepository
+      .createQueryBuilder()
+      .update(StoreIntegration)
+      .set({
+        lastSyncStatus: SyncStatus.IN_PROGRESS,
+        lastSyncError: null,
+      })
+      .where('id = :id', { id: integration.id })
+      .andWhere('"lastSyncStatus" != :inProgress', { inProgress: SyncStatus.IN_PROGRESS })
+      .execute();
+
+    if (!result.affected) {
+      throw new ConflictException('Sincronização já em andamento');
+    }
+
+    integration.lastSyncStatus = SyncStatus.IN_PROGRESS;
+    integration.lastSyncError = null;
   }
 
   private async validateCanManage(storeId: string, user: AuthenticatedUser): Promise<void> {
@@ -302,7 +313,10 @@ export class MetaSyncService {
     if (code === 4) {
       return new HttpException('Limite da Meta atingido. Tente novamente em instantes.', HttpStatus.TOO_MANY_REQUESTS);
     }
-    return new BadRequestException(`${fallback}: ${this.sanitizeError(this.errorMessage(err))}`);
+    if (status === 400 || code === 100) {
+      return new BadRequestException(`${fallback}: ${this.sanitizeError(this.errorMessage(err))}`);
+    }
+    return new HttpException(`${fallback}: ${this.sanitizeError(this.errorMessage(err))}`, HttpStatus.BAD_GATEWAY);
   }
 
   private errorMessage(err: unknown): string {
@@ -311,5 +325,9 @@ export class MetaSyncService {
 
   private sanitizeError(message: string): string {
     return message.replace(/[?&](access_token|client_secret|code)=[^&\s]+/gi, '$1=[redacted]').slice(0, 500);
+  }
+
+  private logSync(message: string, payload: Record<string, unknown>, level: 'log' | 'warn' | 'error' = 'log'): void {
+    this.logger[level](JSON.stringify({ event: 'META_SYNC', message, ...payload }));
   }
 }

@@ -22,7 +22,11 @@ import {
   StoreIntegration,
   MetaOAuthStartResponse,
   MetaAdAccount,
+  MetaPage,
   ConnectMetaIntegrationRequest,
+  CreateMetaCampaignRequest,
+  CreateMetaCampaignResponse,
+  UpdateMetaPageRequest,
   UpdateMetaIntegrationStatusRequest,
 } from '../models';
 import { environment } from '../environment';
@@ -65,7 +69,7 @@ export class ApiService {
   private http = inject(HttpClient);
 
   private handleError(error: any) {
-    const message = error?.message || error?.error?.message || 'Erro ao conectar ao servidor';
+    const message = error?.error?.message || error?.message || 'Erro ao conectar ao servidor';
     return throwError(() => new Error(message));
   }
 
@@ -199,8 +203,9 @@ export class ApiService {
   }
 
   // ── Meta Accounts ─────────────────────────────────────────────
-  getAdAccounts(): Observable<AdAccount[]> {
-    return this.get<AdAccount[]>('/ad-accounts');
+  getAdAccounts(storeId?: string): Observable<AdAccount[]> {
+    const params = storeId ? new HttpParams().set('storeId', storeId) : undefined;
+    return this.get<AdAccount[]>('/ad-accounts', params);
   }
 
   // ── Management ───────────────────────────────────────────────
@@ -291,7 +296,19 @@ export class ApiService {
     return this.get<MetaAdAccount[]>(`/integrations/meta/stores/${storeId}/ad-accounts`);
   }
 
+  getMetaPages(storeId: string): Observable<MetaPage[]> {
+    return this.get<MetaPage[]>(`/integrations/meta/stores/${storeId}/pages`);
+  }
+
+  updateMetaPage(storeId: string, body: UpdateMetaPageRequest): Observable<StoreIntegration> {
+    return this.patch<StoreIntegration>(`/integrations/meta/stores/${storeId}/page`, body);
+  }
+
   syncMetaAdAccounts(storeId: string): Observable<MetaAdAccount[]> {
     return this.post<MetaAdAccount[]>(`/integrations/meta/stores/${storeId}/ad-accounts/sync`, {});
+  }
+
+  createMetaCampaign(storeId: string, body: CreateMetaCampaignRequest): Observable<CreateMetaCampaignResponse> {
+    return this.post<CreateMetaCampaignResponse>(`/integrations/meta/stores/${storeId}/campaigns`, body);
   }
 }

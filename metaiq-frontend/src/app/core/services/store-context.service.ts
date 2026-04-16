@@ -18,6 +18,17 @@ export class StoreContextService {
   selectedStore = computed(() =>
     this.stores().find((store) => store.id === this.selectedStoreId()) ?? null
   );
+  private currentUserId = this.auth.getCurrentUser()?.id ?? null;
+
+  constructor() {
+    this.auth.currentUser$.subscribe((user) => {
+      const nextUserId = user?.id ?? null;
+      if (this.currentUserId !== nextUserId) {
+        this.currentUserId = nextUserId;
+        this.reset();
+      }
+    });
+  }
 
   load(force = false): void {
     if (!force && (this.loading() || this.stores().length > 0)) {
@@ -49,20 +60,13 @@ export class StoreContextService {
     request.subscribe({
       next: (stores) => {
         this.stores.set(stores);
-        const mustHaveStore = this.requiresStoreContext();
-        if (!this.selectedStoreId() && (stores.length === 1 || mustHaveStore)) {
-          this.select(stores[0].id);
-        }
-        if (this.selectedStoreId() && !stores.some((store) => store.id === this.selectedStoreId())) {
-          this.select(stores[0]?.id ?? '');
-        }
+        this.ensureValidSelection(stores);
         this.loading.set(false);
         this.loaded.set(true);
       },
       error: (err) => {
+        this.reset();
         this.error.set(err.message || 'Não foi possível carregar stores.');
-        this.stores.set([]);
-        this.selectedStoreId.set('');
         this.loading.set(false);
         this.loaded.set(true);
       },
@@ -70,16 +74,59 @@ export class StoreContextService {
   }
 
   select(storeId: string): void {
-    this.selectedStoreId.set(storeId);
+    const safeStoreId = this.canUseStore(storeId) ? storeId : '';
+    this.selectedStoreId.set(safeStoreId);
     try {
-      if (storeId) {
-        localStorage.setItem(this.storageKey, storeId);
+      if (safeStoreId) {
+        localStorage.setItem(this.storageKey, safeStoreId);
       } else {
         localStorage.removeItem(this.storageKey);
       }
     } catch {
       // Storage is optional; context still works in memory.
     }
+  }
+
+  reset(): void {
+    this.stores.set([]);
+    this.selectedStoreId.set('');
+    this.loaded.set(false);
+    this.loading.set(false);
+    this.error.set(null);
+    try {
+      localStorage.removeItem(this.storageKey);
+    } catch {
+      // Storage is optional; context still works in memory.
+    }
+  }
+
+  hasAccessToStore(storeId: string | null | undefined): boolean {
+    return !!storeId && this.stores().some((store) => store.id === storeId);
+  }
+
+  getValidSelectedStoreId(): string {
+    const storeId = this.selectedStoreId();
+    return this.hasAccessToStore(storeId) ? storeId : '';
+  }
+
+  private ensureValidSelection(stores: Store[]): void {
+    const currentStoreId = this.selectedStoreId();
+    const hasCurrentStore = !!currentStoreId && stores.some((store) => store.id === currentStoreId);
+
+    if (hasCurrentStore) {
+      this.select(currentStoreId);
+      return;
+    }
+
+    const mustHaveStore = this.requiresStoreContext();
+    const fallbackStoreId = stores.length === 1 || mustHaveStore ? stores[0]?.id ?? '' : '';
+    this.select(fallbackStoreId);
+  }
+
+  private canUseStore(storeId: string): boolean {
+    if (!storeId) return true;
+    if (!this.loaded() && this.stores().length === 0) return true;
+    return this.stores().some((store) => store.id === storeId);
   }
 
   private getStoredStoreId(): string {

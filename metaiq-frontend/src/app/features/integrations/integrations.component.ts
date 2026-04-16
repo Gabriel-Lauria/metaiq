@@ -10,7 +10,9 @@ import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 import {
   IntegrationStatus,
+  AdAccount,
   MetaAdAccount,
+  MetaPage,
   Store,
   StoreIntegration,
   SyncStatus,
@@ -39,9 +41,27 @@ export class IntegrationsComponent implements OnInit {
   selectedStoreId = signal('');
   loading = signal(false);
   loadingAccounts = signal(false);
+  loadingPages = signal(false);
+  creatingCampaign = signal(false);
+  savingPage = signal(false);
   savingStoreId = signal<string | null>(null);
   error = signal<string | null>(null);
   adAccounts = signal<MetaAdAccount[]>([]);
+  pages = signal<MetaPage[]>([]);
+  internalAdAccounts = signal<AdAccount[]>([]);
+  campaignResult = signal<{ campaignId: string; adSetId: string; creativeId: string; adId: string } | null>(null);
+  campaignForm = {
+    name: '',
+    objective: 'OUTCOME_TRAFFIC',
+    dailyBudget: 10,
+    country: 'BR',
+    adAccountId: '',
+    message: '',
+    imageUrl: '',
+  };
+  pageForm = {
+    pageId: '',
+  };
 
   selectedIntegration = computed(() => {
     const storeId = this.selectedStoreId();
@@ -69,6 +89,10 @@ export class IntegrationsComponent implements OnInit {
       .subscribe({
         next: (stores) => {
           this.stores.set(stores);
+          if (this.selectedStoreId() && !this.canUseStore(this.selectedStoreId())) {
+            this.selectedStoreId.set('');
+            this.ui.showWarning('Store inválida', 'A store anterior não pertence ao usuário atual.');
+          }
           if (!this.selectedStoreId() && stores.length) {
             this.selectedStoreId.set(stores[0].id);
           }
@@ -82,8 +106,22 @@ export class IntegrationsComponent implements OnInit {
   }
 
   selectStore(storeId: string): void {
+    if (!this.canUseStore(storeId)) {
+      this.selectedStoreId.set('');
+      this.ui.showWarning('Store inválida', 'Selecione uma store disponível para o usuário atual.');
+      return;
+    }
     this.selectedStoreId.set(storeId);
     this.adAccounts.set([]);
+    this.pages.set([]);
+    this.internalAdAccounts.set([]);
+    this.campaignResult.set(null);
+    this.campaignForm.adAccountId = '';
+    this.pageForm.pageId = '';
+    if (this.integrations()[storeId]?.status === IntegrationStatus.CONNECTED) {
+      this.loadPagesIfNeeded(storeId);
+      this.loadInternalAdAccounts(storeId);
+    }
   }
 
   connect(store: Store): void {
@@ -154,12 +192,54 @@ export class IntegrationsComponent implements OnInit {
           this.adAccounts.set(accounts);
           this.loadingAccounts.set(false);
           this.ui.showSuccess('Contas sincronizadas', `${accounts.length} conta(s) atualizada(s) no MetaIQ.`);
+          this.loadInternalAdAccounts(store.id);
           this.load();
         },
         error: (err) => {
           this.error.set(err.message);
           this.loadingAccounts.set(false);
           this.ui.showError('Não foi possível sincronizar contas', err.message);
+          this.load();
+        },
+      });
+  }
+
+  createCampaign(store: Store): void {
+    if (!this.selectedIntegration()?.pageId) {
+      this.ui.showError('Página Meta obrigatória', 'Selecione a página do Facebook antes de criar campanha.');
+      this.loadPagesIfNeeded(store.id, true);
+      return;
+    }
+
+    if (!this.campaignForm.name || !this.campaignForm.adAccountId || !this.campaignForm.message || !this.campaignForm.imageUrl) {
+      this.ui.showError('Campos obrigatórios', 'Preencha nome, conta, mensagem e URL da imagem.');
+      return;
+    }
+
+    this.creatingCampaign.set(true);
+    this.campaignResult.set(null);
+    this.api.createMetaCampaign(store.id, {
+      ...this.campaignForm,
+      country: this.campaignForm.country.trim().toUpperCase(),
+      dailyBudget: Number(this.campaignForm.dailyBudget),
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.campaignResult.set({
+            campaignId: result.campaignId,
+            adSetId: result.adSetId,
+            creativeId: result.creativeId,
+            adId: result.adId,
+          });
+          this.creatingCampaign.set(false);
+          this.ui.showSuccess('Campanha criada', 'A campanha foi criada na Meta com status pausado.');
+        },
+        error: (err) => {
+          const message = this.formatCampaignCreationError(err);
+          this.error.set(message);
+          this.creatingCampaign.set(false);
+          this.ui.showError('Não foi possível criar campanha', message);
           this.load();
         },
       });
@@ -201,6 +281,19 @@ export class IntegrationsComponent implements OnInit {
 
   isConnected(): boolean {
     return this.selectedIntegration()?.status === IntegrationStatus.CONNECTED;
+  }
+
+  hasConfiguredPage(): boolean {
+    return !!this.selectedIntegration()?.pageId;
+  }
+
+  canCreateCampaign(): boolean {
+    return this.hasConfiguredPage() && !!this.internalAdAccounts().length && !this.creatingCampaign();
+  }
+
+  selectedPageName(): string {
+    const integration = this.selectedIntegration();
+    return integration?.pageName || integration?.pageId || '';
   }
 
   integrationSummaryMessage(): string {
@@ -269,6 +362,75 @@ export class IntegrationsComponent implements OnInit {
     return item.externalId;
   }
 
+  savePage(store: Store): void {
+    const page = this.pages().find((item) => item.id === this.pageForm.pageId);
+    if (!page) {
+      this.ui.showError('Página obrigatória', 'Selecione uma página disponível para a integração.');
+      return;
+    }
+
+    this.savingPage.set(true);
+    this.api.updateMetaPage(store.id, { pageId: page.id, pageName: page.name })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (integration) => {
+          this.mergeIntegration(integration);
+          this.savingPage.set(false);
+          this.ui.showSuccess('Página vinculada', `${page.name} será usada na criação de campanhas.`);
+        },
+        error: (err) => {
+          this.savingPage.set(false);
+          this.ui.showError('Não foi possível salvar página', err.message);
+        },
+      });
+  }
+
+  refreshPages(store: Store): void {
+    this.loadPagesIfNeeded(store.id, true);
+  }
+
+  private loadInternalAdAccounts(storeId: string): void {
+    this.api.getAdAccounts(storeId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (accounts) => {
+          const metaAccounts = accounts.filter((account) => account.provider === 'META' && account.active !== false);
+          this.internalAdAccounts.set(metaAccounts);
+          if (!this.campaignForm.adAccountId && metaAccounts.length) {
+            this.campaignForm.adAccountId = metaAccounts[0].id;
+          }
+        },
+        error: (err) => {
+          this.ui.showError('Não foi possível carregar contas internas', err.message);
+        },
+      });
+  }
+
+  private loadPagesIfNeeded(storeId: string, force = false): void {
+    const integration = this.integrations()[storeId];
+    if (!integration || integration.status !== IntegrationStatus.CONNECTED) return;
+    if (!force && integration.pageId) {
+      this.pageForm.pageId = integration.pageId;
+      return;
+    }
+    if (!force && this.pages().length) return;
+
+    this.loadingPages.set(true);
+    this.api.getMetaPages(storeId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (pages) => {
+          this.pages.set(pages);
+          this.pageForm.pageId = integration.pageId || pages[0]?.id || '';
+          this.loadingPages.set(false);
+        },
+        error: (err) => {
+          this.loadingPages.set(false);
+          this.ui.showError('Não foi possível carregar páginas', err.message);
+        },
+      });
+  }
+
   private loadStatuses(stores: Store[]): void {
     if (!stores.length) {
       this.integrations.set({});
@@ -324,6 +486,34 @@ export class IntegrationsComponent implements OnInit {
       this.ui.showError('Falha ao conectar Meta', message || 'Não foi possível concluir a conexão.');
       this.clearOAuthQueryParams();
     }
+  }
+
+  private canUseStore(storeId: string): boolean {
+    if (!storeId) return true;
+    const stores = this.stores();
+    return stores.length === 0 || stores.some((store) => store.id === storeId);
+  }
+
+  private formatCampaignCreationError(err: any): string {
+    const parts = [
+      err?.message || err?.details?.message || 'Não foi possível criar campanha. Verifique os dados e tente novamente.',
+    ];
+
+    const step = err?.step || err?.details?.step;
+    const executionId = err?.executionId || err?.details?.executionId;
+    const error = err?.error || err?.details?.error;
+
+    if (step) {
+      parts.push(`Etapa: ${step}.`);
+    }
+    if (executionId) {
+      parts.push(`Execução: ${executionId}.`);
+    }
+    if (error && error !== parts[0]) {
+      parts.push(`Detalhe: ${error}.`);
+    }
+
+    return parts.join(' ');
   }
 
   private clearOAuthQueryParams(): void {

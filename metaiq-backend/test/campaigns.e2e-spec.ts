@@ -36,7 +36,7 @@ describe('Current tenant/store security E2E', () => {
   const password = 'Test@1234';
   const range = 'from=2026-01-01&to=2026-12-31';
 
-  type TestUserKey = Role | 'MANAGER_B' | 'INACTIVE';
+  type TestUserKey = Role | 'MANAGER_B' | 'OPERATIONAL_UNLINKED' | 'INACTIVE';
 
   const users: Partial<Record<TestUserKey, User>> = {};
   const tokens: Partial<Record<Role, string>> = {};
@@ -56,7 +56,7 @@ describe('Current tenant/store security E2E', () => {
     process.env.META_APP_SECRET = process.env.META_APP_SECRET || 'test-meta-secret';
     process.env.META_REDIRECT_URI =
       process.env.META_REDIRECT_URI || 'http://localhost:3004/api/integrations/meta/oauth/callback';
-    process.env.META_OAUTH_SCOPES = process.env.META_OAUTH_SCOPES || 'ads_read,business_management';
+    process.env.META_OAUTH_SCOPES = process.env.META_OAUTH_SCOPES || 'ads_read,ads_management,business_management';
     process.env.AUTH_ENABLE_DEV_META_CONNECT = 'false';
 
     if (process.env.E2E_DB_TYPE === 'postgres') {
@@ -118,6 +118,7 @@ describe('Current tenant/store security E2E', () => {
       `${runId}.admin@test.com`,
       `${runId}.manager@test.com`,
       `${runId}.operational@test.com`,
+      `${runId}.operational-unlinked@test.com`,
       `${runId}.client@test.com`,
       `${runId}.managerb@test.com`,
       `${runId}.inactive@test.com`,
@@ -240,6 +241,17 @@ describe('Current tenant/store security E2E', () => {
         name: 'E2E Client A',
         password: passwordHash,
         role: Role.CLIENT,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        active: true,
+      }),
+    );
+    users.OPERATIONAL_UNLINKED = await userRepo.save(
+      userRepo.create({
+        email: `${runId}.operational-unlinked@test.com`,
+        name: 'E2E Operational Unlinked',
+        password: passwordHash,
+        role: Role.OPERATIONAL,
         managerId: managerA.id,
         tenantId: managerA.id,
         active: true,
@@ -397,6 +409,7 @@ describe('Current tenant/store security E2E', () => {
     tokens[Role.MANAGER] = await login(users[Role.MANAGER]!.email);
     tokens[Role.OPERATIONAL] = await login(users[Role.OPERATIONAL]!.email);
     tokens[Role.CLIENT] = await login(users[Role.CLIENT]!.email);
+    tokens[Role.PLATFORM_ADMIN] = tokens[Role.ADMIN];
   }
 
   describe('auth', () => {
@@ -562,10 +575,10 @@ describe('Current tenant/store security E2E', () => {
   });
 
   describe('store Meta integrations', () => {
-    it('allows admin and tenant manager to start Meta OAuth by store', async () => {
+    it('allows linked operational and platform admin to start Meta OAuth by store', async () => {
       const initial = await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/status`)
-        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
         .expect(200);
       expect(initial.body.status).toBe(IntegrationStatus.NOT_CONNECTED);
       expect(initial.body).not.toHaveProperty('accessToken');
@@ -574,12 +587,19 @@ describe('Current tenant/store security E2E', () => {
 
       const started = await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
-        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
         .expect(200);
       expect(started.body.authorizationUrl).toContain('https://www.facebook.com/');
       expect(started.body.authorizationUrl).toContain('client_id=123456789012345');
       expect(started.body.authorizationUrl).toContain('response_type=code');
       expect(started.body.authorizationUrl).toContain('state=');
+
+      const adminStarted = await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
+        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+        .expect(200);
+      expect(adminStarted.body.authorizationUrl).toContain('https://www.facebook.com/');
+      expect(adminStarted.body.authorizationUrl).toContain('state=');
 
       await request(app.getHttpServer())
         .patch(`/api/integrations/meta/stores/${stores[0].id}/status`)
@@ -594,15 +614,27 @@ describe('Current tenant/store security E2E', () => {
       expect(disconnected.body.status).toBe(IntegrationStatus.NOT_CONNECTED);
     });
 
-    it('blocks cross-tenant and non-manager integration management', async () => {
+    it('blocks unlinked operational, manager, and client integration execution', async () => {
+      const unlinkedOperationalToken = await login(users.OPERATIONAL_UNLINKED!.email);
+
       await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
+        .set('Authorization', `Bearer ${unlinkedOperationalToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(403);
 
       await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
-        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .set('Authorization', `Bearer ${tokens[Role.CLIENT]}`)
         .expect(403);
 
       await request(app.getHttpServer())
@@ -614,7 +646,7 @@ describe('Current tenant/store security E2E', () => {
       await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/status`)
         .set('Authorization', `Bearer ${tokens[Role.CLIENT]}`)
-        .expect(200);
+        .expect(403);
     });
   });
 

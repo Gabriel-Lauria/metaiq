@@ -96,6 +96,7 @@ export interface AdAccount {
   name: string;
   accessToken?: string;
   tokenExpiresAt?: Date;
+  active?: boolean;
   userId: string;
   storeId?: string | null;
   store?: Store | null;
@@ -114,6 +115,8 @@ export interface StoreIntegration {
   tokenExpiresAt?: Date | null;
   grantedScopes?: string[];
   providerUserId?: string | null;
+  pageId?: string | null;
+  pageName?: string | null;
   oauthConnectedAt?: Date | null;
   lastSyncAt?: Date | null;
   lastSyncStatus: SyncStatus;
@@ -131,6 +134,38 @@ export interface MetaAdAccount {
   externalId: string;
   name: string;
   status: 'ACTIVE' | 'DISABLED' | 'UNSETTLED' | 'UNKNOWN';
+}
+
+export interface MetaPage {
+  id: string;
+  name: string;
+  category?: string | null;
+}
+
+export interface UpdateMetaPageRequest {
+  pageId: string;
+  pageName?: string;
+}
+
+export interface CreateMetaCampaignRequest {
+  name: string;
+  objective: string;
+  dailyBudget: number;
+  country: string;
+  adAccountId: string;
+  message: string;
+  imageUrl: string;
+}
+
+export interface CreateMetaCampaignResponse {
+  campaignId: string;
+  adSetId: string;
+  creativeId: string;
+  adId: string;
+  status: 'CREATED';
+  storeId: string;
+  adAccountId: string;
+  platform: 'META';
 }
 
 export interface ConnectMetaIntegrationRequest {

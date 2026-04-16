@@ -1,4 +1,5 @@
-import { IsDateString, IsEnum, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, MaxLength, Min } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
 
 export class ConnectMetaIntegrationDto {
@@ -45,6 +46,8 @@ export interface StoreIntegrationStatusDto {
   tokenExpiresAt: Date | null;
   grantedScopes: string[];
   providerUserId: string | null;
+  pageId?: string | null;
+  pageName?: string | null;
   oauthConnectedAt: Date | null;
   lastSyncAt: Date | null;
   lastSyncStatus: SyncStatus;
@@ -63,6 +66,80 @@ export interface MetaCampaignDto {
   externalId: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+}
+
+export interface MetaPageDto {
+  id: string;
+  name: string;
+  category?: string | null;
+}
+
+export class UpdateMetaPageDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  pageId: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  pageName?: string;
+}
+
+export class CreateMetaCampaignDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  objective: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  dailyBudget: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2)
+  country: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  adAccountId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  message: string;
+
+  @IsUrl({ require_protocol: true })
+  @IsNotEmpty()
+  @MaxLength(1000)
+  imageUrl: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
+}
+
+export interface CreateMetaCampaignResponseDto {
+  executionId?: string;
+  idempotencyKey?: string;
+  campaignId: string;
+  adSetId: string;
+  creativeId: string;
+  adId: string;
+  status: 'CREATED';
+  executionStatus?: 'ACTIVE';
+  storeId: string;
+  adAccountId: string;
+  platform: 'META';
 }
 
 export class UpdateMetaIntegrationStatusDto {

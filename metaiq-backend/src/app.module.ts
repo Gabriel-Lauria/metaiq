@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -32,6 +32,8 @@ import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { Insight } from './modules/insights/insight.entity';
 import { StoreIntegration } from './modules/integrations/store-integration.entity';
 import { OAuthState } from './modules/integrations/oauth-state.entity';
+import { MetaCampaignCreation } from './modules/integrations/meta/meta-campaign-creation.entity';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 @Module({
   imports: [
@@ -61,7 +63,7 @@ import { OAuthState } from './modules/integrations/oauth-state.entity';
         const baseConfig = {
           synchronize: config.get<boolean>('database.synchronize'),
           logging: appEnv !== 'production' && appEnv !== 'test',
-          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState],
+          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation],
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
           migrationsRun: config.get<boolean>('database.migrationsRun'),
         } as any;
@@ -105,4 +107,8 @@ import { OAuthState } from './modules/integrations/oauth-state.entity';
   controllers: [AppController],
   providers: [GlobalExceptionFilter, SyncCron],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}

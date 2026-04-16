@@ -16,7 +16,7 @@ export default registerAs('meta', () => ({
     process.env.META_REDIRECT_URI ||
     'http://localhost:3004/api/integrations/meta/oauth/callback',
   apiVersion: process.env.META_API_VERSION || 'v19.0',
-  oauthScopes: (process.env.META_OAUTH_SCOPES || 'ads_read,business_management')
+  oauthScopes: (process.env.META_OAUTH_SCOPES || 'ads_read,ads_management,business_management')
     .split(',')
     .map((scope) => scope.trim())
     .filter(Boolean),

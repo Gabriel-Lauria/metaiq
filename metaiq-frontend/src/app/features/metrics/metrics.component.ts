@@ -25,20 +25,20 @@ export class MetricsComponent implements OnInit {
 
   constructor() {
     effect(() => {
-      if (!this.storeContext.loaded() || !this.storeContext.selectedStoreId()) return;
+      if (!this.storeContext.loaded() || !this.storeContext.getValidSelectedStoreId()) return;
       queueMicrotask(() => this.load());
     });
   }
 
   ngOnInit(): void {
     this.storeContext.load();
-    if (this.storeContext.loaded() && this.storeContext.selectedStoreId()) {
+    if (this.storeContext.loaded() && this.storeContext.getValidSelectedStoreId()) {
       this.load();
     }
   }
 
   load(): void {
-    const storeId = this.storeContext.selectedStoreId();
+    const storeId = this.storeContext.getValidSelectedStoreId();
     if (!storeId) {
       this.loading.set(false);
       this.error.set('Selecione uma store para visualizar as métricas.');

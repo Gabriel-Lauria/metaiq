@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable, throwError, BehaviorSubject } from 'rxjs';
-import { tap, catchError, timeout, retry, map } from 'rxjs/operators';
+import { tap, map } from 'rxjs/operators';
 import { AuthResponse, LoginRequest, RegisterRequest, Role, User } from '../models';
 import { environment } from '../environment';
 
@@ -10,6 +10,12 @@ const API = environment.apiUrl;
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private http = inject(HttpClient);
+  private readonly sessionKeys = [
+    'accessToken',
+    'refreshToken',
+    'user',
+    'selectedStoreId',
+  ];
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
@@ -47,12 +53,14 @@ export class AuthService {
   }
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
+    this.clearSessionState();
     return this.http.post<AuthResponse>(`${API}/auth/login`, credentials).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
 
   register(data: RegisterRequest): Observable<AuthResponse> {
+    this.clearSessionState();
     return this.http.post<AuthResponse>(`${API}/auth/register`, data).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
@@ -70,12 +78,7 @@ export class AuthService {
   }
 
   logout(): void {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    this.currentUserSubject.next(null);
-    this.currentRoleSubject.next(null);
-    this.accessTokenSubject.next(null);
+    this.clearSessionState();
   }
 
   getCurrentUser(): User | null {
@@ -108,6 +111,19 @@ export class AuthService {
     this.currentUserSubject.next(userWithRole);
     this.currentRoleSubject.next(role);
     this.accessTokenSubject.next(response.accessToken);
+  }
+
+  private clearSessionStorage(): void {
+    for (const key of this.sessionKeys) {
+      localStorage.removeItem(key);
+    }
+  }
+
+  private clearSessionState(): void {
+    this.clearSessionStorage();
+    this.currentUserSubject.next(null);
+    this.currentRoleSubject.next(null);
+    this.accessTokenSubject.next(null);
   }
 
   private getStoredRole(): Role | null {

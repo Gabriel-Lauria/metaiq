@@ -66,7 +66,7 @@ export class DashboardComponent implements OnInit {
   constructor() {
     effect(() => {
       if (!this.requiresStoreContext()) return;
-      if (!this.storeContext.loaded() || !this.storeContext.selectedStoreId()) return;
+      if (!this.storeContext.loaded() || !this.storeContext.getValidSelectedStoreId()) return;
       queueMicrotask(() => this.loadData());
     });
   }
@@ -79,7 +79,7 @@ export class DashboardComponent implements OnInit {
         debounceTime(100),
         tap(() => this.loading.set(true)),
         switchMap((days) =>
-          this.api.getDashboardSummary(days, this.storeContext.selectedStoreId())
+          this.api.getDashboardSummary(days, this.storeContext.getValidSelectedStoreId() || undefined)
         ),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -104,12 +104,17 @@ export class DashboardComponent implements OnInit {
       return;
     }
 
-    if (this.storeContext.loaded() && this.storeContext.selectedStoreId()) {
+    if (this.storeContext.loaded() && this.storeContext.getValidSelectedStoreId()) {
       this.loadData();
     }
   }
 
   loadData(): void {
+    if (this.requiresStoreContext() && !this.storeContext.getValidSelectedStoreId()) {
+      this.loading.set(false);
+      this.error.set('Selecione uma store válida para carregar o dashboard.');
+      return;
+    }
     this.periodSubject.next(this.period());
   }
 

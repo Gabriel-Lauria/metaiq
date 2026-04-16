@@ -174,6 +174,173 @@
           />
         </ng-template>
       </section>
+
+      <section class="campaign-create-section" *ngIf="canManageIntegrations() && selectedIntegration()?.status === 'CONNECTED'">
+        <div class="section-header">
+          <div>
+            <h3>Criar campanha</h3>
+            <p>A campanha será criada pausada na Meta Ads.</p>
+          </div>
+        </div>
+
+        <div class="page-picker">
+          <div>
+            <span class="account-label">Página Facebook</span>
+            <strong *ngIf="hasConfiguredPage(); else pageMissing">
+              {{ selectedPageName() }}
+            </strong>
+            <ng-template #pageMissing>
+              <strong>Selecione uma página antes de criar campanha</strong>
+            </ng-template>
+            <small *ngIf="hasConfiguredPage()">Essa página será usada no criativo da campanha.</small>
+            <small *ngIf="!hasConfiguredPage()">A Meta exige uma página vinculada para criar o creative.</small>
+          </div>
+
+          <div class="page-picker-controls" *ngIf="!hasConfiguredPage() || pages().length">
+            <select
+              name="metaPageId"
+              [(ngModel)]="pageForm.pageId"
+              [disabled]="loadingPages() || savingPage()"
+            >
+              <option value="" disabled>{{ loadingPages() ? 'Carregando páginas...' : 'Selecione uma página' }}</option>
+              <option *ngFor="let page of pages(); trackBy: trackById" [value]="page.id">
+                {{ page.name }}{{ page.category ? ' - ' + page.category : '' }}
+              </option>
+            </select>
+
+            <button
+              class="btn btn-primary"
+              type="button"
+              (click)="savePage(store)"
+              [disabled]="savingPage() || loadingPages() || !pageForm.pageId"
+            >
+              {{ savingPage() ? 'Salvando...' : 'Salvar página' }}
+            </button>
+
+            <button
+              class="btn btn-secondary"
+              type="button"
+              (click)="refreshPages(store)"
+              [disabled]="loadingPages() || savingPage()"
+            >
+              {{ loadingPages() ? 'Buscando...' : 'Buscar páginas' }}
+            </button>
+          </div>
+
+          <button
+            class="btn btn-secondary"
+            type="button"
+            *ngIf="hasConfiguredPage() && !pages().length"
+            (click)="refreshPages(store)"
+            [disabled]="loadingPages()"
+          >
+            {{ loadingPages() ? 'Buscando...' : 'Trocar página' }}
+          </button>
+        </div>
+
+        <form class="campaign-form" (ngSubmit)="createCampaign(store)">
+          <label class="form-field">
+            <span>Nome campanha</span>
+            <input
+              type="text"
+              name="campaignName"
+              [(ngModel)]="campaignForm.name"
+              maxlength="120"
+              required
+            />
+          </label>
+
+          <label class="form-field">
+            <span>Objetivo</span>
+            <select
+              name="objective"
+              [(ngModel)]="campaignForm.objective"
+              required
+            >
+              <option value="OUTCOME_TRAFFIC">Tráfego</option>
+              <option value="OUTCOME_LEADS">Leads</option>
+              <option value="REACH">Alcance</option>
+            </select>
+          </label>
+
+          <label class="form-field">
+            <span>Orçamento diário</span>
+            <input
+              type="number"
+              name="dailyBudget"
+              [(ngModel)]="campaignForm.dailyBudget"
+              min="1"
+              step="1"
+              required
+            />
+          </label>
+
+          <label class="form-field">
+            <span>País</span>
+            <input
+              type="text"
+              name="country"
+              [(ngModel)]="campaignForm.country"
+              maxlength="2"
+              required
+            />
+          </label>
+
+          <label class="form-field">
+            <span>Conta de anúncio</span>
+            <select
+              name="adAccountId"
+              [(ngModel)]="campaignForm.adAccountId"
+              required
+            >
+              <option value="" disabled>Sincronize e selecione uma conta</option>
+              <option *ngFor="let account of internalAdAccounts(); trackBy: trackById" [value]="account.id">
+                {{ account.name }} - {{ account.externalId || account.metaId }}
+              </option>
+            </select>
+            <small *ngIf="!internalAdAccounts().length">
+              Sincronize as contas antes de criar uma campanha.
+            </small>
+          </label>
+
+          <label class="form-field form-field-wide">
+            <span>Mensagem</span>
+            <textarea
+              name="message"
+              [(ngModel)]="campaignForm.message"
+              maxlength="500"
+              rows="4"
+              required
+            ></textarea>
+          </label>
+
+          <label class="form-field form-field-wide">
+            <span>URL imagem</span>
+            <input
+              type="url"
+              name="imageUrl"
+              [(ngModel)]="campaignForm.imageUrl"
+              placeholder="https://..."
+              required
+            />
+          </label>
+
+          <button class="btn btn-primary" type="submit" [disabled]="!canCreateCampaign()">
+            {{ creatingCampaign() ? 'Criando campanha...' : 'Criar campanha' }}
+          </button>
+          <small class="form-hint" *ngIf="!hasConfiguredPage()">
+            Escolha e salve uma página Facebook para liberar a criação de campanha.
+          </small>
+        </form>
+
+        <div class="campaign-result" *ngIf="campaignResult() as result">
+          <strong>Campanha criada</strong>
+          <span>Campaign ID: {{ result.campaignId }}</span>
+          <span>AdSet ID: {{ result.adSetId }}</span>
+          <span>Creative ID: {{ result.creativeId }}</span>
+          <span>Ad ID: {{ result.adId }}</span>
+        </div>
+      </section>
     </main>
   </div>
 </section>

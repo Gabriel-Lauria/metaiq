@@ -142,6 +142,11 @@ export class CampaignsComponent implements OnInit {
     effect(() => {
       this.updateQueryParams();
     });
+
+    effect(() => {
+      if (!this.storeContext.loaded()) return;
+      this.loadCampaigns();
+    });
   }
 
   ngOnInit(): void {
@@ -160,8 +165,6 @@ export class CampaignsComponent implements OnInit {
           this.toggleSort(sort as SortField);
         }
       });
-
-    this.loadCampaigns();
   }
 
   refresh(): void {
@@ -177,7 +180,6 @@ export class CampaignsComponent implements OnInit {
   setStoreFilter(storeId: string): void {
     this.storeContext.select(storeId);
     this.currentPage.set(1);
-    this.loadCampaigns();
   }
 
   setSearchTerm(value: string): void {
@@ -287,11 +289,21 @@ export class CampaignsComponent implements OnInit {
   }
 
   private loadCampaigns(): void {
+    const selectedStoreId = this.storeContext.getValidSelectedStoreId();
+    if (!this.storeContext.loaded()) {
+      return;
+    }
+    if (this.storeContext.selectedStoreId() && !selectedStoreId) {
+      this.error.set('A store selecionada não pertence ao usuário atual. Selecione uma store válida.');
+      this.loading.set(false);
+      return;
+    }
+
     this.loading.set(true);
     this.error.set(null);
 
     this.apiService
-      .getCampaigns(undefined, this.storeContext.selectedStoreId())
+      .getCampaigns(undefined, selectedStoreId || undefined)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {

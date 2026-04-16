@@ -177,6 +177,12 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.campaign-create-section {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -228,11 +234,118 @@
   font-size: 15px;
 }
 
+.page-picker {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.page-picker strong,
+.page-picker small {
+  display: block;
+}
+
+.page-picker strong {
+  color: var(--text);
+}
+
+.page-picker small {
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.page-picker-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.page-picker-controls select {
+  min-width: min(320px, 100%);
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.campaign-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.form-field span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.form-field textarea {
+  resize: vertical;
+}
+
+.campaign-form .btn {
+  justify-self: start;
+}
+
+.form-hint {
+  align-self: center;
+  color: var(--text-muted);
+}
+
+.campaign-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 8px;
+  background: rgba(34, 197, 94, 0.08);
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+.campaign-result strong {
+  color: var(--text);
+}
+
 @media (max-width: 900px) {
   .integration-layout,
   .card-details,
   .accounts-grid,
-  .account-card {
+  .account-card,
+  .campaign-form {
     grid-template-columns: 1fr;
   }
 

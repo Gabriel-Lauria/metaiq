@@ -31,6 +31,18 @@ function integration(overrides: Partial<StoreIntegration> = {}): StoreIntegratio
   };
 }
 
+function queryBuilderMock(integrationValue: StoreIntegration, affected = 1): any {
+  return {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    getOne: jest.fn(async () => integrationValue),
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    execute: jest.fn(async () => ({ affected })),
+  };
+}
+
 describe('MetaSyncService', () => {
   const user: AuthenticatedUser = {
     id: 'user-1',
@@ -51,12 +63,7 @@ describe('MetaSyncService', () => {
 
     integrationRepo = {
       save: jest.fn(async (value) => value),
-      createQueryBuilder: jest.fn(() => ({
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        getOne: jest.fn(async () => integration()),
-      })),
+      createQueryBuilder: jest.fn(() => queryBuilderMock(integration())),
     };
     adAccountRepo = {
       findOne: jest.fn(),
@@ -88,24 +95,19 @@ describe('MetaSyncService', () => {
   });
 
   it('bloqueia sync concorrente quando ja existe IN_PROGRESS', async () => {
-    integrationRepo.createQueryBuilder = jest.fn(() => ({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      getOne: jest.fn(async () => integration({ lastSyncStatus: SyncStatus.IN_PROGRESS })),
-    }));
+    integrationRepo.createQueryBuilder = jest.fn(() => queryBuilderMock(
+      integration({ lastSyncStatus: SyncStatus.IN_PROGRESS }),
+      0,
+    ));
 
     await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(ConflictException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
 
   it('marca token expirado e bloqueia chamada externa', async () => {
-    integrationRepo.createQueryBuilder = jest.fn(() => ({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      getOne: jest.fn(async () => integration({ tokenExpiresAt: new Date(Date.now() - 1000) })),
-    }));
+    integrationRepo.createQueryBuilder = jest.fn(() => queryBuilderMock(
+      integration({ tokenExpiresAt: new Date(Date.now() - 1000) }),
+    ));
 
     await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(UnauthorizedException);
     expect(integrationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -117,12 +119,9 @@ describe('MetaSyncService', () => {
   });
 
   it('rejeita store sem integracao conectada', async () => {
-    integrationRepo.createQueryBuilder = jest.fn(() => ({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      getOne: jest.fn(async () => integration({ status: IntegrationStatus.NOT_CONNECTED })),
-    }));
+    integrationRepo.createQueryBuilder = jest.fn(() => queryBuilderMock(
+      integration({ status: IntegrationStatus.NOT_CONNECTED }),
+    ));
 
     await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(BadRequestException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();

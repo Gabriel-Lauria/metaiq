@@ -7,6 +7,15 @@ import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UiService } from './services/ui.service';
 
+interface BackendErrorBody {
+  statusCode?: number;
+  message?: string | string[] | Record<string, unknown>;
+  error?: string;
+  step?: string;
+  executionId?: string;
+  [key: string]: unknown;
+}
+
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const uiService = inject(UiService);
 
@@ -14,15 +23,17 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((error: HttpErrorResponse) => {
       let userFriendlyMessage = 'Erro inesperado. Tente novamente.';
       let shouldShowNotification = true;
+      let backendError: BackendErrorBody | null = null;
 
       // Adaptar para o novo formato de erro do backend: { statusCode, message, error }
       if (error.error && typeof error.error === 'object') {
-        const backendError = error.error as { statusCode?: number; message?: string; error?: string };
+        backendError = error.error as BackendErrorBody;
 
         const statusCode = backendError.statusCode ?? error.status;
+        const backendMessage = extractBackendMessage(backendError);
 
-        if (backendError.message) {
-          userFriendlyMessage = getUserFriendlyMessage(statusCode, backendError.message);
+        if (backendMessage) {
+          userFriendlyMessage = getUserFriendlyMessage(statusCode, backendMessage);
         }
       }
 
@@ -69,6 +80,10 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       return throwError(() => ({
         status: error.status,
         message: userFriendlyMessage,
+        error: backendError?.error,
+        step: backendError?.step,
+        executionId: backendError?.executionId,
+        details: backendError,
         originalError: error
       }));
     })
@@ -96,6 +111,10 @@ function getUserFriendlyMessage(status: number, backendMessage: string): string 
     }
   }
 
+  if (backendMessage.trim()) {
+    return backendMessage;
+  }
+
   // Fallback baseado no status HTTP
   switch (status) {
     case 400:
@@ -111,6 +130,29 @@ function getUserFriendlyMessage(status: number, backendMessage: string): string 
     default:
       return 'Erro inesperado. Tente novamente.';
   }
+}
+
+function extractBackendMessage(error: BackendErrorBody): string {
+  const message = error.message;
+  if (typeof message === 'string') {
+    return message;
+  }
+
+  if (Array.isArray(message)) {
+    return message.filter(Boolean).join(' ');
+  }
+
+  if (message && typeof message === 'object') {
+    const nestedMessage = (message as BackendErrorBody).message;
+    if (typeof nestedMessage === 'string') {
+      return nestedMessage;
+    }
+    if (Array.isArray(nestedMessage)) {
+      return nestedMessage.filter(Boolean).join(' ');
+    }
+  }
+
+  return typeof error.error === 'string' ? error.error : '';
 }
 
 function getUnauthorizedMessage(url: string): string {
