@@ -11,6 +11,7 @@ import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 import { Manager } from '../managers/manager.entity';
+import { Tenant } from '../tenants/tenant.entity';
 import { UserStore } from '../user-stores/user-store.entity';
 import { User } from '../users/user.entity';
 import { CreateStoreDto, UpdateStoreDto } from './dto/store.dto';
@@ -23,6 +24,8 @@ export class StoresService {
     private readonly storeRepository: Repository<Store>,
     @InjectRepository(Manager)
     private readonly managerRepository: Repository<Manager>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserStore)
@@ -31,12 +34,14 @@ export class StoresService {
   ) {}
 
   async create(requester: AuthenticatedUser, dto: CreateStoreDto): Promise<Store> {
-    const managerId = await this.resolveManagerIdForWrite(requester, dto.managerId);
-    await this.ensureManagerExists(managerId);
+    const tenantId = await this.resolveTenantIdForWrite(requester, dto.tenantId, dto.managerId);
+    await this.ensureTenantExists(tenantId);
+    const managerId = await this.resolveLegacyManagerIdForWrite(requester, dto.managerId, tenantId);
 
     const store = this.storeRepository.create({
       name: dto.name.trim(),
       managerId,
+      tenantId,
       active: true,
     });
 
@@ -44,26 +49,26 @@ export class StoresService {
   }
 
   async findAll(requester: AuthenticatedUser): Promise<Store[]> {
-    if (this.accessScope.isAdmin(requester)) {
+    if (this.accessScope.isPlatformAdmin(requester)) {
       return this.storeRepository.find({
         relations: ['manager'],
         order: { createdAt: 'DESC' },
       });
     }
 
-    if (!requester.managerId) {
+    if (!requester.tenantId) {
       return [];
     }
 
     return this.storeRepository.find({
-      where: { managerId: requester.managerId },
+      where: { tenantId: requester.tenantId },
       relations: ['manager'],
       order: { createdAt: 'DESC' },
     });
   }
 
   async findAccessible(requester: AuthenticatedUser): Promise<Store[]> {
-    if (this.accessScope.isAdmin(requester)) {
+    if (this.accessScope.isPlatformAdmin(requester)) {
       return this.storeRepository.find({
         where: { active: true },
         relations: ['manager'],
@@ -71,13 +76,13 @@ export class StoresService {
       });
     }
 
-    if (this.accessScope.isManager(requester)) {
-      if (!requester.managerId) {
+    if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
+      if (!requester.tenantId) {
         return [];
       }
 
       return this.storeRepository.find({
-        where: { managerId: requester.managerId, active: true },
+        where: { tenantId: requester.tenantId, active: true },
         relations: ['manager'],
         order: { name: 'ASC' },
       });
@@ -85,7 +90,7 @@ export class StoresService {
 
     const links = await this.userStoreRepository.find({
       where: { userId: requester.id },
-      relations: ['store', 'store.manager'],
+      relations: ['store', 'store.manager', 'store.tenant'],
       order: { createdAt: 'ASC' },
     });
 
@@ -96,7 +101,7 @@ export class StoresService {
 
   async findOne(id: string, requester: AuthenticatedUser): Promise<Store> {
     const store = await this.findOneUnsafeInternal(id);
-    this.accessScope.validateTenantAccess(requester, store.managerId);
+    this.accessScope.validateTenantAccess(requester, store.tenantId);
     return store;
   }
 
@@ -112,13 +117,22 @@ export class StoresService {
     }
 
     if (dto.managerId !== undefined) {
-      if (!this.accessScope.isAdmin(requester)) {
-        throw new ForbiddenException('Apenas ADMIN pode alterar o manager da store');
+      if (!this.accessScope.isPlatformAdmin(requester)) {
+        throw new ForbiddenException('Apenas ADMIN pode alterar managerId legado da store');
       }
 
       await this.ensureManagerExists(dto.managerId);
-      await this.ensureStoreCanMoveTenant(store, dto.managerId);
       store.managerId = dto.managerId;
+    }
+
+    if (dto.tenantId !== undefined) {
+      if (!this.accessScope.isPlatformAdmin(requester)) {
+        throw new ForbiddenException('Apenas PLATFORM_ADMIN pode alterar o tenant da store');
+      }
+
+      await this.ensureTenantExists(dto.tenantId);
+      await this.ensureStoreCanMoveTenant(store, dto.tenantId);
+      store.tenantId = dto.tenantId;
     }
 
     return this.storeRepository.save(store);
@@ -185,7 +199,7 @@ export class StoresService {
   private async findOneUnsafeInternal(id: string): Promise<Store> {
     const store = await this.storeRepository.findOne({
       where: { id },
-      relations: ['manager'],
+      relations: ['manager', 'tenant'],
     });
     if (!store) {
       throw new NotFoundException('Store não encontrada');
@@ -203,23 +217,47 @@ export class StoresService {
     return user;
   }
 
-  private async resolveManagerIdForWrite(
+  private async resolveTenantIdForWrite(
     requester: AuthenticatedUser,
-    payloadManagerId?: string,
+    payloadTenantId?: string,
+    legacyManagerId?: string,
   ): Promise<string> {
-    if (this.accessScope.isAdmin(requester)) {
-      if (!payloadManagerId) {
-        throw new BadRequestException('managerId é obrigatório para ADMIN criar store');
+    if (this.accessScope.isPlatformAdmin(requester)) {
+      const tenantId = payloadTenantId ?? legacyManagerId;
+      if (!tenantId) {
+        throw new BadRequestException('tenantId é obrigatório para ADMIN criar store');
       }
 
+      return tenantId;
+    }
+
+    if (!(this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) || !requester.tenantId) {
+      throw new ForbiddenException('Apenas ADMIN ou MANAGER podem gerenciar stores do tenant');
+    }
+
+    return requester.tenantId;
+  }
+
+  private async resolveLegacyManagerIdForWrite(
+    requester: AuthenticatedUser,
+    payloadManagerId: string | undefined,
+    tenantId: string,
+  ): Promise<string> {
+    if (payloadManagerId) {
+      await this.ensureManagerExists(payloadManagerId);
       return payloadManagerId;
     }
 
-    if (!this.accessScope.isManager(requester) || !requester.managerId) {
-      throw new ForbiddenException('Apenas ADMIN ou MANAGER podem gerenciar stores');
+    if (requester.managerId) {
+      return requester.managerId;
     }
 
-    return requester.managerId;
+    const manager = await this.managerRepository.findOne({ where: { id: tenantId } });
+    if (manager) {
+      return manager.id;
+    }
+
+    throw new BadRequestException('managerId legado é obrigatório até a remoção definitiva do campo');
   }
 
   private async ensureManagerExists(managerId: string): Promise<void> {
@@ -229,22 +267,29 @@ export class StoresService {
     }
   }
 
+  private async ensureTenantExists(tenantId: string): Promise<void> {
+    const tenant = await this.tenantRepository.findOne({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new NotFoundException('Tenant não encontrado');
+    }
+  }
+
   private validateLinkTenant(requester: AuthenticatedUser, store: Store, user: User): void {
-    if (!user.managerId || user.managerId !== store.managerId) {
+    if (!user.tenantId || user.tenantId !== store.tenantId) {
       throw new ForbiddenException('Usuário e store precisam pertencer ao mesmo tenant');
     }
 
-    if (!this.accessScope.isAdmin(requester)) {
-      this.accessScope.validateTenantAccess(requester, user.managerId);
+    if (!this.accessScope.isPlatformAdmin(requester)) {
+      this.accessScope.validateTenantAccess(requester, user.tenantId);
     }
 
-    if (user.role === Role.ADMIN) {
+    if ([Role.PLATFORM_ADMIN, Role.ADMIN].includes(user.role)) {
       throw new ForbiddenException('ADMIN não deve ser vinculado a stores');
     }
   }
 
-  private async ensureStoreCanMoveTenant(store: Store, nextManagerId: string): Promise<void> {
-    if (store.managerId === nextManagerId) {
+  private async ensureStoreCanMoveTenant(store: Store, nextTenantId: string): Promise<void> {
+    if (store.tenantId === nextTenantId) {
       return;
     }
 

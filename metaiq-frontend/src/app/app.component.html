@@ -32,6 +32,36 @@
         <span class="nav-label">Campanhas</span>
       </a>
       <a
+        *ngIf="canSeeOperationalReadouts()"
+        routerLink="/metrics"
+        class="nav-item"
+        [class.active]="isActive('/metrics')"
+        title="Métricas"
+      >
+        <span class="nav-icon">M</span>
+        <span class="nav-label">Métricas</span>
+      </a>
+      <a
+        *ngIf="canSeeOperationalReadouts()"
+        routerLink="/insights"
+        class="nav-item"
+        [class.active]="isActive('/insights')"
+        title="Insights"
+      >
+        <span class="nav-icon">I</span>
+        <span class="nav-label">Insights</span>
+      </a>
+      <a
+        *ngIf="canSeeClientResults()"
+        routerLink="/results"
+        class="nav-item"
+        [class.active]="isActive('/results')"
+        title="Resultados"
+      >
+        <span class="nav-icon">R</span>
+        <span class="nav-label">Resultados</span>
+      </a>
+      <a
         *ngIf="canSeeManagers()"
         routerLink="/admin/managers"
         class="nav-item"
@@ -56,10 +86,20 @@
         routerLink="/manager/users"
         class="nav-item"
         [class.active]="isActive('/manager/users')"
-        title="Usuarios"
+        title="Usuários"
       >
         <span class="nav-icon">U</span>
-        <span class="nav-label">Usuarios</span>
+        <span class="nav-label">Usuários</span>
+      </a>
+      <a
+        *ngIf="canSeeIntegrations()"
+        routerLink="/manager/integrations"
+        class="nav-item"
+        [class.active]="isActive('/manager/integrations')"
+        title="Integrações"
+      >
+        <span class="nav-icon">I</span>
+        <span class="nav-label">Integrações</span>
       </a>
     </nav>
 
@@ -104,7 +144,7 @@
     <!-- Footer -->
     <footer class="app-footer">
       <p>
-        MetaIQ © 2026 · SQLite Local ·
+        MetaIQ © 2026 · PostgreSQL Local ·
         {{ today | date: 'dd/MM/yyyy' }}
       </p>
     </footer>

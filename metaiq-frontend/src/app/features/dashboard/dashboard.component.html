@@ -1,27 +1,33 @@
 <div class="dashboard-wrapper">
   <!-- Loading State -->
-  <div class="loading-state" *ngIf="loading()">
-    <div class="spinner"></div>
-    <p>Carregando dashboard...</p>
-  </div>
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando dashboard"
+    message="Preparando os indicadores do período."
+  />
 
   <!-- Error State -->
-  <div class="error-state" *ngIf="error() && !loading()">
-    <div class="error-icon">⚠️</div>
-    <p class="error-title">Erro ao carregar dashboard</p>
-    <p class="error-description">{{ error() }}</p>
-    <button class="btn btn-secondary" (click)="loadData()">Tentar Novamente</button>
-  </div>
+  <app-ui-state
+    *ngIf="error() && !loading()"
+    type="error"
+    icon="!"
+    title="Erro ao carregar dashboard"
+    [message]="error() || ''"
+    actionLabel="Tentar novamente"
+    (action)="loadData()"
+  />
 
   <!-- Empty State -->
-  <div class="empty-state" *ngIf="!loading() && !error() && !hasDashboardData()">
-    <div class="empty-icon">📊</div>
-    <p class="empty-title">{{ isClient() ? 'Nenhum resultado disponível' : 'Nenhum dado encontrado' }}</p>
-    <p class="empty-description">
-      {{ isClient() ? 'Ainda não há resultados para o período escolhido.' : 'Não há métricas ou insights para o período escolhido.' }}
-    </p>
-    <button class="btn btn-secondary" (click)="loadData()">Atualizar</button>
-  </div>
+  <app-ui-state
+    *ngIf="!loading() && !error() && !hasDashboardData()"
+    type="empty"
+    icon="D"
+    [title]="isClient() ? 'Nenhum resultado disponível' : 'Nenhum dado encontrado'"
+    [message]="isClient() ? 'Ainda não há resultados para o período escolhido.' : 'Não há métricas ou insights para o período escolhido.'"
+    actionLabel="Atualizar"
+    (action)="loadData()"
+  />
 
   <!-- Main Dashboard -->
   <div class="dashboard-content" *ngIf="!loading() && !error() && hasDashboardData()">
@@ -29,6 +35,7 @@
     <div class="dashboard-header">
       <div class="header-left">
         <h1 class="page-title">{{ dashboardTitle() }}</h1>
+        <span class="demo-data-badge">Dados de demonstração</span>
         <p class="page-subtitle">
           Últimos {{ period() }} dias
           <span *ngIf="storeContext.selectedStore()"> • {{ storeContext.selectedStore()!.name }}</span>
@@ -37,12 +44,12 @@
       <div class="time-range-buttons">
         <select
           class="store-select"
-          *ngIf="storeContext.stores().length > 1 && !isClient()"
+          *ngIf="storeContext.stores().length > 1"
           [ngModel]="storeContext.selectedStoreId()"
           (ngModelChange)="setStore($event)"
         >
-          <option value="">Todas as stores</option>
-          <option *ngFor="let store of storeContext.stores()" [value]="store.id">{{ store.name }}</option>
+          <option *ngIf="!requiresStoreContext()" value="">Todas as stores</option>
+          <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
         </select>
         <button
           class="btn-time-range"
@@ -67,121 +74,29 @@
 
     <!-- Metrics Grid -->
     <div class="metrics-grid" *ngIf="metrics() && hasMetricsData()">
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ isClient() ? 'Pessoas alcançadas' : 'Impressões' }}</span>
-          <span class="metric-icon">👁️</span>
-        </div>
-        <div class="metric-value">{{ metrics()!.impressions.toLocaleString() }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ kpiLabel('clicks') }}</span>
-          <span class="metric-icon">👆</span>
-        </div>
-        <div class="metric-value">{{ metrics()!.clicks.toLocaleString() }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ kpiLabel('spend') }}</span>
-          <span class="metric-icon">💰</span>
-        </div>
-        <div class="metric-value">{{ fmt(metrics()!.spend) }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ kpiLabel('conversions') }}</span>
-          <span class="metric-icon">🎯</span>
-        </div>
-        <div class="metric-value">{{ metrics()!.conversions.toLocaleString() }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ kpiLabel('ctr') }}</span>
-          <span class="metric-icon">📊</span>
-        </div>
-        <div class="metric-value">{{ fmtPct(metrics()!.ctr) }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ kpiLabel('cpc') }}</span>
-          <span class="metric-icon">💸</span>
-        </div>
-        <div class="metric-value">{{ fmt(metrics()!.cpc || 0) }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">{{ isClient() ? 'Retorno' : 'ROAS' }}</span>
-          <span class="metric-icon">📈</span>
-        </div>
-        <div class="metric-value">{{ fmtRoas(metrics()!.roas) }}</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">Receita</span>
-          <span class="metric-icon">💵</span>
-        </div>
-        <div class="metric-value">{{ fmt(metrics()!.revenue) }}</div>
-      </div>
+      <div class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</div>
+      <app-ui-kpi-card [label]="isClient() ? 'Pessoas alcançadas' : 'Impressões'" [value]="metrics()!.impressions.toLocaleString()" marker="I" tone="info" />
+      <app-ui-kpi-card [label]="kpiLabel('clicks')" [value]="metrics()!.clicks.toLocaleString()" marker="C" tone="info" />
+      <app-ui-kpi-card [label]="kpiLabel('spend')" [value]="fmt(metrics()!.spend)" marker="$" tone="warning" />
+      <app-ui-kpi-card [label]="kpiLabel('conversions')" [value]="metrics()!.conversions.toLocaleString()" marker="R" tone="success" />
+      <app-ui-kpi-card [label]="kpiLabel('ctr')" [value]="fmtPct(metrics()!.ctr)" marker="%" tone="info" />
+      <app-ui-kpi-card [label]="kpiLabel('cpc')" [value]="fmt(metrics()!.cpc || 0)" marker="$" tone="warning" />
+      <app-ui-kpi-card [label]="isClient() ? 'Retorno' : 'ROAS'" [value]="fmtRoas(metrics()!.roas)" marker="x" tone="success" />
+      <app-ui-kpi-card label="Receita" [value]="fmt(metrics()!.revenue)" marker="$" tone="success" />
     </div>
 
     <div class="metrics-grid" *ngIf="summary() && (isAdmin() || isManager())">
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">Stores</span>
-          <span class="metric-icon">S</span>
-        </div>
-        <div class="metric-value">{{ summary()!.counts.stores }}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">Usuários</span>
-          <span class="metric-icon">U</span>
-        </div>
-        <div class="metric-value">{{ summary()!.counts.users }}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">Campanhas</span>
-          <span class="metric-icon">C</span>
-        </div>
-        <div class="metric-value">{{ summary()!.counts.campaigns }}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-header">
-          <span class="metric-title">Ativas</span>
-          <span class="metric-icon">A</span>
-        </div>
-        <div class="metric-value">{{ summary()!.counts.activeCampaigns }}</div>
-      </div>
-    </div>
-
-    <!-- Charts Section -->
-    <div class="charts-section">
-      <!-- ROAS Chart -->
-      <div class="chart-card" *ngIf="insights().length > 0">
-        <div class="chart-header">
-          <h3>ROAS por Campanha</h3>
-          <span class="chart-badge">Performance</span>
-        </div>
-        <div class="chart-container">
-          <canvas #roasCanvas></canvas>
-        </div>
-      </div>
+      <app-ui-kpi-card label="Stores" [value]="summary()!.counts.stores" marker="S" tone="info" />
+      <app-ui-kpi-card label="Usuários" [value]="summary()!.counts.users" marker="U" tone="info" />
+      <app-ui-kpi-card label="Campanhas" [value]="summary()!.counts.campaigns" marker="C" tone="warning" />
+      <app-ui-kpi-card label="Ativas" [value]="summary()!.counts.activeCampaigns" marker="A" tone="success" />
     </div>
 
     <!-- Insights Section -->
     <div class="insights-section" *ngIf="allInsights.length > 0">
       <h3>{{ isClient() ? 'Pontos importantes' : 'Insights e recomendações' }}</h3>
       <div class="insights-grid">
-        <div class="insight-card" *ngFor="let insight of allInsights">
+        <div class="insight-card" *ngFor="let insight of allInsights; trackBy: trackById">
           <div class="insight-header">
             <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
             <span class="insight-title">{{ insight.title || insight.message }}</span>
@@ -194,7 +109,7 @@
     <div class="insights-section" *ngIf="highlightedCampaigns.length > 0">
       <h3>{{ isClient() ? 'Campanhas em andamento' : 'Campanhas em destaque' }}</h3>
       <div class="insights-grid">
-        <div class="insight-card" *ngFor="let campaign of highlightedCampaigns">
+        <div class="insight-card" *ngFor="let campaign of highlightedCampaigns; trackBy: trackById">
           <div class="insight-header">
             <span class="insight-type">{{ campaign.status }}</span>
             <span class="insight-title">{{ campaign.name }}</span>

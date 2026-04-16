@@ -1,11 +1,10 @@
 import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { UiService } from '../services/ui.service';
 
 @Component({
   selector: 'app-global-loading',
   standalone: true,
-  imports: [CommonModule],
+  imports: [],
   template: `
     @if (uiService.globalLoading()) {
       <div class="global-loading-overlay">
@@ -37,22 +36,23 @@ import { UiService } from '../services/ui.service';
       align-items: center;
       gap: 16px;
       padding: 32px;
-      background: white;
-      border-radius: 12px;
+      background: rgba(15, 19, 32, 0.96);
+      border: 1px solid rgba(110, 231, 247, 0.16);
+      border-radius: 8px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
     }
 
     .spinner {
       width: 40px;
       height: 40px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #007bff;
+      border: 4px solid rgba(110, 231, 247, 0.14);
+      border-top: 4px solid #6ee7f7;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
 
     .loading-text {
-      color: #666;
+      color: #94a3b8;
       font-size: 14px;
       font-weight: 500;
     }

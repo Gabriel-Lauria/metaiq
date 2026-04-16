@@ -40,8 +40,7 @@ export class AuthService {
         const userWithRole = { ...parsedUser, role };
         this.currentUserSubject.next(userWithRole);
         this.currentRoleSubject.next(role);
-      } catch (e) {
-        console.error('Erro ao carregar usuário do localStorage:', e);
+      } catch {
         this.logout();
       }
     }
@@ -74,7 +73,6 @@ export class AuthService {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
-    localStorage.removeItem('role');
     this.currentUserSubject.next(null);
     this.currentRoleSubject.next(null);
     this.accessTokenSubject.next(null);
@@ -107,15 +105,20 @@ export class AuthService {
     const role = this.normalizeRole(response.user.role);
     const userWithRole = { ...response.user, role };
     localStorage.setItem('user', JSON.stringify(userWithRole));
-    localStorage.setItem('role', role);
     this.currentUserSubject.next(userWithRole);
     this.currentRoleSubject.next(role);
     this.accessTokenSubject.next(response.accessToken);
   }
 
   private getStoredRole(): Role | null {
-    const role = localStorage.getItem('role') as Role | null;
-    return role ? this.normalizeRole(role) : null;
+    const user = localStorage.getItem('user');
+    if (!user) return null;
+
+    try {
+      return this.normalizeRole((JSON.parse(user) as User).role);
+    } catch {
+      return null;
+    }
   }
 
   private normalizeRole(role: unknown): Role {

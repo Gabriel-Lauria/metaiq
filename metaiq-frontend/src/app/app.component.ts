@@ -1,6 +1,6 @@
 import { Component, inject, signal, effect } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { RouterModule, Router, NavigationEnd, ActivatedRoute } from '@angular/router';
+import { AsyncPipe, DatePipe, NgIf } from '@angular/common';
+import { Router, NavigationEnd, RouterLink, RouterOutlet } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import { UiService } from './core/services/ui.service';
 import { NotificationContainerComponent } from './core/components/notification-container.component';
@@ -12,8 +12,11 @@ import { filter } from 'rxjs';
   selector: 'app-root',
   standalone: true,
   imports: [
-    CommonModule,
-    RouterModule,
+    AsyncPipe,
+    DatePipe,
+    NgIf,
+    RouterLink,
+    RouterOutlet,
     NotificationContainerComponent,
     GlobalLoadingComponent
   ],
@@ -24,7 +27,6 @@ export class AppComponent {
   private authService = inject(AuthService);
   private uiService = inject(UiService);
   private router = inject(Router);
-  private activatedRoute = inject(ActivatedRoute);
   
   isAuthenticated$ = this.authService.isAuthenticated$;
   currentUser$ = this.authService.currentUser$;
@@ -69,11 +71,15 @@ export class AppComponent {
     const url = this.router.url;
     const role = this.authService.getCurrentRole();
     const titles: { [key: string]: string } = {
-      '/dashboard': role === Role.CLIENT ? 'Resumo da Loja' : role === Role.MANAGER ? 'Central do Tenant' : role === Role.ADMIN ? 'Administração' : 'Operação da Loja',
+      '/dashboard': role === Role.CLIENT ? 'Resumo da Loja' : role === Role.MANAGER ? 'Central do Tenant' : [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role as Role) ? 'Administração' : 'Operação da Loja',
       '/campaigns': 'Campanhas Ativas',
-      '/admin/managers': 'Gestao de Managers',
-      '/manager/stores': 'Gestao de Stores',
-      '/manager/users': 'Gestao de Usuarios'
+      '/metrics': 'Métricas',
+      '/insights': 'Insights',
+      '/results': 'Resultados',
+      '/admin/managers': 'Gestão de Managers',
+      '/manager/stores': 'Gestão de Stores',
+      '/manager/users': 'Gestão de Usuários',
+      '/manager/integrations': 'Integrações'
     };
     this.currentTitle = titles[url] || 'Dashboard';
   }
@@ -107,22 +113,35 @@ export class AppComponent {
   }
 
   canSeeCampaigns(): boolean {
-    return this.authService.hasAnyRole([Role.MANAGER, Role.OPERATIONAL]);
+    return this.authService.hasAnyRole([Role.ADMIN, Role.MANAGER, Role.OPERATIONAL]);
   }
 
   canSeeManagers(): boolean {
-    return this.authService.hasAnyRole([Role.ADMIN]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN]);
   }
 
   canSeeTenantManagement(): boolean {
-    return this.authService.hasAnyRole([Role.ADMIN, Role.MANAGER]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER]);
+  }
+
+  canSeeIntegrations(): boolean {
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
+  }
+
+  canSeeOperationalReadouts(): boolean {
+    return this.authService.hasAnyRole([Role.OPERATIONAL]);
+  }
+
+  canSeeClientResults(): boolean {
+    return this.authService.hasAnyRole([Role.CLIENT]);
   }
 
   dashboardLabel(): string {
     const role = this.authService.getCurrentRole();
     if (role === Role.CLIENT) return 'Resumo';
     if (role === Role.MANAGER) return 'Central';
-    if (role === Role.ADMIN) return 'Admin';
+    if (role === Role.PLATFORM_ADMIN) return 'Plataforma';
+    if (role === Role.ADMIN) return 'Dashboard Admin';
     return 'Operação';
   }
 }

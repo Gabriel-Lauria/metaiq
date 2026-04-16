@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -9,7 +9,7 @@ import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 
 @Controller('managers')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN)
 export class ManagersController {
   constructor(private readonly managersService: ManagersService) {}
 
@@ -19,8 +19,8 @@ export class ManagersController {
   }
 
   @Get()
-  findAll(): Promise<Manager[]> {
-    return this.managersService.findAll();
+  findAll(@Request() req: any): Promise<Manager[]> {
+    return this.managersService.findAllForUser(req.user);
   }
 
   @Get(':id')

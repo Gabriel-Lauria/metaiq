@@ -22,6 +22,7 @@ dotenv.config({ quiet: true } as dotenv.DotenvConfigOptions & { quiet: true });
 import { User }        from './src/modules/users/user.entity';
 import { Role }        from './src/common/enums';
 import { Manager }     from './src/modules/managers/manager.entity';
+import { Tenant }      from './src/modules/tenants/tenant.entity';
 import { Store }       from './src/modules/stores/store.entity';
 import { UserStore }   from './src/modules/user-stores/user-store.entity';
 import { AdAccount }   from './src/modules/ad-accounts/ad-account.entity';
@@ -29,12 +30,7 @@ import { Campaign }    from './src/modules/campaigns/campaign.entity';
 import { MetricDaily } from './src/modules/metrics/metric-daily.entity';
 import { Insight }      from './src/modules/insights/insight.entity';
 import { MetricsEngine } from './src/modules/metrics/metrics.engine';
-import { InitialSchema1776170000000 } from './src/migrations/1776170000000-InitialSchema';
-import { AddUserRole1776260000000 } from './src/migrations/1776260000000-AddUserRole';
-import { CreateManagersStoresUserStores1776270000000 } from './src/migrations/1776270000000-CreateManagersStoresUserStores';
-import { AddUserManager1776271000000 } from './src/migrations/1776271000000-AddUserManager';
-import { AddAdAccountStore1776272000000 } from './src/migrations/1776272000000-AddAdAccountStore';
-import { AddCampaignStore1776273000000 } from './src/migrations/1776273000000-AddCampaignStore';
+import AppDataSource from './src/data-source';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
@@ -50,42 +46,44 @@ const validateEnv = () => {
 
 validateEnv();
 
-const DB_PATH = process.env.SQLITE_PATH ?? './data/metaiq.db';
+const getEnv = (...names: string[]): string | undefined => {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const DB_TYPE = getEnv('DB_TYPE', 'DATABASE_TYPE') ?? 'postgres';
+const DB_PATH = getEnv('SQLITE_PATH', 'DATABASE') ?? './data/metaiq.db';
 
 // ── Utilitários para cálculos monetários ────────────────────────
 const roundMoney = (n: number): number => Math.round(n * 100) / 100;
 const safeCharAt = (str: string, idx: number): number => str.charCodeAt(idx) ?? 65; // 65 = 'A'
 
 async function seed() {
-  // Garante que a pasta existe
-  const dir = path.dirname(path.resolve(DB_PATH));
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (DB_TYPE === 'sqlite') {
+    const dir = path.dirname(path.resolve(DB_PATH));
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
 
-  const ds = new DataSource({
-    type: 'sqlite',
-    database: DB_PATH,
-    busyTimeout: 5000,
-    entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
-    migrations: [
-      InitialSchema1776170000000,
-      AddUserRole1776260000000,
-      CreateManagersStoresUserStores1776270000000,
-      AddUserManager1776271000000,
-      AddAdAccountStore1776272000000,
-      AddCampaignStore1776273000000,
-    ],
-    synchronize: false,
-    logging: false,
-  });
-
+  const ds: DataSource = AppDataSource;
   await ds.initialize();
   await ds.runMigrations();
-  console.log('🗄️  Banco SQLite pronto em:', DB_PATH);
+  console.log(
+    DB_TYPE === 'sqlite'
+      ? `🗄️  Banco SQLite pronto em: ${DB_PATH}`
+      : `🗄️  Banco PostgreSQL pronto em: ${getEnv('DB_NAME', 'POSTGRES_DB', 'DATABASE') ?? 'metaiq'}`,
+  );
 
   const engine = new MetricsEngine();
 
   // ── Manager e loja demo ───────────────────────────────────
   const managerRepo = ds.getRepository(Manager);
+  const tenantRepo = ds.getRepository(Tenant);
   let manager = await managerRepo.findOne({ where: { name: 'Gestor Demo' } });
 
   if (!manager) {
@@ -96,11 +94,21 @@ async function seed() {
     console.log('🏢 Manager demo já existe — pulando criação.');
   }
 
+  let tenant = await tenantRepo.findOne({ where: { id: manager.id } });
+  if (!tenant) {
+    tenant = tenantRepo.create({ id: manager.id, name: manager.name });
+    await tenantRepo.save(tenant);
+    console.log('🏢 Tenant criado para Gestor Demo');
+  } else if (tenant.name !== manager.name) {
+    tenant.name = manager.name;
+    await tenantRepo.save(tenant);
+  }
+
   const storeRepo = ds.getRepository(Store);
-  let store = await storeRepo.findOne({ where: { name: 'Loja Demo', managerId: manager.id } });
+  let store = await storeRepo.findOne({ where: { name: 'Loja Demo', tenantId: tenant.id } });
 
   if (!store) {
-    store = storeRepo.create({ name: 'Loja Demo', managerId: manager.id, active: true });
+    store = storeRepo.create({ name: 'Loja Demo', managerId: manager.id, tenantId: tenant.id, active: true });
     await storeRepo.save(store);
     console.log('🏬 Loja criada: Loja Demo');
   } else {
@@ -117,15 +125,17 @@ async function seed() {
       name: 'Admin MetaIQ',
       email: 'admin@metaiq.dev',
       password,
-      role: Role.ADMIN,
+      role: Role.PLATFORM_ADMIN,
       managerId: null,
+      tenantId: null,
       active: true,
     });
     await userRepo.save(admin);
     console.log('👑 Admin criado: admin@metaiq.dev / Admin@1234');
   } else {
-    admin.role = Role.ADMIN;
+    admin.role = Role.PLATFORM_ADMIN;
     admin.managerId = null;
+    admin.tenantId = null;
     admin.active = true;
     await userRepo.save(admin);
     console.log('👑 Admin já existe — credenciais preservadas.');
@@ -140,14 +150,16 @@ async function seed() {
       email: 'demo@metaiq.dev',
       password,
       managerId: manager.id,
+      tenantId: tenant.id,
     });
     await userRepo.save(user);
     console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
   } else {
     if (!user.managerId) {
       user.managerId = manager.id;
-      await userRepo.save(user);
     }
+    user.tenantId = user.tenantId ?? tenant.id;
+    await userRepo.save(user);
     console.log('👤 Usuário demo já existe — pulando criação.');
   }
 

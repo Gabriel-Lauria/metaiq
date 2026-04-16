@@ -89,7 +89,7 @@ body {
         padding: 14px;
         justify-content: center;
         border-left: none;
-        border-radius: 10px;
+        border-radius: 8px;
         margin: 0 8px;
         height: 48px;
         position: relative;
@@ -351,7 +351,7 @@ bottom: auto;
   gap: 14px;
   padding: 16px 16px;
   margin: 0 10px 16px 10px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: linear-gradient(135deg, rgba(110, 231, 247, 0.08) 0%, rgba(52, 211, 153, 0.04) 100%);
   border: 1px solid rgba(110, 231, 247, 0.15);
   margin-top: auto;
@@ -378,7 +378,7 @@ bottom: auto;
 .profile-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: 8px;
   display: grid;
   place-items: center;
   background: linear-gradient(135deg, #6ee7f7, #34d399);

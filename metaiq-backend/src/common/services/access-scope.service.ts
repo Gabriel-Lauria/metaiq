@@ -24,6 +24,10 @@ export class AccessScopeService {
     return user.role === Role.ADMIN;
   }
 
+  isPlatformAdmin(user: AuthenticatedUser): boolean {
+    return user.role === Role.PLATFORM_ADMIN;
+  }
+
   isManager(user: AuthenticatedUser): boolean {
     return user.role === Role.MANAGER;
   }
@@ -37,17 +41,17 @@ export class AccessScopeService {
   }
 
   async getAllowedStoreIds(user: AuthenticatedUser): Promise<string[] | null> {
-    if (this.isAdmin(user)) {
+    if (this.isPlatformAdmin(user)) {
       return null;
     }
 
-    if (this.isManager(user)) {
-      if (!user.managerId) {
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (!user.tenantId) {
         return [];
       }
 
       const stores = await this.storeRepository.find({
-        where: { managerId: user.managerId, active: true },
+        where: { tenantId: user.tenantId, active: true },
         select: ['id'],
       });
       return stores.map((store) => store.id);
@@ -70,12 +74,12 @@ export class AccessScopeService {
       throw new NotFoundException('Store não encontrada');
     }
 
-    if (this.isAdmin(user)) {
+    if (this.isPlatformAdmin(user)) {
       return store;
     }
 
-    if (this.isManager(user)) {
-      if (user.managerId && store.managerId === user.managerId) {
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (user.tenantId && store.tenantId === user.tenantId) {
         return store;
       }
 
@@ -93,12 +97,12 @@ export class AccessScopeService {
     return store;
   }
 
-  validateTenantAccess(user: AuthenticatedUser, managerId?: string | null): void {
-    if (this.isAdmin(user)) {
+  validateTenantAccess(user: AuthenticatedUser, tenantId?: string | null): void {
+    if (this.isPlatformAdmin(user)) {
       return;
     }
 
-    if (!managerId || user.managerId !== managerId) {
+    if (!tenantId || user.tenantId !== tenantId) {
       throw new ForbiddenException('Tenant fora do escopo do usuário');
     }
   }
@@ -108,7 +112,7 @@ export class AccessScopeService {
     alias: string,
     user: AuthenticatedUser,
   ): Promise<SelectQueryBuilder<T>> {
-    if (this.isAdmin(user)) {
+    if (this.isPlatformAdmin(user)) {
       return query;
     }
 
@@ -116,17 +120,17 @@ export class AccessScopeService {
       .leftJoin(`${alias}.store`, `${alias}_scopeStore`)
       .leftJoin(`${alias}.user`, `${alias}_scopeOwner`);
 
-    if (this.isManager(user)) {
-      if (!user.managerId) {
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (!user.tenantId) {
         return query.andWhere('1 = 0');
       }
 
       return query.andWhere(
         `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.managerId = :scopeManagerId)
-          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.managerId = :scopeManagerId)
+          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId)
+          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
         )`,
-        { scopeManagerId: user.managerId },
+        { scopeTenantId: user.tenantId },
       );
     }
 
@@ -151,7 +155,7 @@ export class AccessScopeService {
     alias: string,
     user: AuthenticatedUser,
   ): Promise<SelectQueryBuilder<T>> {
-    if (this.isAdmin(user)) {
+    if (this.isPlatformAdmin(user)) {
       return query;
     }
 
@@ -159,17 +163,17 @@ export class AccessScopeService {
       .leftJoin(`${alias}.store`, `${alias}_scopeStore`)
       .leftJoin(`${alias}.user`, `${alias}_scopeOwner`);
 
-    if (this.isManager(user)) {
-      if (!user.managerId) {
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (!user.tenantId) {
         return query.andWhere('1 = 0');
       }
 
       return query.andWhere(
         `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.managerId = :scopeManagerId)
-          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.managerId = :scopeManagerId)
+          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId)
+          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
         )`,
-        { scopeManagerId: user.managerId },
+        { scopeTenantId: user.tenantId },
       );
     }
 

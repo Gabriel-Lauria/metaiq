@@ -141,12 +141,12 @@ export class DashboardService {
       return this.userRepository.count({ where: { active: true } });
     }
 
-    if (!user.managerId) {
+    if (!user.tenantId) {
       return 0;
     }
 
     return this.userRepository.count({
-      where: { managerId: user.managerId, active: true },
+      where: { tenantId: user.tenantId, active: true },
     });
   }
 
@@ -181,11 +181,12 @@ export class DashboardService {
     const query = this.insightRepository
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('insight.resolved = :resolved', { resolved: false })
-      .orderBy(
+      .addSelect(
         `CASE insight.severity WHEN 'danger' THEN 1 WHEN 'warning' THEN 2 WHEN 'success' THEN 3 ELSE 4 END`,
-        'ASC',
+        'severityRank',
       )
+      .where('insight.resolved = :resolved', { resolved: false })
+      .orderBy('severityRank', 'ASC')
       .addOrderBy('insight.detectedAt', 'DESC')
       .take(5);
 

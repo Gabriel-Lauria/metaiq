@@ -1,6 +1,9 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces';
+import { Tenant } from '../tenants/tenant.entity';
 import { Manager } from './manager.entity';
 import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 
@@ -9,6 +12,8 @@ export class ManagersService {
   constructor(
     @InjectRepository(Manager)
     private readonly managerRepository: Repository<Manager>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
   ) {}
 
   async create(dto: CreateManagerDto): Promise<Manager> {
@@ -19,10 +24,25 @@ export class ManagersService {
       active: true,
     });
 
-    return this.managerRepository.save(manager);
+    const saved = await this.managerRepository.save(manager);
+    await this.tenantRepository.save(
+      this.tenantRepository.create({
+        id: saved.id,
+        name: saved.name,
+      }),
+    );
+    return saved;
   }
 
-  async findAll(): Promise<Manager[]> {
+  async findAllForUser(requester: AuthenticatedUser): Promise<Manager[]> {
+    if (![Role.PLATFORM_ADMIN, Role.ADMIN].includes(requester.role)) {
+      throw new ForbiddenException('Apenas ADMIN pode listar managers');
+    }
+
+    return this.findAllUnsafeInternal();
+  }
+
+  async findAllUnsafeInternal(): Promise<Manager[]> {
     return this.managerRepository.find({ order: { createdAt: 'DESC' } });
   }
 
@@ -41,6 +61,11 @@ export class ManagersService {
     if (dto.name !== undefined) {
       await this.ensureNameAvailable(dto.name, id);
       manager.name = dto.name.trim();
+      const tenant = await this.tenantRepository.findOne({ where: { id } });
+      if (tenant) {
+        tenant.name = manager.name;
+        await this.tenantRepository.save(tenant);
+      }
     }
 
     if (dto.active !== undefined) {

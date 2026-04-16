@@ -36,7 +36,7 @@ export class UsersController {
    */
   @Get('me')
   async getCurrentUser(@Request() req: any): Promise<Omit<User, 'password'>> {
-    const user = await this.usersService.findOneUnsafeInternal(req.user.id);
+    const user = await this.usersService.findAuthenticatedProfile(req.user);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }

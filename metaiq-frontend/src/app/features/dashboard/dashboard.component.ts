@@ -1,19 +1,21 @@
-import { Component, OnInit, inject, signal, computed, DestroyRef } from '@angular/core';
+import { Component, OnInit, inject, signal, computed, DestroyRef, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of, Subject } from 'rxjs';
-import { catchError, switchMap, debounceTime, tap } from 'rxjs/operators';
+import { Subject } from 'rxjs';
+import { switchMap, debounceTime, tap } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { UiService } from '../../core/services/ui.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { AggregatedMetrics, DashboardSummary, Insight, Role } from '../../core/models';
+import { UiKpiCardComponent } from '../../core/components/ui-kpi-card.component';
+import { UiStateComponent } from '../../core/components/ui-state.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UiKpiCardComponent, UiStateComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
@@ -52,12 +54,22 @@ export class DashboardComponent implements OnInit {
   isClient = computed(() => this.currentRole() === Role.CLIENT);
   isManager = computed(() => this.currentRole() === Role.MANAGER);
   isAdmin = computed(() => this.currentRole() === Role.ADMIN);
+  isOperational = computed(() => this.currentRole() === Role.OPERATIONAL);
+  requiresStoreContext = computed(() => this.isClient() || this.isOperational());
   dashboardTitle = computed(() => {
     if (this.isClient()) return 'Resumo da loja';
     if (this.isManager()) return 'Central do tenant';
     if (this.isAdmin()) return 'Visão administrativa';
     return 'Operação da loja';
   });
+
+  constructor() {
+    effect(() => {
+      if (!this.requiresStoreContext()) return;
+      if (!this.storeContext.loaded() || !this.storeContext.selectedStoreId()) return;
+      queueMicrotask(() => this.loadData());
+    });
+  }
 
   ngOnInit(): void {
     this.storeContext.load();
@@ -67,12 +79,7 @@ export class DashboardComponent implements OnInit {
         debounceTime(100),
         tap(() => this.loading.set(true)),
         switchMap((days) =>
-          this.api.getDashboardSummary(days, this.storeContext.selectedStoreId()).pipe(
-            catchError((err) => {
-              console.error('Erro ao carregar resumo:', err);
-              return of(null);
-            })
-          )
+          this.api.getDashboardSummary(days, this.storeContext.selectedStoreId())
         ),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -86,14 +93,20 @@ export class DashboardComponent implements OnInit {
           this.error.set(null);
         },
         error: (err) => {
-          console.error('Erro ao carregar dashboard:', err);
           this.error.set(err?.message || 'Não foi possível carregar os dados. Tente novamente.');
           this.loading.set(false);
           this.uiService.showError('Erro ao carregar dados', err?.message || 'Não foi possível carregar os dados do dashboard.');
         },
       });
 
-    this.loadData();
+    if (!this.requiresStoreContext()) {
+      this.loadData();
+      return;
+    }
+
+    if (this.storeContext.loaded() && this.storeContext.selectedStoreId()) {
+      this.loadData();
+    }
   }
 
   loadData(): void {
@@ -107,7 +120,9 @@ export class DashboardComponent implements OnInit {
 
   setStore(storeId: string): void {
     this.storeContext.select(storeId);
-    this.loadData();
+    if (!this.requiresStoreContext()) {
+      this.loadData();
+    }
   }
 
   fmt(value: number): string {
@@ -128,6 +143,10 @@ export class DashboardComponent implements OnInit {
 
   get highlightedCampaigns() {
     return this.summary()?.highlights.campaigns ?? [];
+  }
+
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
   }
 
   kpiLabel(kind: 'spend' | 'clicks' | 'conversions' | 'ctr' | 'cpc' | 'roas'): string {

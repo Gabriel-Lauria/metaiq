@@ -7,7 +7,7 @@
 - Contexto de store no frontend e endpoint `GET /stores/accessible`.
 - Dashboard por role.
 - Listagem e filtro de campanhas por store.
-- Fluxos de gestão: managers, stores, usuários e vínculos user-store.
+- Fluxos de gestão: managers, stores, usuários e vínculos de acesso por store.
 - Contratos principais entre frontend e backend.
 
 ## Problemas Encontrados
@@ -45,7 +45,7 @@
 
 - Acesso a central do tenant, campanhas, stores e usuários.
 - Criação de stores usa tenant do usuário no backend.
-- Criação de usuários continua restrita a OPERATIONAL e CLIENT.
+- Criação de usuários pelo MANAGER continua restrita aos roles OPERATIONAL e CLIENT.
 - Vínculos user-store seguem validados contra tenant.
 
 ### OPERATIONAL

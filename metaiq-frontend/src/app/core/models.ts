@@ -3,10 +3,30 @@
  */
 
 export enum Role {
+  PLATFORM_ADMIN = 'PLATFORM_ADMIN',
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
   OPERATIONAL = 'OPERATIONAL',
   CLIENT = 'CLIENT',
+}
+
+export enum IntegrationProvider {
+  META = 'META',
+}
+
+export enum IntegrationStatus {
+  NOT_CONNECTED = 'NOT_CONNECTED',
+  CONNECTING = 'CONNECTING',
+  CONNECTED = 'CONNECTED',
+  EXPIRED = 'EXPIRED',
+  ERROR = 'ERROR',
+}
+
+export enum SyncStatus {
+  NEVER_SYNCED = 'NEVER_SYNCED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  SUCCESS = 'SUCCESS',
+  ERROR = 'ERROR',
 }
 
 export interface User {
@@ -15,6 +35,7 @@ export interface User {
   name: string;
   role: Role;
   managerId?: string | null;
+  tenantId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +52,7 @@ export interface Store {
   id: string;
   name: string;
   managerId: string;
+  tenantId: string;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -66,6 +88,11 @@ export interface AdAccount {
   id: string;
   metaId?: string;
   metaAccountId?: string;
+  provider?: IntegrationProvider;
+  externalId?: string | null;
+  syncStatus?: SyncStatus;
+  importedAt?: Date | null;
+  lastSeenAt?: Date | null;
   name: string;
   accessToken?: string;
   tokenExpiresAt?: Date;
@@ -74,6 +101,51 @@ export interface AdAccount {
   store?: Store | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface StoreIntegration {
+  id: string;
+  storeId: string;
+  provider: IntegrationProvider;
+  status: IntegrationStatus;
+  externalBusinessId?: string | null;
+  externalAdAccountId?: string | null;
+  tokenType?: string | null;
+  tokenExpiresAt?: Date | null;
+  grantedScopes?: string[];
+  providerUserId?: string | null;
+  oauthConnectedAt?: Date | null;
+  lastSyncAt?: Date | null;
+  lastSyncStatus: SyncStatus;
+  lastSyncError?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MetaOAuthStartResponse {
+  authorizationUrl: string;
+  expiresAt: Date;
+}
+
+export interface MetaAdAccount {
+  externalId: string;
+  name: string;
+  status: 'ACTIVE' | 'DISABLED' | 'UNSETTLED' | 'UNKNOWN';
+}
+
+export interface ConnectMetaIntegrationRequest {
+  externalBusinessId?: string;
+  externalAdAccountId?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenExpiresAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateMetaIntegrationStatusRequest {
+  status: IntegrationStatus;
+  lastSyncStatus?: SyncStatus;
+  lastSyncError?: string | null;
 }
 
 export interface MetricDaily {

@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import { Manager } from '../managers/manager.entity';
+import { Tenant } from '../tenants/tenant.entity';
 import * as bcrypt from 'bcryptjs';
 import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthenticatedUser } from '../../common/interfaces';
@@ -29,6 +30,10 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   managerId?: string;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
 
   @IsOptional()
   @IsEnum(Role)
@@ -68,6 +73,10 @@ export class AdminUpdateUserDto extends ManagerUpdateUserDto {
   @IsOptional()
   @IsString()
   managerId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string | null;
 }
 
 export class ResetUserPasswordDto {
@@ -85,6 +94,8 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Manager)
     private readonly managerRepository: Repository<Manager>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
     private readonly accessScope: AccessScopeService,
   ) {}
 
@@ -96,16 +107,19 @@ export class UsersService {
   }
 
   async createForUser(requester: AuthenticatedUser, dto: CreateUserDto): Promise<User> {
-    if (this.accessScope.isAdmin(requester)) {
+    if (this.accessScope.isPlatformAdmin(requester)) {
       return this.createUserWithResolvedScope(dto);
     }
 
-    if (!this.accessScope.isManager(requester) || !requester.managerId) {
+    if (!(this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) || !requester.tenantId) {
       throw new ForbiddenException('Apenas ADMIN ou MANAGER podem criar usuários');
     }
 
     const role = dto.role ?? Role.OPERATIONAL;
-    if (![Role.OPERATIONAL, Role.CLIENT].includes(role)) {
+    const allowedRoles = this.accessScope.isAdmin(requester)
+      ? [Role.MANAGER, Role.OPERATIONAL, Role.CLIENT]
+      : [Role.OPERATIONAL, Role.CLIENT];
+    if (!allowedRoles.includes(role)) {
       throw new ForbiddenException('MANAGER só pode criar usuários OPERATIONAL ou CLIENT');
     }
 
@@ -113,6 +127,7 @@ export class UsersService {
       ...dto,
       role,
       managerId: requester.managerId,
+      tenantId: requester.tenantId,
     });
   }
 
@@ -142,17 +157,17 @@ export class UsersService {
   }
 
   async findAllForUser(requester: AuthenticatedUser): Promise<User[]> {
-    if (this.accessScope.isAdmin(requester)) {
+    if (this.accessScope.isPlatformAdmin(requester)) {
       return this.userRepository.find();
     }
 
-    if (this.accessScope.isManager(requester)) {
-      if (!requester.managerId) {
+    if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
+      if (!requester.tenantId) {
         return [];
       }
 
       return this.userRepository.find({
-        where: { managerId: requester.managerId },
+        where: { tenantId: requester.tenantId },
       });
     }
 
@@ -161,15 +176,19 @@ export class UsersService {
     });
   }
 
+  async findAuthenticatedProfile(requester: AuthenticatedUser): Promise<User> {
+    return this.findOneForUser(requester.id, requester);
+  }
+
   async findOneForUser(id: string, requester: AuthenticatedUser): Promise<User> {
     const user = await this.findOneUnsafeInternal(id);
 
-    if (this.accessScope.isAdmin(requester) || requester.id === id) {
+    if (this.accessScope.isPlatformAdmin(requester) || requester.id === id) {
       return user;
     }
 
-    if (this.accessScope.isManager(requester)) {
-      this.accessScope.validateTenantAccess(requester, user.managerId);
+    if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
+      this.accessScope.validateTenantAccess(requester, user.tenantId);
       return user;
     }
 
@@ -204,7 +223,7 @@ export class UsersService {
     const user = await this.findOneForUser(id, requester);
 
     if (dto.managerId !== undefined) {
-      if (!this.accessScope.isAdmin(requester)) {
+      if (!this.accessScope.isPlatformAdmin(requester)) {
         throw new ForbiddenException('Apenas ADMIN pode alterar managerId');
       }
 
@@ -215,6 +234,23 @@ export class UsersService {
       user.managerId = dto.managerId;
     }
 
+    if (dto.tenantId !== undefined) {
+      if (!this.accessScope.isPlatformAdmin(requester)) {
+        throw new ForbiddenException('Apenas PLATFORM_ADMIN pode alterar tenantId');
+      }
+
+      if (requester.id === user.id) {
+        throw new ForbiddenException('Usuário não pode alterar o próprio tenant');
+      }
+
+      if (!dto.tenantId) {
+        throw new BadRequestException('tenantId é obrigatório');
+      }
+
+      await this.ensureTenantExists(dto.tenantId);
+      user.tenantId = dto.tenantId;
+    }
+
     return this.applyUserProfileUpdate(user, dto);
   }
 
@@ -223,7 +259,7 @@ export class UsersService {
     requester: AuthenticatedUser,
     dto: ResetUserPasswordDto,
   ): Promise<User> {
-    if (!this.accessScope.isAdmin(requester)) {
+    if (!this.accessScope.isPlatformAdmin(requester)) {
       throw new ForbiddenException('Apenas ADMIN pode alterar a senha de qualquer usuário');
     }
 
@@ -284,10 +320,11 @@ export class UsersService {
     }
 
     const role = dto.role ?? Role.OPERATIONAL;
-    const managerId = role === Role.ADMIN ? null : dto.managerId ?? null;
+    const tenantId = await this.resolveTenantIdForCreate(role, dto.tenantId, dto.managerId);
+    const managerId = [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role) ? dto.managerId ?? null : dto.managerId ?? tenantId;
 
-    if (role !== Role.ADMIN && !managerId) {
-      throw new BadRequestException('managerId é obrigatório para usuário não-admin');
+    if (tenantId) {
+      await this.ensureTenantExists(tenantId);
     }
 
     if (managerId) {
@@ -305,9 +342,38 @@ export class UsersService {
       name: dto.name,
       role,
       managerId,
+      tenantId,
       active: dto.active ?? true,
     });
 
     return this.userRepository.save(user);
+  }
+
+  private async resolveTenantIdForCreate(
+    role: Role,
+    payloadTenantId?: string,
+    legacyManagerId?: string,
+  ): Promise<string | null> {
+    if (role === Role.PLATFORM_ADMIN) {
+      return null;
+    }
+
+    const tenantId = payloadTenantId ?? legacyManagerId;
+    if (!tenantId) {
+      throw new BadRequestException(
+        role === Role.ADMIN
+          ? 'tenantId é obrigatório para usuário ADMIN'
+          : 'tenantId é obrigatório para usuário não-admin',
+      );
+    }
+
+    return tenantId;
+  }
+
+  private async ensureTenantExists(tenantId: string): Promise<void> {
+    const tenant = await this.tenantRepository.findOne({ where: { id: tenantId } });
+    if (!tenant) {
+      throw new BadRequestException('tenantId inválido');
+    }
   }
 }

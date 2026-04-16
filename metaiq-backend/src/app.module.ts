@@ -14,26 +14,30 @@ import { CampaignsModule } from './modules/campaigns/campaigns.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
-import { MetaModule } from './modules/meta/meta.module';
+import { MetaIntegrationModule } from './modules/integrations/meta/meta.module';
 import { SyncCron } from './infrastructure/sync.cron';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import jwtConfig from './config/jwt.config';
+import metaConfig from './config/meta.config';
 import { User } from './modules/users/user.entity';
 import { Manager } from './modules/managers/manager.entity';
+import { Tenant } from './modules/tenants/tenant.entity';
 import { Store } from './modules/stores/store.entity';
 import { UserStore } from './modules/user-stores/user-store.entity';
 import { AdAccount } from './modules/ad-accounts/ad-account.entity';
 import { Campaign } from './modules/campaigns/campaign.entity';
 import { MetricDaily } from './modules/metrics/metric-daily.entity';
 import { Insight } from './modules/insights/insight.entity';
+import { StoreIntegration } from './modules/integrations/store-integration.entity';
+import { OAuthState } from './modules/integrations/oauth-state.entity';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, jwtConfig],
+      load: [appConfig, databaseConfig, jwtConfig, metaConfig],
       envFilePath: '.env',
       expandVariables: true,
     }),
@@ -51,13 +55,13 @@ import { Insight } from './modules/insights/insight.entity';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
-        const dbType = config.get<'sqlite' | 'postgres'>('database.type');
+        const dbType = config.get<'sqlite' | 'postgres'>('database.type') || 'postgres';
         const appEnv = config.get<string>('app.nodeEnv');
 
         const baseConfig = {
           synchronize: config.get<boolean>('database.synchronize'),
           logging: appEnv !== 'production' && appEnv !== 'test',
-          entities: [User, Manager, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight],
+          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState],
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
           migrationsRun: config.get<boolean>('database.migrationsRun'),
         } as any;
@@ -96,7 +100,7 @@ import { Insight } from './modules/insights/insight.entity';
     MetricsModule,
     InsightsModule,
     DashboardModule,
-    MetaModule,
+    MetaIntegrationModule,
   ],
   controllers: [AppController],
   providers: [GlobalExceptionFilter, SyncCron],

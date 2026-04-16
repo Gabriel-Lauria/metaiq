@@ -4,23 +4,28 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { UiService } from '../../core/services/ui.service';
 import { Manager, Role, User } from '../../core/models';
+import { UiBadgeComponent } from '../../core/components/ui-badge.component';
+import { UiStateComponent } from '../../core/components/ui-state.component';
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss']
 })
 export class UsersComponent implements OnInit {
   private api = inject(ApiService);
   private auth = inject(AuthService);
+  private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
 
   users = signal<User[]>([]);
   managers = signal<Manager[]>([]);
   loading = signal(false);
+  saving = signal(false);
   error = signal<string | null>(null);
   success = signal<string | null>(null);
   name = '';
@@ -31,8 +36,10 @@ export class UsersComponent implements OnInit {
   passwordUserId = '';
   newPassword = '';
   roles = [Role.OPERATIONAL, Role.CLIENT];
-  adminRoles = [Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT];
-  isAdmin = computed(() => this.auth.getCurrentRole() === Role.ADMIN);
+  adminRoles = [Role.MANAGER, Role.OPERATIONAL, Role.CLIENT];
+  platformRoles = [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT];
+  isPlatformAdmin = computed(() => this.auth.getCurrentRole() === Role.PLATFORM_ADMIN);
+  isAdmin = computed(() => [Role.PLATFORM_ADMIN, Role.ADMIN].includes(this.auth.getCurrentRole() as Role));
 
   ngOnInit(): void {
     this.load();
@@ -54,7 +61,7 @@ export class UsersComponent implements OnInit {
         }
       });
 
-    if (this.isAdmin()) {
+    if (this.isPlatformAdmin()) {
       this.api.getManagers()
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({ next: managers => this.managers.set(managers), error: err => this.error.set(err.message) });
@@ -66,8 +73,8 @@ export class UsersComponent implements OnInit {
       this.error.set('Preencha nome, email e senha.');
       return;
     }
-    if (this.isAdmin() && this.role !== Role.ADMIN && !this.managerId) {
-      this.error.set('Selecione um manager para usuário não-admin.');
+    if (this.isPlatformAdmin() && ![Role.PLATFORM_ADMIN, Role.ADMIN].includes(this.role) && !this.managerId) {
+      this.error.set('Selecione um tenant para este usuário.');
       return;
     }
 
@@ -76,7 +83,7 @@ export class UsersComponent implements OnInit {
       email: this.email.trim(),
       password: this.password,
       role: this.role,
-      managerId: this.isAdmin() ? this.managerId || undefined : undefined,
+      managerId: this.isPlatformAdmin() ? this.managerId || undefined : undefined,
     };
 
     this.api.createUser(body)
@@ -89,14 +96,21 @@ export class UsersComponent implements OnInit {
           this.role = Role.OPERATIONAL;
           this.managerId = '';
           this.success.set('Usuário criado com sucesso.');
+          this.saving.set(false);
+          this.ui.showSuccess('Usuário criado', 'O acesso já está disponível para o tenant.');
           this.load();
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível criar usuário', err.message);
+        }
       });
+    this.saving.set(true);
   }
 
   resetPassword(): void {
-    if (!this.isAdmin() || !this.passwordUserId || !this.newPassword.trim()) {
+    if (!this.isPlatformAdmin() || !this.passwordUserId || !this.newPassword.trim()) {
       this.error.set('Selecione um usuário e informe a nova senha.');
       return;
     }
@@ -108,9 +122,24 @@ export class UsersComponent implements OnInit {
           this.passwordUserId = '';
           this.newPassword = '';
           this.success.set('Senha alterada com sucesso.');
+          this.saving.set(false);
+          this.ui.showSuccess('Senha alterada', 'A nova senha já pode ser usada no login.');
           this.load();
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível alterar senha', err.message);
+        }
       });
+    this.saving.set(true);
+  }
+
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
+  }
+
+  trackByRole(_: number, role: Role): Role {
+    return role;
   }
 }

@@ -8,12 +8,16 @@ import { Store } from '../stores/store.entity';
 @Index(['storeId'])
 @Index(['adAccountId'])
 @Index(['metaId'])
+@Index(['externalId'])
 export class Campaign {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column()
   metaId: string;
+
+  @Column({ nullable: true })
+  externalId: string | null;
 
   @Column()
   name: string;
@@ -35,6 +39,9 @@ export class Campaign {
 
   @Column({ nullable: true })
   endTime?: Date;
+
+  @Column({ nullable: true })
+  lastSeenAt: Date | null;
 
   @Column()
   userId: string;

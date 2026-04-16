@@ -5,45 +5,54 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Reflector } from '@nestjs/core';
+import { DataSource } from 'typeorm';
 import { Campaign } from '../../modules/campaigns/campaign.entity';
 import { Insight } from '../../modules/insights/insight.entity';
 import { AdAccount } from '../../modules/ad-accounts/ad-account.entity';
+import { AccessScopeService } from '../services/access-scope.service';
+import {
+  CHECK_OWNERSHIP_KEY,
+  OwnershipMetadata,
+} from '../decorators/check-ownership.decorator';
 
 /**
- * OwnershipGuard verifica se o recurso acessado pertence ao usuário autenticado.
+ * OwnershipGuard verifica se o recurso acessado está no escopo do usuário autenticado.
  *
  * Uso:
  *   @Get(':id')
- *   @UseGuards(OwnershipGuard)
+ *   @CheckOwnership('campaign')
  *   findOne(@Param('id') id: string) { ... }
  *
  * O guard:
- * 1. Extrai o id do parâmetro de rota
- * 2. Busca o recurso no banco
- * 3. Verifica se userId do recurso == userId do JWT
- * 4. Permite se forem iguais, nega caso contrário
+ * 1. Lê metadata explícita do handler/classe via Reflector
+ * 2. Extrai o id do parâmetro declarado no decorator
+ * 3. Busca o recurso com filtro de escopo centralizado no AccessScopeService
+ * 4. Nunca infere o tipo de recurso a partir da URL
  */
 @Injectable()
 export class OwnershipGuard implements CanActivate {
   constructor(
-    @InjectRepository(Campaign)
-    private campaignRepo?: Repository<Campaign>,
-    @InjectRepository(Insight)
-    private insightRepo?: Repository<Insight>,
-    @InjectRepository(AdAccount)
-    private adAccountRepo?: Repository<AdAccount>,
+    private readonly reflector: Reflector,
+    private readonly accessScope: AccessScopeService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const metadata = this.reflector.getAllAndOverride<OwnershipMetadata>(
+      CHECK_OWNERSHIP_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!metadata) {
+      throw new ForbiddenException('OwnershipGuard sem metadata de recurso');
+    }
+
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const { id } = request.params;
+    const id = request.params?.[metadata.paramName];
 
-    const userId = user?.id ?? user?.sub;
-
-    if (!userId) {
+    if (!user?.id) {
       throw new ForbiddenException('Usuário não autenticado');
     }
 
@@ -51,45 +60,44 @@ export class OwnershipGuard implements CanActivate {
       throw new ForbiddenException('ID do recurso não fornecido');
     }
 
-    // Determina qual repositório usar baseado na rota
-    const route = request.path.split('/')[1]; // ex: 'campaigns', 'insights'
-    let repository: Repository<any> | undefined;
-
-    switch (route) {
-      case 'campaigns':
-        repository = this.campaignRepo;
-        break;
-      case 'insights':
-        repository = this.insightRepo;
-        break;
-      case 'ad-accounts':
-        repository = this.adAccountRepo;
-        break;
-      default:
-        // Se não conseguir determinar, retorna true (guard passivo)
-        return true;
-    }
-
-    if (!repository) {
-      return true;
-    }
-
-    // Busca o recurso
-    const resource = await repository.findOne({
-      where: { id },
-    });
-
-    if (!resource) {
+    const hasAccess = await this.hasResourceAccess(metadata, id, user);
+    if (!hasAccess) {
       throw new NotFoundException(`Recurso não encontrado`);
     }
 
-    // Verifica ownership
-    if (resource.userId !== userId) {
-      throw new ForbiddenException(
-        'Você não tem permissão para acessar este recurso',
-      );
+    return true;
+  }
+
+  private async hasResourceAccess(
+    metadata: OwnershipMetadata,
+    id: string,
+    user: any,
+  ): Promise<boolean> {
+    const campaignRepo = this.dataSource.getRepository(Campaign);
+    const adAccountRepo = this.dataSource.getRepository(AdAccount);
+    const insightRepo = this.dataSource.getRepository(Insight);
+
+    if (metadata.resource === 'campaign') {
+      const query = campaignRepo
+        .createQueryBuilder('campaign')
+        .where('campaign.id = :id', { id });
+      await this.accessScope.applyCampaignScope(query, 'campaign', user);
+      return (await query.getExists()) === true;
     }
 
-    return true;
+    if (metadata.resource === 'adAccount') {
+      const query = adAccountRepo
+        .createQueryBuilder('adAccount')
+        .where('adAccount.id = :id', { id });
+      await this.accessScope.applyAdAccountScope(query, 'adAccount', user);
+      return (await query.getExists()) === true;
+    }
+
+    const query = insightRepo
+      .createQueryBuilder('insight')
+      .innerJoin('insight.campaign', 'campaign')
+      .where('insight.id = :id', { id });
+    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    return (await query.getExists()) === true;
   }
 }

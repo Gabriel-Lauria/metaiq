@@ -19,6 +19,11 @@ import {
   CreateUserRequest,
   ResetUserPasswordRequest,
   DashboardSummary,
+  StoreIntegration,
+  MetaOAuthStartResponse,
+  MetaAdAccount,
+  ConnectMetaIntegrationRequest,
+  UpdateMetaIntegrationStatusRequest,
 } from '../models';
 import { environment } from '../environment';
 
@@ -61,7 +66,6 @@ export class ApiService {
 
   private handleError(error: any) {
     const message = error?.message || error?.error?.message || 'Erro ao conectar ao servidor';
-    console.error('API Error:', message, error);
     return throwError(() => new Error(message));
   }
 
@@ -199,10 +203,6 @@ export class ApiService {
     return this.get<AdAccount[]>('/ad-accounts');
   }
 
-  getMetaConnectUrl(): string {
-    return `${API}/meta/connect`;
-  }
-
   // ── Management ───────────────────────────────────────────────
   getManagers(): Observable<Manager[]> {
     return this.get<Manager[]>('/managers');
@@ -262,5 +262,36 @@ export class ApiService {
 
   unlinkUserFromStore(storeId: string, userId: string): Observable<{ message: string }> {
     return this.delete<{ message: string }>(`/stores/${storeId}/users/${userId}`);
+  }
+
+  getMetaIntegrationStatus(storeId: string): Observable<StoreIntegration> {
+    return this.get<StoreIntegration>(`/integrations/meta/stores/${storeId}/status`);
+  }
+
+  startMetaOAuth(storeId: string): Observable<MetaOAuthStartResponse> {
+    return this.get<MetaOAuthStartResponse>(`/integrations/meta/stores/${storeId}/oauth/start`);
+  }
+
+  connectMetaIntegration(storeId: string, body: ConnectMetaIntegrationRequest): Observable<StoreIntegration> {
+    return this.post<StoreIntegration>(`/integrations/meta/stores/${storeId}/connect`, body);
+  }
+
+  updateMetaIntegrationStatus(
+    storeId: string,
+    body: UpdateMetaIntegrationStatusRequest,
+  ): Observable<StoreIntegration> {
+    return this.patch<StoreIntegration>(`/integrations/meta/stores/${storeId}/status`, body);
+  }
+
+  disconnectMetaIntegration(storeId: string): Observable<StoreIntegration> {
+    return this.delete<StoreIntegration>(`/integrations/meta/stores/${storeId}`);
+  }
+
+  getMetaAdAccounts(storeId: string): Observable<MetaAdAccount[]> {
+    return this.get<MetaAdAccount[]>(`/integrations/meta/stores/${storeId}/ad-accounts`);
+  }
+
+  syncMetaAdAccounts(storeId: string): Observable<MetaAdAccount[]> {
+    return this.post<MetaAdAccount[]>(`/integrations/meta/stores/${storeId}/ad-accounts/sync`, {});
   }
 }

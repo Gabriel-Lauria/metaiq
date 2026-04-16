@@ -1,40 +1,62 @@
 import { Routes } from '@angular/router';
-import { AuthComponent } from './features/auth/auth.component';
-import { DashboardComponent } from './features/dashboard/dashboard.component';
-import { CampaignsComponent } from './features/campaigns/campaigns.component';
-import { ManagersComponent } from './features/managers/managers.component';
-import { StoresComponent } from './features/stores/stores.component';
-import { UsersComponent } from './features/users/users.component';
 import { authGuard } from './core/guards/auth.guard';
 import { Role } from './core/models';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/dashboard', pathMatch: 'full' },
-  { path: 'auth', component: AuthComponent },
-  { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
+  { path: 'auth', loadComponent: () => import('./features/auth/auth.component').then(m => m.AuthComponent) },
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+    canActivate: [authGuard],
+  },
   {
     path: 'campaigns',
-    component: CampaignsComponent,
+    loadComponent: () => import('./features/campaigns/campaigns.component').then(m => m.CampaignsComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.ADMIN, Role.MANAGER, Role.OPERATIONAL] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL] },
+  },
+  {
+    path: 'metrics',
+    loadComponent: () => import('./features/metrics/metrics.component').then(m => m.MetricsComponent),
+    canActivate: [authGuard],
+    data: { roles: [Role.OPERATIONAL] },
+  },
+  {
+    path: 'insights',
+    loadComponent: () => import('./features/insights/insights.component').then(m => m.InsightsComponent),
+    canActivate: [authGuard],
+    data: { roles: [Role.OPERATIONAL] },
+  },
+  {
+    path: 'results',
+    loadComponent: () => import('./features/results/results.component').then(m => m.ResultsComponent),
+    canActivate: [authGuard],
+    data: { roles: [Role.CLIENT] },
   },
   {
     path: 'admin/managers',
-    component: ManagersComponent,
+    loadComponent: () => import('./features/managers/managers.component').then(m => m.ManagersComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.ADMIN] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN] },
   },
   {
     path: 'manager/stores',
-    component: StoresComponent,
+    loadComponent: () => import('./features/stores/stores.component').then(m => m.StoresComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.ADMIN, Role.MANAGER] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER] },
   },
   {
     path: 'manager/users',
-    component: UsersComponent,
+    loadComponent: () => import('./features/users/users.component').then(m => m.UsersComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.ADMIN, Role.MANAGER] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER] },
+  },
+  {
+    path: 'manager/integrations',
+    loadComponent: () => import('./features/integrations/integrations.component').then(m => m.IntegrationsComponent),
+    canActivate: [authGuard],
+    data: { roles: [Role.PLATFORM_ADMIN, Role.OPERATIONAL] },
   },
   { path: '**', redirectTo: '/dashboard' }
 ];

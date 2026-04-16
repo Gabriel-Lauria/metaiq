@@ -1,0 +1,63 @@
+<section class="role-page">
+  <div class="page-header">
+    <div>
+      <h1>Insights da operação</h1>
+      <span class="demo-data-badge">Dados de demonstração</span>
+      <p>Alertas e oportunidades da store ativa para priorizar ações.</p>
+    </div>
+
+    <div class="toolbar">
+      <select
+        class="select"
+        *ngIf="storeContext.stores().length > 1"
+        [ngModel]="storeContext.selectedStoreId()"
+        (ngModelChange)="setStore($event)"
+      >
+        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
+
+      <button type="button" [class.active]="period() === 7" (click)="setPeriod(7)">7 dias</button>
+      <button type="button" [class.active]="period() === 30" (click)="setPeriod(30)">30 dias</button>
+      <button type="button" [class.active]="period() === 90" (click)="setPeriod(90)">90 dias</button>
+    </div>
+  </div>
+
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando insights"
+    message="Buscando recomendações da store selecionada."
+  />
+
+  <app-ui-state
+    *ngIf="error() && !loading()"
+    type="error"
+    icon="!"
+    title="Erro ao carregar insights"
+    [message]="error() || ''"
+    actionLabel="Tentar novamente"
+    (action)="load()"
+  />
+
+  <app-ui-state
+    *ngIf="!loading() && !error() && insights().length === 0"
+    type="empty"
+    icon="i"
+    title="Nenhum insight no período"
+    message="Não há alertas ou recomendações para a store selecionada."
+    actionLabel="Atualizar"
+    (action)="load()"
+  />
+
+  <div class="insight-list" *ngIf="!loading() && !error() && insights().length > 0">
+    <article class="insight-card" *ngFor="let insight of insights(); trackBy: trackById">
+      <div class="insight-heading">
+        <span class="insight-type">{{ insight.type }}</span>
+        <strong>{{ insight.title || insight.message }}</strong>
+      </div>
+      <p>{{ insight.description || insight.recommendation }}</p>
+    </article>
+  </div>
+</section>

@@ -10,12 +10,15 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Manager } from '../managers/manager.entity';
+import { Tenant } from '../tenants/tenant.entity';
 import { UserStore } from '../user-stores/user-store.entity';
 import { AdAccount } from '../ad-accounts/ad-account.entity';
 import { Campaign } from '../campaigns/campaign.entity';
+import { StoreIntegration } from '../integrations/store-integration.entity';
 
 @Entity('stores')
 @Index(['managerId'])
+@Index(['tenantId'])
 export class Store {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -26,12 +29,19 @@ export class Store {
   @Column()
   managerId: string;
 
+  @Column()
+  tenantId: string;
+
   @Column({ default: true })
   active: boolean;
 
   @ManyToOne(() => Manager, (manager) => manager.stores)
   @JoinColumn({ name: 'managerId' })
   manager: Manager;
+
+  @ManyToOne(() => Tenant, (tenant) => tenant.stores)
+  @JoinColumn({ name: 'tenantId' })
+  tenant: Tenant;
 
   @OneToMany(() => UserStore, (userStore) => userStore.store)
   userStores: UserStore[];
@@ -41,6 +51,9 @@ export class Store {
 
   @OneToMany(() => Campaign, (campaign) => campaign.store)
   campaigns: Campaign[];
+
+  @OneToMany(() => StoreIntegration, (integration) => integration.store)
+  integrations: StoreIntegration[];
 
   @CreateDateColumn()
   createdAt: Date;

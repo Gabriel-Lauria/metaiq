@@ -65,15 +65,6 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         }
       }
 
-      // Log do erro técnico (apenas para desenvolvimento)
-      const logPayload = {
-        status: error.status,
-        message: error.message,
-        url: req.url,
-        userMessage: userFriendlyMessage
-      };
-      error.status === 0 ? console.warn('HTTP Error:', logPayload) : console.error('HTTP Error:', logPayload);
-
       // Retornar erro padronizado
       return throwError(() => ({
         status: error.status,

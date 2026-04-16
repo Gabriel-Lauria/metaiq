@@ -1,59 +1,83 @@
-<section class="management-page">
-  <div class="management-header">
+<section class="page-shell management-page">
+  <div class="page-header">
     <div>
-      <h2>Stores</h2>
-      <p>Gerencie lojas e vincule usuários ao tenant correto.</p>
+      <h1 class="page-title">Stores</h1>
+      <p class="page-subtitle">Gerencie lojas e vincule usuários ao tenant correto.</p>
     </div>
-    <button class="btn secondary" (click)="load()">Atualizar</button>
+    <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
 
-  <form class="toolbar" (ngSubmit)="create()">
-    <input name="name" [(ngModel)]="name" placeholder="Nome da store" />
-    <select *ngIf="isAdmin()" name="managerId" [(ngModel)]="managerId">
-      <option value="">Manager</option>
-      <option *ngFor="let manager of managers()" [value]="manager.id">{{ manager.name }}</option>
-    </select>
-    <button class="btn primary" type="submit">Criar store</button>
+  <form class="toolbar section-panel" (ngSubmit)="create()">
+    <div class="form-field">
+      <label for="storeName">Nome da store</label>
+      <input id="storeName" class="form-input" name="name" [(ngModel)]="name" placeholder="Ex: Loja Centro" />
+    </div>
+    <div class="form-field" *ngIf="isAdmin()">
+      <label for="managerId">Tenant</label>
+      <select id="managerId" class="form-select" name="managerId" [(ngModel)]="managerId">
+        <option value="">Selecione um tenant</option>
+        <option *ngFor="let manager of managers(); trackBy: trackById" [value]="manager.id">{{ manager.name }}</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim() || (isAdmin() && !managerId)">
+      {{ saving() ? 'Salvando...' : 'Criar store' }}
+    </button>
   </form>
 
-  <p class="error" *ngIf="error()">{{ error() }}</p>
-  <p class="muted" *ngIf="success()">{{ success() }}</p>
-  <p class="muted" *ngIf="loading()">Carregando...</p>
-  <p class="muted" *ngIf="!loading() && !stores().length">Nenhuma store cadastrada ainda.</p>
+  <p class="inline-alert error" *ngIf="error()">{{ error() }}</p>
+  <p class="inline-alert success" *ngIf="success()">{{ success() }}</p>
+
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando stores"
+    message="Buscando lojas acessíveis no seu escopo."
+  />
+
+  <app-ui-state
+    *ngIf="!loading() && !stores().length"
+    type="empty"
+    icon="S"
+    title="Nenhuma store cadastrada"
+    message="Crie uma store para organizar campanhas, contas e vínculos de usuário."
+  />
 
   <div class="layout" *ngIf="!loading() && stores().length">
-    <div class="table">
-      <div class="table-head">
+    <div class="ui-table">
+      <div class="ui-table-head store-grid">
         <span>Nome</span>
         <span>Status</span>
-        <span>Acoes</span>
+        <span>Ações</span>
       </div>
-      <div class="table-row" *ngFor="let store of stores()" (click)="selectStore(store.id)">
-        <span>{{ store.name }}</span>
-        <span>{{ store.active ? 'Ativa' : 'Inativa' }}</span>
+      <div class="ui-table-row store-grid" *ngFor="let store of stores(); trackBy: trackById" (click)="selectStore(store.id)" [class.selected]="selectedStoreId() === store.id">
+        <strong>{{ store.name }}</strong>
+        <app-ui-badge [label]="store.active ? 'Ativa' : 'Inativa'" [tone]="store.active ? 'success' : 'neutral'" />
         <span class="actions">
-          <button class="btn secondary" type="button" (click)="toggle(store); $event.stopPropagation()">
+          <button class="btn btn-secondary" type="button" (click)="toggle(store); $event.stopPropagation()" [disabled]="saving()">
             {{ store.active ? 'Desativar' : 'Ativar' }}
           </button>
         </span>
       </div>
     </div>
 
-    <div class="links">
-      <h3>Usuarios vinculados</h3>
+    <div class="links section-panel">
+      <h2 class="section-title">Usuários vinculados</h2>
       <form class="toolbar" (ngSubmit)="link()">
-        <select name="userId" [(ngModel)]="userId">
-          <option value="">Selecionar usuario</option>
-          <option *ngFor="let user of users()" [value]="user.id">{{ user.name }} - {{ user.role }}</option>
-        </select>
-        <button class="btn primary" type="submit">Vincular</button>
+        <div class="form-field">
+          <label for="userId">Usuário</label>
+          <select id="userId" class="form-select" name="userId" [(ngModel)]="userId">
+          <option value="">Selecionar usuário</option>
+          <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id">{{ user.name }} - {{ user.role }}</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit" [disabled]="!selectedStoreId() || !userId">Vincular</button>
       </form>
 
-      <div class="linked-user" *ngFor="let user of linkedUsers()">
+      <div class="linked-user" *ngFor="let user of linkedUsers(); trackBy: trackById">
         <span>{{ user.name }} - {{ user.email }}</span>
-        <button class="btn secondary" (click)="unlink(user)">Remover</button>
+        <button class="btn btn-secondary" type="button" (click)="unlink(user)">Remover</button>
       </div>
-      <p class="muted" *ngIf="!linkedUsers().length">Nenhum usuario vinculado.</p>
+      <p class="muted" *ngIf="!linkedUsers().length">Nenhum usuário vinculado a esta store.</p>
     </div>
   </div>
 </section>

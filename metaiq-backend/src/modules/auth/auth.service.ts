@@ -171,6 +171,7 @@ export class AuthService {
         name: user.name,
         role: user.role,
         managerId: user.managerId,
+        tenantId: user.tenantId,
       },
     };
   }

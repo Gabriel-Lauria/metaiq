@@ -1,12 +1,14 @@
 # MetaIQ Backend
 
-NestJS API for MetaIQ with JWT auth, TypeORM, SQLite for local development, and PostgreSQL-ready production settings.
+NestJS API for MetaIQ with JWT auth, TypeORM, and PostgreSQL as the primary local development database. SQLite remains available only as a legacy/test fallback.
 
 ## Quick Start
 
 ```bash
 npm install
 copy .env.example .env
+docker compose up -d postgres
+npm run migration:run
 npm run seed
 npm run start:dev
 ```
@@ -50,20 +52,33 @@ The app intentionally refuses to boot in production if `JWT_SECRET`, `JWT_REFRES
 
 ## Database
 
-Local SQLite:
+Local PostgreSQL:
 
 ```env
-DATABASE_TYPE=sqlite
-SQLITE_PATH=./data/metaiq.db
-TYPEORM_SYNCHRONIZE=true
+DB_TYPE=postgres
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=metaiq
+DB_USER=metaiq
+DB_PASSWORD=metaiq
+DB_SSL=false
+TYPEORM_SYNCHRONIZE=false
 TYPEORM_MIGRATIONS_RUN=false
 ```
 
-Production PostgreSQL:
+URL form:
 
 ```env
-DATABASE_TYPE=postgres
-DATABASE_URL=postgres://user:password@host:5432/metaiq
+DB_URL=postgres://user:password@host:5432/metaiq
+TYPEORM_SYNCHRONIZE=false
+TYPEORM_MIGRATIONS_RUN=false
+```
+
+Legacy SQLite fallback:
+
+```env
+DB_TYPE=sqlite
+SQLITE_PATH=./data/metaiq.db
 TYPEORM_SYNCHRONIZE=false
 TYPEORM_MIGRATIONS_RUN=false
 ```

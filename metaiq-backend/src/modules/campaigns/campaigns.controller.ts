@@ -2,8 +2,10 @@ import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@ne
 import { IsOptional, IsUUID } from 'class-validator';
 import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { Role } from '../../common/enums';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { Campaign } from './campaign.entity';
@@ -19,7 +21,7 @@ class CampaignQueryDto extends PaginationDto {
 
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+@Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
@@ -32,6 +34,8 @@ export class CampaignsController {
   }
 
   @Get(':id')
+  @CheckOwnership('campaign')
+  @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -40,7 +44,7 @@ export class CampaignsController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
   async create(
     @Body() dto: CreateCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -49,7 +53,9 @@ export class CampaignsController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @CheckOwnership('campaign')
+  @UseGuards(OwnershipGuard)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateCampaignDto,

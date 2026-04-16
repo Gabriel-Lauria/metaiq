@@ -1,57 +1,97 @@
-<section class="management-page">
-  <div class="management-header">
+<section class="page-shell management-page">
+  <div class="page-header">
     <div>
-      <h2>Usuarios</h2>
-      <p>Crie usuarios do tenant e acompanhe os papeis ativos.</p>
+      <h1 class="page-title">Usuários</h1>
+      <p class="page-subtitle">Crie usuários do tenant e acompanhe os papéis ativos.</p>
     </div>
-    <button class="btn secondary" (click)="load()">Atualizar</button>
+    <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
 
-  <form class="toolbar" (ngSubmit)="create()">
-    <input name="name" [(ngModel)]="name" placeholder="Nome" />
-    <input name="email" [(ngModel)]="email" placeholder="Email" type="email" />
-    <input name="password" [(ngModel)]="password" placeholder="Senha" type="password" />
-    <select name="role" [(ngModel)]="role">
-      <option *ngFor="let option of (isAdmin() ? adminRoles : roles)" [ngValue]="option">{{ option }}</option>
-    </select>
-    <select *ngIf="isAdmin() && role !== 'ADMIN'" name="managerId" [(ngModel)]="managerId">
-      <option value="">Manager</option>
-      <option *ngFor="let manager of managers()" [value]="manager.id">{{ manager.name }}</option>
-    </select>
-    <button class="btn primary" type="submit">Criar usuario</button>
+  <form class="toolbar section-panel" (ngSubmit)="create()">
+    <div class="form-field">
+      <label for="name">Nome</label>
+      <input id="name" class="form-input" name="name" [(ngModel)]="name" placeholder="Nome completo" />
+    </div>
+    <div class="form-field">
+      <label for="email">Email</label>
+      <input id="email" class="form-input" name="email" [(ngModel)]="email" placeholder="email@empresa.com" type="email" />
+    </div>
+    <div class="form-field">
+      <label for="password">Senha</label>
+      <input id="password" class="form-input" name="password" [(ngModel)]="password" placeholder="Senha inicial" type="password" />
+    </div>
+    <div class="form-field">
+      <label for="role">Papel</label>
+      <select id="role" class="form-select" name="role" [(ngModel)]="role">
+        <option *ngFor="let option of (isPlatformAdmin() ? platformRoles : isAdmin() ? adminRoles : roles); trackBy: trackByRole" [ngValue]="option">{{ option }}</option>
+      </select>
+    </div>
+    <div class="form-field" *ngIf="isPlatformAdmin() && role !== 'ADMIN' && role !== 'PLATFORM_ADMIN'">
+      <label for="managerId">Tenant</label>
+      <select id="managerId" class="form-select" name="managerId" [(ngModel)]="managerId">
+        <option value="">Selecione um manager</option>
+        <option *ngFor="let manager of managers(); trackBy: trackById" [value]="manager.id">{{ manager.name }}</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim() || !email.trim() || !password.trim() || (isPlatformAdmin() && role !== 'ADMIN' && role !== 'PLATFORM_ADMIN' && !managerId)">
+      {{ saving() ? 'Salvando...' : 'Criar usuário' }}
+    </button>
   </form>
 
-  <form class="toolbar" *ngIf="isAdmin()" (ngSubmit)="resetPassword()">
-    <select name="passwordUserId" [(ngModel)]="passwordUserId">
-      <option value="">Usuario para alterar senha</option>
-      <option *ngFor="let user of users()" [value]="user.id">{{ user.name }} - {{ user.email }}</option>
-    </select>
+  <form class="toolbar section-panel" *ngIf="isPlatformAdmin()" (ngSubmit)="resetPassword()">
+    <div class="form-field">
+      <label for="passwordUserId">Usuário</label>
+      <select id="passwordUserId" class="form-select" name="passwordUserId" [(ngModel)]="passwordUserId">
+        <option value="">Usuário para alterar senha</option>
+        <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id">{{ user.name }} - {{ user.email }}</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label for="newPassword">Nova senha</label>
     <input
+      id="newPassword"
+      class="form-input"
       name="newPassword"
       [(ngModel)]="newPassword"
       placeholder="Nova senha"
       type="password"
     />
-    <button class="btn primary" type="submit">Alterar senha</button>
+    </div>
+    <button class="btn btn-primary" type="submit" [disabled]="saving() || !passwordUserId || !newPassword.trim()">
+      {{ saving() ? 'Salvando...' : 'Alterar senha' }}
+    </button>
   </form>
 
-  <p class="error" *ngIf="error()">{{ error() }}</p>
-  <p class="muted" *ngIf="success()">{{ success() }}</p>
-  <p class="muted" *ngIf="loading()">Carregando...</p>
-  <p class="muted" *ngIf="!loading() && !users().length">Nenhum usuário encontrado.</p>
+  <p class="inline-alert error" *ngIf="error()">{{ error() }}</p>
+  <p class="inline-alert success" *ngIf="success()">{{ success() }}</p>
 
-  <div class="table" *ngIf="!loading() && users().length">
-    <div class="table-head">
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando usuários"
+    message="Buscando usuários do escopo atual."
+  />
+
+  <app-ui-state
+    *ngIf="!loading() && !users().length"
+    type="empty"
+    icon="U"
+    title="Nenhum usuário encontrado"
+    message="Crie usuários para operação, cliente ou gestão do tenant."
+  />
+
+  <div class="ui-table" *ngIf="!loading() && users().length">
+    <div class="ui-table-head user-grid">
       <span>Nome</span>
       <span>Email</span>
       <span>Role</span>
       <span>Tenant</span>
     </div>
-    <div class="table-row" *ngFor="let user of users()">
-      <span>{{ user.name }}</span>
+    <div class="ui-table-row user-grid" *ngFor="let user of users(); trackBy: trackById">
+      <strong>{{ user.name }}</strong>
       <span>{{ user.email }}</span>
-      <span>{{ user.role }}</span>
-      <span>{{ user.managerId || 'Sem tenant' }}</span>
+      <app-ui-badge [label]="user.role" [tone]="user.role === 'ADMIN' ? 'danger' : user.role === 'MANAGER' ? 'info' : user.role === 'CLIENT' ? 'warning' : 'success'" />
+      <span>{{ user.tenantId || 'Sem tenant' }}</span>
     </div>
   </div>
 </section>

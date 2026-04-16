@@ -6,8 +6,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
-import { Store } from '../../core/models';
+import { AuthService } from '../../core/services/auth.service';
+import { Store, Role } from '../../core/models';
 import { StoreContextService } from '../../core/services/store-context.service';
+import { UiBadgeComponent } from '../../core/components/ui-badge.component';
+import { UiStateComponent } from '../../core/components/ui-state.component';
 
 interface CampaignMetric {
   ctr: number;
@@ -41,12 +44,13 @@ type SortDirection = 'asc' | 'desc';
 @Component({
   selector: 'app-campaigns',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent],
   templateUrl: './campaigns.component.html',
   styleUrls: ['./campaigns.component.scss']
 })
 export class CampaignsComponent implements OnInit {
   private apiService = inject(ApiService);
+  private authService = inject(AuthService);
   private destroyRef = inject(DestroyRef);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -116,6 +120,7 @@ export class CampaignsComponent implements OnInit {
 
   totalItems = computed(() => this.sorted().length);
   totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
+  pageNumbers = computed(() => Array.from({ length: this.totalPages() }, (_, index) => index + 1));
   pageStart = computed(() => (this.currentPage() - 1) * this.pageSize() + 1);
   pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.totalItems()));
 
@@ -257,6 +262,30 @@ export class CampaignsComponent implements OnInit {
     return '#fc8181';
   }
 
+  statusLabel(status: Campaign['status']): string {
+    if (status === 'ACTIVE') return 'Ativa';
+    if (status === 'PAUSED') return 'Pausada';
+    return 'Arquivada';
+  }
+
+  statusTone(status: Campaign['status']): 'success' | 'warning' | 'neutral' {
+    if (status === 'ACTIVE') return 'success';
+    if (status === 'PAUSED') return 'warning';
+    return 'neutral';
+  }
+
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
+  }
+
+  trackByTypeTitle(_: number, item: CampaignInsight): string {
+    return `${item.type}:${item.title}`;
+  }
+
+  trackByPage(_: number, page: number): number {
+    return page;
+  }
+
   private loadCampaigns(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -270,10 +299,13 @@ export class CampaignsComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
-          console.error('Erro ao carregar campanhas:', err);
           this.error.set('Não foi possível carregar campanhas no momento.');
           this.loading.set(false);
         }
       });
+  }
+
+  canManageOperations(): boolean {
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
 }

@@ -1,42 +1,60 @@
-<section class="management-page">
-  <div class="management-header">
+<section class="page-shell management-page">
+  <div class="page-header">
     <div>
-      <h2>Managers</h2>
-      <p>Crie e mantenha os tenants operacionais.</p>
+      <h1 class="page-title">Managers</h1>
+      <p class="page-subtitle">Crie e mantenha os tenants operacionais.</p>
     </div>
-    <button class="btn secondary" (click)="load()">Atualizar</button>
+    <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
 
-  <form class="toolbar" (ngSubmit)="create()">
-    <input name="name" [(ngModel)]="name" placeholder="Nome do manager" />
-    <button class="btn primary" type="submit">Criar manager</button>
+  <form class="toolbar section-panel" (ngSubmit)="create()">
+    <div class="form-field">
+      <label for="managerName">Nome do manager</label>
+      <input id="managerName" class="form-input" name="name" [(ngModel)]="name" placeholder="Ex: Agência Norte" />
+    </div>
+    <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim()">
+      {{ saving() ? 'Salvando...' : 'Criar manager' }}
+    </button>
   </form>
 
-  <p class="error" *ngIf="error()">{{ error() }}</p>
-  <p class="muted" *ngIf="success()">{{ success() }}</p>
-  <p class="muted" *ngIf="loading()">Carregando...</p>
+  <p class="inline-alert error" *ngIf="error()">{{ error() }}</p>
+  <p class="inline-alert success" *ngIf="success()">{{ success() }}</p>
 
-  <p class="muted" *ngIf="!loading() && !managers().length">Nenhum manager cadastrado ainda.</p>
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando managers"
+    message="Buscando tenants cadastrados."
+  />
 
-  <div class="table" *ngIf="!loading() && managers().length">
-    <div class="table-head">
+  <app-ui-state
+    *ngIf="!loading() && !managers().length"
+    type="empty"
+    icon="M"
+    title="Nenhum manager cadastrado"
+    message="Crie o primeiro tenant para organizar stores e usuários."
+  />
+
+  <div class="ui-table" *ngIf="!loading() && managers().length">
+    <div class="ui-table-head manager-grid">
       <span>Nome</span>
       <span>Status</span>
-      <span>Acoes</span>
+      <span>Ações</span>
     </div>
 
-    <div class="table-row" *ngFor="let manager of managers()">
-      <span *ngIf="editingId !== manager.id">{{ manager.name }}</span>
+    <div class="ui-table-row manager-grid" *ngFor="let manager of managers(); trackBy: trackById">
+      <strong *ngIf="editingId !== manager.id">{{ manager.name }}</strong>
       <input
         *ngIf="editingId === manager.id"
+        class="form-input"
         name="editingName"
         [(ngModel)]="editingName"
       />
-      <span>{{ manager.active ? 'Ativo' : 'Inativo' }}</span>
+      <app-ui-badge [label]="manager.active ? 'Ativo' : 'Inativo'" [tone]="manager.active ? 'success' : 'neutral'" />
       <span class="actions">
-        <button class="btn secondary" *ngIf="editingId !== manager.id" (click)="startEdit(manager)">Editar</button>
-        <button class="btn primary" *ngIf="editingId === manager.id" (click)="saveEdit(manager)">Salvar</button>
-        <button class="btn secondary" (click)="toggle(manager)">
+        <button class="btn btn-secondary" type="button" *ngIf="editingId !== manager.id" (click)="startEdit(manager)">Editar</button>
+        <button class="btn btn-primary" type="button" *ngIf="editingId === manager.id" (click)="saveEdit(manager)" [disabled]="saving()">Salvar</button>
+        <button class="btn btn-secondary" type="button" (click)="toggle(manager)" [disabled]="saving()">
           {{ manager.active ? 'Desativar' : 'Ativar' }}
         </button>
       </span>

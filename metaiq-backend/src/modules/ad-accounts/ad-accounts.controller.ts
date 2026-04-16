@@ -11,8 +11,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { Role } from '../../common/enums';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AdAccountsService } from './ad-accounts.service';
@@ -46,6 +48,8 @@ export class AdAccountsController {
    */
   @Get(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @CheckOwnership('adAccount')
+  @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -72,6 +76,8 @@ export class AdAccountsController {
    */
   @Patch(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('adAccount')
+  @UseGuards(OwnershipGuard)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateAdAccountDto,
@@ -86,6 +92,8 @@ export class AdAccountsController {
    */
   @Delete(':id')
   @Roles(Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('adAccount')
+  @UseGuards(OwnershipGuard)
   async remove(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

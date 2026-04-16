@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { User } from '../users/user.entity';
 import { Store } from '../stores/store.entity';
 import { CryptoTransformer } from '../../common/transformers/crypto.transformer';
+import { IntegrationProvider, SyncStatus } from '../../common/enums';
 
 @Entity('ad_accounts')
 @Index(['userId'])
@@ -13,6 +14,21 @@ export class AdAccount {
 
   @Column()
   metaId: string; // ID da conta no Meta
+
+  @Column({ type: 'varchar', length: 32, default: IntegrationProvider.META })
+  provider: IntegrationProvider;
+
+  @Column({ nullable: true })
+  externalId: string | null;
+
+  @Column({ type: 'varchar', length: 32, default: SyncStatus.NEVER_SYNCED })
+  syncStatus: SyncStatus;
+
+  @Column({ nullable: true })
+  importedAt: Date | null;
+
+  @Column({ nullable: true })
+  lastSeenAt: Date | null;
 
   @Column()
   name: string;

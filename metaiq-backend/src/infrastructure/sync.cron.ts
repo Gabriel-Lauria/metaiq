@@ -82,19 +82,4 @@ export class SyncCron {
     }
   }
 
-  @Cron('0 0 */6 * * *')
-  async syncMetaData() {
-    const operation = this.logger.startOperation('Cron: Sincronização com Meta API');
-    
-    try {
-      // TODO: buscar campanhas, métricas e dados reais da Meta API
-      // e popular MetricDaily com dados reais
-
-      this.logger.info('Sincronização com Meta API concluída');
-      operation.end(true);
-    } catch (err) {
-      this.logger.error('Erro ao sincronizar com Meta API', err);
-      operation.end(false, { error: err.message });
-    }
-  }
 }

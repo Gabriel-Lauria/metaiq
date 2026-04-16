@@ -7,6 +7,7 @@ import { CurrentUserService } from './services/current-user.service';
 import { AccessScopeService } from './services/access-scope.service';
 import { Store } from '../modules/stores/store.entity';
 import { UserStore } from '../modules/user-stores/user-store.entity';
+import { OwnershipGuard } from './guards/ownership.guard';
 
 /**
  * CommonModule fornece serviços compartilhados usados por toda a aplicação.
@@ -28,6 +29,7 @@ import { UserStore } from '../modules/user-stores/user-store.entity';
     MetricsService,
     CurrentUserService,
     AccessScopeService,
+    OwnershipGuard,
   ],
   exports: [
     LoggerService,
@@ -35,6 +37,7 @@ import { UserStore } from '../modules/user-stores/user-store.entity';
     MetricsService,
     CurrentUserService,
     AccessScopeService,
+    OwnershipGuard,
   ],
 })
 export class CommonModule {}

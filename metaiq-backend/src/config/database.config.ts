@@ -18,22 +18,34 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
   return value === 'true';
 };
 
+const getEnv = (...names: string[]): string | undefined => {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const dbType = (getEnv('DB_TYPE', 'DATABASE_TYPE') || 'postgres') as 'sqlite' | 'postgres';
+
 export default registerAs('database', () => ({
-  type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
+  type: dbType,
   database:
-    process.env.SQLITE_PATH ||
-    process.env.DATABASE ||
-    process.env.POSTGRES_DB ||
-    './data/metaiq.db',
-  url: process.env.DATABASE_URL,
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
-  username: process.env.POSTGRES_USER || 'postgres',
-  password: process.env.POSTGRES_PASSWORD || 'postgres',
-  ssl: process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    dbType === 'sqlite'
+      ? getEnv('SQLITE_PATH', 'DATABASE') || './data/metaiq.db'
+      : getEnv('DB_NAME', 'POSTGRES_DB', 'DATABASE') || 'metaiq',
+  url: getEnv('DB_URL', 'DATABASE_URL'),
+  host: getEnv('DB_HOST', 'POSTGRES_HOST') || 'localhost',
+  port: parseInt(getEnv('DB_PORT', 'POSTGRES_PORT') || '5432', 10),
+  username: getEnv('DB_USER', 'POSTGRES_USER') || 'metaiq',
+  password: getEnv('DB_PASSWORD', 'POSTGRES_PASSWORD') || 'metaiq',
+  ssl: getEnv('DB_SSL', 'POSTGRES_SSL') === 'true' ? { rejectUnauthorized: false } : false,
   synchronize: parseBoolean(
     process.env.TYPEORM_SYNCHRONIZE,
-    process.env.NODE_ENV !== 'production',
+    false,
   ),
   migrationsRun: parseBoolean(process.env.TYPEORM_MIGRATIONS_RUN, false),
 }));

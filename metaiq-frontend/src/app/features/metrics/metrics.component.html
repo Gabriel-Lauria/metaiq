@@ -1,0 +1,54 @@
+<section class="role-page">
+  <div class="page-header">
+    <div>
+      <h1>Métricas da operação</h1>
+      <span class="demo-data-badge">Dados de demonstração</span>
+      <p>Indicadores principais da store ativa para leitura rápida.</p>
+    </div>
+
+    <div class="toolbar">
+      <select
+        class="select"
+        *ngIf="storeContext.stores().length > 1"
+        [ngModel]="storeContext.selectedStoreId()"
+        (ngModelChange)="setStore($event)"
+      >
+        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
+
+      <button type="button" [class.active]="period() === 7" (click)="setPeriod(7)">7 dias</button>
+      <button type="button" [class.active]="period() === 30" (click)="setPeriod(30)">30 dias</button>
+      <button type="button" [class.active]="period() === 90" (click)="setPeriod(90)">90 dias</button>
+    </div>
+  </div>
+
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando métricas"
+    message="Buscando os dados da store selecionada."
+  />
+
+  <app-ui-state
+    *ngIf="error() && !loading()"
+    type="error"
+    icon="!"
+    title="Erro ao carregar métricas"
+    [message]="error() || ''"
+    actionLabel="Tentar novamente"
+    (action)="load()"
+  />
+
+  <div class="kpi-grid" *ngIf="!loading() && !error() && metrics() as data">
+    <app-ui-kpi-card label="Impressões" [value]="data.impressions.toLocaleString()" marker="I" tone="info" />
+    <app-ui-kpi-card label="Cliques" [value]="data.clicks.toLocaleString()" marker="C" tone="info" />
+    <app-ui-kpi-card label="Investimento" [value]="fmt(data.spend)" marker="$" tone="warning" />
+    <app-ui-kpi-card label="Conversões" [value]="data.conversions.toLocaleString()" marker="R" tone="success" />
+    <app-ui-kpi-card label="CTR" [value]="fmtPct(data.ctr)" marker="%" tone="info" />
+    <app-ui-kpi-card label="CPA" [value]="fmt(data.cpa)" marker="$" tone="warning" />
+    <app-ui-kpi-card label="ROAS" [value]="fmtRoas(data.roas)" marker="x" tone="success" />
+    <app-ui-kpi-card label="Receita" [value]="fmt(data.revenue)" marker="$" tone="success" />
+  </div>
+</section>

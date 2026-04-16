@@ -8,6 +8,10 @@ export class CreateStoreDto {
   @IsOptional()
   @IsUUID()
   managerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
 }
 
 export class UpdateStoreDto {
@@ -19,6 +23,10 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsUUID()
   managerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
 
   @IsOptional()
   @IsBoolean()

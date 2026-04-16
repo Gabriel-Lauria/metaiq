@@ -1,12 +1,12 @@
 import { Component, inject, OnInit, OnDestroy } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { UiService, Notification } from '../services/ui.service';
 import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-notification-container',
   standalone: true,
-  imports: [CommonModule],
+  imports: [NgClass],
   template: `
     <div class="notification-container">
       @for (notification of uiService.notifications(); track notification.id) {
@@ -55,11 +55,14 @@ import { Subscription } from 'rxjs';
       padding: 16px;
       margin-bottom: 8px;
       border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background: rgba(15, 19, 32, 0.96);
+      border: 1px solid rgba(110, 231, 247, 0.12);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
       pointer-events: auto;
       animation: slideIn 0.3s ease-out;
       cursor: pointer;
       transition: all 0.2s ease;
+      color: #e2e8f0;
     }
 
     .notification:hover {
@@ -68,27 +71,19 @@ import { Subscription } from 'rxjs';
     }
 
     .notification.success {
-      background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-      border-left: 4px solid #28a745;
-      color: #155724;
+      border-left: 4px solid #34d399;
     }
 
     .notification.error {
-      background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
-      border-left: 4px solid #dc3545;
-      color: #721c24;
+      border-left: 4px solid #fc8181;
     }
 
     .notification.warning {
-      background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-      border-left: 4px solid #ffc107;
-      color: #856404;
+      border-left: 4px solid #fcd34d;
     }
 
     .notification.info {
-      background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
-      border-left: 4px solid #17a2b8;
-      color: #0c5460;
+      border-left: 4px solid #6ee7f7;
     }
 
     .notification-content {
@@ -99,11 +94,13 @@ import { Subscription } from 'rxjs';
       font-weight: 600;
       font-size: 14px;
       margin-bottom: 4px;
+      color: #f0f4ff;
     }
 
     .notification-message {
       font-size: 13px;
       line-height: 1.4;
+      color: #94a3b8;
     }
 
     .notification-action {
@@ -111,7 +108,7 @@ import { Subscription } from 'rxjs';
       padding: 4px 8px;
       background: rgba(255, 255, 255, 0.2);
       border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 4px;
+      border-radius: 6px;
       color: inherit;
       font-size: 12px;
       cursor: pointer;

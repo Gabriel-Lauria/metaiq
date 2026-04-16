@@ -8,8 +8,10 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { Role } from '../../common/enums';
 import { InsightsService } from './insights.service';
 import { Insight } from './insight.entity';
@@ -54,6 +56,8 @@ export class InsightsController {
    */
   @Get(':id')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @CheckOwnership('insight')
+  @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -68,6 +72,8 @@ export class InsightsController {
    */
   @Patch(':id/resolve')
   @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @CheckOwnership('insight')
+  @UseGuards(OwnershipGuard)
   async resolve(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

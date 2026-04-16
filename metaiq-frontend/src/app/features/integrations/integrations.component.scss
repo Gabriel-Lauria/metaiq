@@ -1,0 +1,121 @@
+.integration-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
+  gap: 18px;
+}
+
+.store-row {
+  grid-template-columns: minmax(160px, 1fr) 150px;
+}
+
+.store-option {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(110, 231, 247, 0.08);
+  text-align: left;
+  cursor: pointer;
+}
+
+.store-option:first-of-type {
+  border-top: 0;
+}
+
+.store-option.selected {
+  background: rgba(110, 231, 247, 0.06);
+}
+
+.integration-detail {
+  align-content: start;
+}
+
+.detail-header,
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primary-actions {
+  justify-content: flex-start;
+}
+
+.connection-copy {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(110, 231, 247, 0.12);
+  border-radius: 8px;
+  background: rgba(110, 231, 247, 0.06);
+  color: #cbd5e1;
+}
+
+.connection-copy strong,
+.status-grid strong {
+  color: #f0f4ff;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.status-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid rgba(110, 231, 247, 0.1);
+  border-radius: 8px;
+  background: rgba(10, 13, 20, 0.48);
+}
+
+.metric-label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ad-accounts-panel {
+  display: grid;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(110, 231, 247, 0.1);
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+}
+
+.account-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, auto) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(110, 231, 247, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 19, 32, 0.72);
+}
+
+.account-card strong {
+  color: #f0f4ff;
+}
+
+.account-card span,
+.account-empty {
+  color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+  .integration-layout,
+  .store-row,
+  .status-grid,
+  .account-card {
+    grid-template-columns: 1fr;
+  }
+}

@@ -5,4 +5,5 @@ export interface AuthenticatedUser {
   email: string;
   role: Role;
   managerId?: string | null;
+  tenantId?: string | null;
 }

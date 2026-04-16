@@ -1,0 +1,68 @@
+<section class="role-page">
+  <div class="page-header">
+    <div>
+      <h1>Resultados da loja</h1>
+      <span class="demo-data-badge">Dados de demonstração</span>
+      <p>Resumo simples do desempenho no período selecionado.</p>
+    </div>
+
+    <div class="toolbar">
+      <select
+        class="select"
+        *ngIf="storeContext.stores().length > 1"
+        [ngModel]="storeContext.selectedStoreId()"
+        (ngModelChange)="setStore($event)"
+      >
+        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
+          {{ store.name }}
+        </option>
+      </select>
+
+      <button type="button" [class.active]="period() === 7" (click)="setPeriod(7)">7 dias</button>
+      <button type="button" [class.active]="period() === 30" (click)="setPeriod(30)">30 dias</button>
+      <button type="button" [class.active]="period() === 90" (click)="setPeriod(90)">90 dias</button>
+    </div>
+  </div>
+
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando resultados"
+    message="Preparando o resumo da loja."
+  />
+
+  <app-ui-state
+    *ngIf="error() && !loading()"
+    type="error"
+    icon="!"
+    title="Erro ao carregar resultados"
+    [message]="error() || ''"
+    actionLabel="Tentar novamente"
+    (action)="load()"
+  />
+
+  <ng-container *ngIf="!loading() && !error() && summary() as data">
+    <div class="kpi-grid">
+      <app-ui-kpi-card label="Pessoas alcançadas" [value]="data.metrics.impressions.toLocaleString()" marker="P" tone="info" />
+      <app-ui-kpi-card label="Visitas" [value]="data.metrics.clicks.toLocaleString()" marker="V" tone="info" />
+      <app-ui-kpi-card label="Investimento" [value]="fmt(data.metrics.spend)" marker="$" tone="warning" />
+      <app-ui-kpi-card label="Resultados" [value]="data.metrics.conversions.toLocaleString()" marker="R" tone="success" />
+      <app-ui-kpi-card label="Interesse" [value]="fmtPct(data.metrics.ctr)" marker="%" tone="info" />
+      <app-ui-kpi-card label="Custo por visita" [value]="fmt(data.metrics.cpc || 0)" marker="$" tone="warning" />
+      <app-ui-kpi-card label="Retorno" [value]="fmtRoas(data.metrics.roas)" marker="x" tone="success" />
+      <app-ui-kpi-card label="Receita" [value]="fmt(data.metrics.revenue)" marker="$" tone="success" />
+    </div>
+
+    <div class="summary-list" *ngIf="data.insights.length > 0 || data.highlights.campaigns.length > 0">
+      <article class="summary-card" *ngFor="let insight of data.insights; trackBy: trackById">
+        <strong>{{ insight.title || insight.message }}</strong>
+        <p>{{ insight.description || insight.recommendation }}</p>
+      </article>
+
+      <article class="summary-card" *ngFor="let campaign of data.highlights.campaigns; trackBy: trackById">
+        <strong>{{ campaign.name }}</strong>
+        <p>Acompanhamento de resultado ativo.</p>
+      </article>
+    </div>
+  </ng-container>
+</section>

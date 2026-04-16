@@ -3,24 +3,30 @@
   <div class="campaigns-header">
     <div>
       <h2 class="page-title">Campanhas Ativas</h2>
+      <span class="demo-data-badge">Dados de demonstração</span>
       <p class="page-sub">Gerencie e analise o desempenho de suas campanhas</p>
     </div>
     <button class="btn btn-primary" (click)="refresh()">Atualizar</button>
   </div>
 
   <!-- Error State -->
-  <div class="error-state" *ngIf="error()">
-    <div class="error-icon">⚠️</div>
-    <p class="error-title">Erro ao carregar campanhas</p>
-    <p class="error-description">{{ error() }}</p>
-    <button class="btn btn-secondary" (click)="refresh()">Tentar Novamente</button>
-  </div>
+  <app-ui-state
+    *ngIf="error()"
+    type="error"
+    icon="!"
+    title="Erro ao carregar campanhas"
+    [message]="error() || ''"
+    actionLabel="Tentar novamente"
+    (action)="refresh()"
+  />
 
   <!-- Loading State -->
-  <div class="loading-state" *ngIf="loading()">
-    <div class="spinner"></div>
-    <p>Carregando campanhas...</p>
-  </div>
+  <app-ui-state
+    *ngIf="loading()"
+    type="loading"
+    title="Carregando campanhas"
+    message="Buscando campanhas e métricas do escopo selecionado."
+  />
 
   <!-- Content -->
   <div class="campaigns-content" *ngIf="!loading() && !error()">
@@ -64,13 +70,14 @@
         (ngModelChange)="setStoreFilter($event)"
       >
         <option value="">Todas as stores</option>
-        <option *ngFor="let store of storeContext.stores()" [value]="store.id">{{ store.name }}</option>
+        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
       </select>
     </div>
 
     <!-- Pagination Info -->
     <div class="pagination-info" *ngIf="totalItems() > 0">
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
+      <span class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</span>
     </div>
 
     <!-- Sort Headers -->
@@ -97,7 +104,7 @@
 
     <!-- Campaigns List -->
     <div class="campaigns-list" *ngIf="filtered().length > 0">
-      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns()">
+      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns(); trackBy: trackById">
         <!-- Summary Row -->
         <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
           <div class="campaign-info">
@@ -137,9 +144,7 @@
             </div>
             <div class="metric">
               <span class="metric-label">Status</span>
-              <span class="status-pill" [ngClass]="'status-' + campaign.status.toLowerCase()">
-                {{ campaign.status === 'ACTIVE' ? 'Ativa' : campaign.status === 'PAUSED' ? 'Pausada' : 'Arquivada' }}
-              </span>
+              <app-ui-badge [label]="statusLabel(campaign.status)" [tone]="statusTone(campaign.status)" />
             </div>
             <div class="metric" *ngIf="campaign.metrics">
               <span class="metric-label">Score</span>
@@ -187,7 +192,7 @@
           <div class="insights-section" *ngIf="campaign.insights && campaign.insights.length > 0">
             <h4>Insights</h4>
             <div class="insights-list">
-              <div class="insight-item" *ngFor="let insight of campaign.insights.slice(0, 3)">
+              <div class="insight-item" *ngFor="let insight of campaign.insights.slice(0, 3); trackBy: trackByTypeTitle">
                 <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
                 <span class="insight-title">{{ insight.title }}</span>
               </div>
@@ -195,12 +200,12 @@
           </div>
 
           <div class="detail-actions">
-            <button class="btn btn-secondary" disabled [title]="'Em desenvolvimento'">Visualizar Relatório</button>
-            <button class="btn btn-secondary" disabled [title]="'Em desenvolvimento'">Editar</button>
-            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" disabled [title]="'Em desenvolvimento'">
+            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ver relatório' : 'Você não tem permissão'">Visualizar Relatório</button>
+            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Editar campanha' : 'Você não tem permissão'">Editar</button>
+            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Pausar campanha' : 'Você não tem permissão'">
               Pausar
             </button>
-            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" disabled [title]="'Em desenvolvimento'">
+            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ativar campanha' : 'Você não tem permissão'">
               Ativar
             </button>
           </div>
@@ -221,12 +226,12 @@
       <div class="pagination-pages">
         <button
           class="page-btn"
-          *ngFor="let page of [].constructor(totalPages()); let i = index"
-          [class.active]="i + 1 === currentPage()"
-          (click)="goToPage(i + 1)"
-          [disabled]="i + 1 === currentPage()"
+          *ngFor="let page of pageNumbers(); trackBy: trackByPage"
+          [class.active]="page === currentPage()"
+          (click)="goToPage(page)"
+          [disabled]="page === currentPage()"
         >
-          {{ i + 1 }}
+          {{ page }}
         </button>
       </div>
 
@@ -240,12 +245,12 @@
     </div>
 
     <!-- Empty State -->
-    <div class="empty-state" *ngIf="filtered().length === 0 && !loading()">
-      <div class="empty-icon">📊</div>
-      <p class="empty-title">Nenhuma campanha encontrada</p>
-      <p class="empty-description">
-        Ajuste os filtros ou conecte uma conta Meta para carregar campanhas.
-      </p>
-    </div>
+    <app-ui-state
+      *ngIf="filtered().length === 0 && !loading()"
+      type="empty"
+      icon="C"
+      title="Nenhuma campanha encontrada"
+      message="Ajuste os filtros ou aguarde a integração Meta para carregar campanhas reais."
+    />
   </div>
 </div>

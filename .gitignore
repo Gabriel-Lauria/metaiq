@@ -9,3 +9,10 @@ coverage
 
 .angular/
 **/.angular/
+
+# Local database artifacts
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+metaiq-backend/data/

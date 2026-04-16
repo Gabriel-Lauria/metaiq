@@ -4,18 +4,22 @@ import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { UiService } from '../../core/services/ui.service';
 import { Manager, Role, Store, User } from '../../core/models';
+import { UiBadgeComponent } from '../../core/components/ui-badge.component';
+import { UiStateComponent } from '../../core/components/ui-state.component';
 
 @Component({
   selector: 'app-stores',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent],
   templateUrl: './stores.component.html',
   styleUrls: ['./stores.component.scss']
 })
 export class StoresComponent implements OnInit {
   private api = inject(ApiService);
   private auth = inject(AuthService);
+  private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
 
   stores = signal<Store[]>([]);
@@ -24,12 +28,13 @@ export class StoresComponent implements OnInit {
   linkedUsers = signal<User[]>([]);
   selectedStoreId = signal<string | null>(null);
   loading = signal(false);
+  saving = signal(false);
   error = signal<string | null>(null);
   success = signal<string | null>(null);
   name = '';
   managerId = '';
   userId = '';
-  isAdmin = computed(() => this.auth.getCurrentRole() === Role.ADMIN);
+  isAdmin = computed(() => this.auth.getCurrentRole() === Role.PLATFORM_ADMIN);
 
   ngOnInit(): void {
     this.load();
@@ -84,10 +89,17 @@ export class StoresComponent implements OnInit {
           this.name = '';
           this.managerId = '';
           this.success.set('Store criada com sucesso.');
+          this.saving.set(false);
+          this.ui.showSuccess('Store criada', 'A loja já está disponível no tenant.');
           this.load();
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível criar store', err.message);
+        }
       });
+    this.saving.set(true);
   }
 
   toggle(store: Store): void {
@@ -96,10 +108,17 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.success.set('Status da store atualizado.');
+          this.saving.set(false);
+          this.ui.showSuccess('Status atualizado', `${store.name} foi ${store.active ? 'desativada' : 'ativada'}.`);
           this.load();
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível alterar status', err.message);
+        }
       });
+    this.saving.set(true);
   }
 
   selectStore(storeId: string): void {
@@ -122,9 +141,13 @@ export class StoresComponent implements OnInit {
         next: () => {
           this.userId = '';
           this.success.set('Usuário vinculado à store.');
+          this.ui.showSuccess('Usuário vinculado', 'O acesso à store foi atualizado.');
           this.selectStore(storeId);
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.ui.showError('Não foi possível vincular usuário', err.message);
+        }
       });
   }
 
@@ -137,9 +160,17 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.success.set('Vínculo removido.');
+          this.ui.showSuccess('Vínculo removido', 'O usuário não acessa mais esta store.');
           this.selectStore(storeId);
         },
-        error: err => this.error.set(err.message)
+        error: err => {
+          this.error.set(err.message);
+          this.ui.showError('Não foi possível remover vínculo', err.message);
+        }
       });
+  }
+
+  trackById(_: number, item: { id: string }): string {
+    return item.id;
   }
 }

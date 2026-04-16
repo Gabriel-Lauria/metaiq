@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { MetricDaily } from './metric-daily.entity';
 import { MetricsEngine } from './metrics.engine';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
-import { calcCTR, calcCPA, calcROAS } from '../../common/utils/metrics.util';
+import { calcCTR, calcCPC, calcCPA, calcROAS } from '../../common/utils/metrics.util';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 
@@ -66,6 +66,7 @@ export class MetricsService {
         conversions: 0,
         revenue: 0,
         ctr: 0,
+        cpc: 0,
         cpa: 0,
         roas: 0,
         score: 0,
@@ -83,6 +84,7 @@ export class MetricsService {
     const totalConversions = Number(result.conversions) || 0;
     const totalRevenue = Number(result.revenue) || 0;
     const ctr = calcCTR(totalClicks, totalImpressions);
+    const cpc = calcCPC(totalSpend, totalClicks);
     const cpa = calcCPA(totalSpend, totalConversions);
     const roas = calcROAS(totalRevenue, totalSpend);
 
@@ -101,6 +103,7 @@ export class MetricsService {
       conversions: totalConversions,
       revenue: totalRevenue,
       ctr,
+      cpc,
       cpa,
       roas,
       score: computed.score,
@@ -156,9 +159,6 @@ export class MetricsService {
         'SUM(m.spend) as spend',
         'SUM(m.conversions) as conversions',
         'SUM(m.revenue) as revenue',
-        'AVG(m.ctr) as ctr',
-        'AVG(m.cpa) as cpa',
-        'AVG(m.roas) as roas',
         'MAX(m.date) as lastMetricDate',
       ])
       .where('m.campaignId = :campaignId', { campaignId })
@@ -176,11 +176,20 @@ export class MetricsService {
     const totalConversions = Number(result.conversions) || 0;
 
     return {
-      ...result,
+      impressions: totalImpressions,
+      clicks: totalClicks,
+      spend: totalSpend,
+      conversions: totalConversions,
+      revenue: totalRevenue,
+      ctr: calcCTR(totalClicks, totalImpressions),
+      cpc: calcCPC(totalSpend, totalClicks),
+      cpa: calcCPA(totalSpend, totalConversions),
+      roas: calcROAS(totalRevenue, totalSpend),
       totalSpend,
       totalRevenue,
       lastMetricDate: result.lastMetricDate,
       avgCtr: calcCTR(totalClicks, totalImpressions),
+      avgCpc: calcCPC(totalSpend, totalClicks),
       avgCpa: calcCPA(totalSpend, totalConversions),
       avgRoas: calcROAS(totalRevenue, totalSpend),
     };
@@ -201,9 +210,6 @@ export class MetricsService {
         'SUM(m.spend) as spend',
         'SUM(m.conversions) as conversions',
         'SUM(m.revenue) as revenue',
-        'AVG(m.ctr) as ctr',
-        'AVG(m.cpa) as cpa',
-        'AVG(m.roas) as roas',
         'MAX(m.date) as lastMetricDate',
       ])
       .where('m.campaignId = :campaignId', { campaignId })
@@ -228,12 +234,14 @@ export class MetricsService {
       conversions: totalConversions,
       revenue: totalRevenue,
       ctr: calcCTR(totalClicks, totalImpressions),
+      cpc: calcCPC(totalSpend, totalClicks),
       cpa: calcCPA(totalSpend, totalConversions),
       roas: calcROAS(totalRevenue, totalSpend),
       totalSpend,
       totalRevenue,
       lastMetricDate: result.lastMetricDate,
       avgCtr: calcCTR(totalClicks, totalImpressions),
+      avgCpc: calcCPC(totalSpend, totalClicks),
       avgCpa: calcCPA(totalSpend, totalConversions),
       avgRoas: calcROAS(totalRevenue, totalSpend),
     };

@@ -19,8 +19,15 @@ Backend:
 cd metaiq-backend
 npm install
 copy .env.example .env
+npm run migration:run
 npm run seed
 npm run start:dev
+```
+
+PostgreSQL local:
+
+```bash
+docker compose up -d postgres
 ```
 
 API local:
@@ -92,3 +99,4 @@ npm run start:prod
 ```
 
 Veja [metaiq-backend/README.md](./metaiq-backend/README.md) para variáveis, migrations e API.
+Veja tambem [docs/postgres-migration.md](./docs/postgres-migration.md) para setup detalhado de PostgreSQL.

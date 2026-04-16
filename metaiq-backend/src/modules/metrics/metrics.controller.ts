@@ -2,8 +2,10 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { MetricsService } from './metrics.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { Role } from '../../common/enums';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { MetricDaily } from './metric-daily.entity';
@@ -50,6 +52,8 @@ export class MetricsController {
   }
 
   @Get('campaigns/:campaignId')
+  @CheckOwnership('campaign', 'campaignId')
+  @UseGuards(OwnershipGuard)
   async findByCampaign(
     @CurrentUser() user: AuthenticatedUser,
     @Param('campaignId') campaignId: string,
@@ -62,6 +66,8 @@ export class MetricsController {
   }
 
   @Get('campaigns/:campaignId/aggregate')
+  @CheckOwnership('campaign', 'campaignId')
+  @UseGuards(OwnershipGuard)
   async getCampaignAggregate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('campaignId') campaignId: string,
