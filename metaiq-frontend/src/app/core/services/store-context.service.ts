@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { Observable } from 'rxjs';
 import { Role, Store } from '../models';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
@@ -24,11 +25,28 @@ export class StoreContextService {
       return;
     }
 
+    const request = this.useAccessibleStores()
+      ? this.api.getAccessibleStores()
+      : this.api.getStores();
+
+    this.loadStores(request);
+  }
+
+  loadAccessibleStores(force = false): void {
+    if (!force && (this.loading() || this.stores().length > 0)) {
+      this.loaded.set(true);
+      return;
+    }
+
+    this.loadStores(this.api.getAccessibleStores());
+  }
+
+  private loadStores(request: Observable<Store[]>): void {
     this.loading.set(true);
     this.loaded.set(false);
     this.error.set(null);
 
-    this.api.getAccessibleStores().subscribe({
+    request.subscribe({
       next: (stores) => {
         this.stores.set(stores);
         const mustHaveStore = this.requiresStoreContext();
@@ -73,6 +91,11 @@ export class StoreContextService {
   }
 
   private requiresStoreContext(): boolean {
+    const role = this.auth.getCurrentRole();
+    return role === Role.OPERATIONAL || role === Role.CLIENT;
+  }
+
+  private useAccessibleStores(): boolean {
     const role = this.auth.getCurrentRole();
     return role === Role.OPERATIONAL || role === Role.CLIENT;
   }

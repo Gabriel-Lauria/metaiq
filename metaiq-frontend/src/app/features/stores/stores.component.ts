@@ -43,7 +43,11 @@ export class StoresComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.api.getStores()
+    const storeRequest = [Role.PLATFORM_ADMIN, Role.MANAGER].includes(this.auth.getCurrentRole())
+      ? this.api.getStores()
+      : this.api.getAccessibleStores();
+
+    storeRequest
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: stores => {

@@ -27,7 +27,7 @@ export class MetaIntegrationController {
   ) {}
 
   @Get('status')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   getStatus(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -54,7 +54,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
   getAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -72,7 +72,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts/:adAccountId/campaigns')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
   getCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,

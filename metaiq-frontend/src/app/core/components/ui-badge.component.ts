@@ -11,41 +11,47 @@ type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'info';
       display: inline-flex;
       align-items: center;
       width: fit-content;
-      min-height: 24px;
-      padding: 3px 9px;
-      border: 1px solid rgba(100, 116, 139, 0.3);
-      border-radius: 8px;
-      background: rgba(100, 116, 139, 0.16);
+      min-height: 28px;
+      padding: 6px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
       color: #cbd5e1;
       font-size: 11px;
       font-weight: 800;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
       white-space: nowrap;
     }
 
     .tone-success {
-      border-color: rgba(52, 211, 153, 0.28);
-      background: rgba(52, 211, 153, 0.12);
-      color: #52e0aa;
+      border-color: rgba(34, 197, 94, 0.28);
+      background: rgba(34, 197, 94, 0.12);
+      color: #22c55e;
     }
 
     .tone-warning {
-      border-color: rgba(251, 191, 36, 0.28);
-      background: rgba(251, 191, 36, 0.12);
-      color: #fcd34d;
+      border-color: rgba(249, 115, 22, 0.28);
+      background: rgba(249, 115, 22, 0.12);
+      color: #f97316;
     }
 
     .tone-danger {
-      border-color: rgba(252, 129, 129, 0.28);
-      background: rgba(252, 129, 129, 0.12);
-      color: #fc8181;
+      border-color: rgba(239, 68, 68, 0.28);
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
     }
 
     .tone-info {
-      border-color: rgba(110, 231, 247, 0.28);
-      background: rgba(110, 231, 247, 0.12);
-      color: #6ee7f7;
+      border-color: rgba(37, 99, 235, 0.28);
+      background: rgba(37, 99, 235, 0.12);
+      color: #2563eb;
+    }
+
+    .tone-neutral {
+      border-color: rgba(148, 163, 184, 0.22);
+      background: rgba(148, 163, 184, 0.08);
+      color: #cbd5e1;
     }
   `]
 })

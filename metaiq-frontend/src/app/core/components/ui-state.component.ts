@@ -27,20 +27,21 @@ type UiStateType = 'loading' | 'empty' | 'error';
     .ui-state {
       display: grid;
       justify-items: center;
-      gap: 12px;
+      gap: 14px;
       min-height: 220px;
-      padding: 40px 24px;
+      padding: 40px 28px;
       text-align: center;
-      border: 1px dashed rgba(110, 231, 247, 0.16);
-      border-radius: 8px;
-      background: rgba(15, 19, 32, 0.72);
+      border: 1px dashed rgba(37, 99, 235, 0.22);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
     }
 
     .ui-state h2 {
       margin: 0;
-      color: #f0f4ff;
-      font-size: 18px;
-      font-weight: 700;
+      color: #f8fafc;
+      font-size: 20px;
+      font-weight: 800;
     }
 
     .ui-state p {
@@ -48,36 +49,37 @@ type UiStateType = 'loading' | 'empty' | 'error';
       max-width: 460px;
       color: #94a3b8;
       font-size: 14px;
+      line-height: 1.7;
     }
 
     .state-error {
       border-style: solid;
-      border-color: rgba(252, 129, 129, 0.26);
-      background: rgba(252, 129, 129, 0.06);
+      border-color: rgba(239, 68, 68, 0.24);
+      background: rgba(239, 68, 68, 0.08);
     }
 
     .state-icon {
       display: grid;
       place-items: center;
-      width: 44px;
-      height: 44px;
-      border-radius: 8px;
-      background: rgba(110, 231, 247, 0.1);
-      color: #6ee7f7;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: rgba(37, 99, 235, 0.14);
+      color: #2563eb;
       font-size: 22px;
       font-weight: 700;
     }
 
     .state-error .state-icon {
-      background: rgba(252, 129, 129, 0.12);
-      color: #fc8181;
+      background: rgba(239, 68, 68, 0.16);
+      color: #ef4444;
     }
 
     .spinner {
-      width: 42px;
-      height: 42px;
-      border: 3px solid rgba(110, 231, 247, 0.16);
-      border-top-color: #6ee7f7;
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(37, 99, 235, 0.2);
+      border-top-color: #2563eb;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }

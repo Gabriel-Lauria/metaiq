@@ -60,7 +60,11 @@ export class IntegrationsComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
 
-    this.api.getStores()
+    const storeRequest = [Role.PLATFORM_ADMIN, Role.MANAGER].includes(this.authService.getCurrentRole())
+      ? this.api.getStores()
+      : this.api.getAccessibleStores();
+
+    storeRequest
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (stores) => {
@@ -176,11 +180,60 @@ export class IntegrationsComponent implements OnInit {
     if (status === IntegrationStatus.CONNECTED) return 'success';
     if (status === IntegrationStatus.ERROR || status === IntegrationStatus.EXPIRED) return 'danger';
     if (status === IntegrationStatus.CONNECTING) return 'info';
-   
+    return 'neutral';
+  }
 
   canManageIntegrations(): boolean {
     return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
-  } return 'neutral';
+  }
+
+  isOperational(): boolean {
+    return this.authService.getCurrentRole() === Role.OPERATIONAL;
+  }
+
+  isManager(): boolean {
+    return this.authService.getCurrentRole() === Role.MANAGER;
+  }
+
+  isClient(): boolean {
+    return this.authService.getCurrentRole() === Role.CLIENT;
+  }
+
+  isConnected(): boolean {
+    return this.selectedIntegration()?.status === IntegrationStatus.CONNECTED;
+  }
+
+  integrationSummaryMessage(): string {
+    const integration = this.selectedIntegration();
+    if (this.isManager()) {
+      return 'Operação realizada pelo time.';
+    }
+
+    if (this.isClient()) {
+      return 'Dados conectados automaticamente.';
+    }
+
+    if (!integration || integration.status === IntegrationStatus.NOT_CONNECTED) {
+      return 'A loja ainda não está conectada à Meta Ads. Conecte para começar a sincronizar campanhas e contas.';
+    }
+
+    if (integration.status === IntegrationStatus.CONNECTED) {
+      return 'A integração está ativa. Sincronize as contas para manter os dados atualizados.';
+    }
+
+    if (integration.status === IntegrationStatus.EXPIRED) {
+      return 'A conexão expirou. Refaça a conexão para continuar sincronizando.';
+    }
+
+    if (integration.status === IntegrationStatus.ERROR) {
+      return 'Houve um problema na integração. Você pode reconectar ou verificar os detalhes abaixo.';
+    }
+
+    if (integration.status === IntegrationStatus.CONNECTING) {
+      return 'A integração está sendo estabelecida. Aguarde a conclusão para continuar.';
+    }
+
+    return 'Confira o status e as ações disponíveis para esta integração.';
   }
 
   syncStatusLabel(status?: SyncStatus): string {

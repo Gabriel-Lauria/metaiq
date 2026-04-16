@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, HttpException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, UnauthorizedException } from '@nestjs/common';
 import { MetaSyncService } from './meta-sync.service';
 import { MetaIntegrationService } from './meta.service';
 import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../../common/enums';
@@ -34,8 +34,8 @@ function integration(overrides: Partial<StoreIntegration> = {}): StoreIntegratio
 describe('MetaSyncService', () => {
   const user: AuthenticatedUser = {
     id: 'user-1',
-    email: 'manager@metaiq.dev',
-    role: Role.MANAGER,
+    email: 'operational@metaiq.dev',
+    role: Role.OPERATIONAL,
     managerId: 'manager-1',
   };
 
@@ -176,5 +176,20 @@ describe('MetaSyncService', () => {
       lastSyncStatus: SyncStatus.SUCCESS,
       lastSyncError: null,
     }));
+  });
+
+  it('permite OPERATIONAL vinculado a store executar sync', async () => {
+    const operationalUser = { ...user, role: Role.OPERATIONAL };
+    metaService.fetchAdAccountsRaw.mockResolvedValueOnce([]);
+
+    await expect(service.syncAdAccounts('store-1', operationalUser)).resolves.toEqual([]);
+    expect(metaService.fetchAdAccountsRaw).toHaveBeenCalled();
+  });
+
+  it('bloqueia CLIENT de executar sync', async () => {
+    const clientUser = { ...user, role: Role.CLIENT };
+
+    await expect(service.syncAdAccounts('store-1', clientUser)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
 });

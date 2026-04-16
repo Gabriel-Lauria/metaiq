@@ -2,56 +2,73 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Integrações</h1>
-      <p class="page-subtitle">Conecte cada store à Meta Ads com OAuth seguro.</p>
+      <p class="page-subtitle">Conecte e gerencie integrações das lojas</p>
+      <p class="selected-store" *ngIf="selectedStore()">
+        Loja selecionada: <strong>{{ selectedStore()?.name }}</strong>
+      </p>
     </div>
     <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
 
-  <p class="inline-alert error" *ngIf="error()">{{ error() }}</p>
-
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando integrações"
-    message="Buscando stores e status de conexão Meta."
+    title="Carregando integração..."
+    message="Buscando dados da integração e das lojas."
   />
 
   <app-ui-state
-    *ngIf="!loading() && !stores().length"
-    type="empty"
-    icon="M"
-    title="Nenhuma store disponível"
-    message="Crie uma store antes de preparar a integração Meta Ads."
+    *ngIf="!loading() && error()"
+    type="error"
+    title="Ops, algo deu errado"
+    [message]="error()"
+    actionLabel="Tentar novamente"
+    (action)="load()"
   />
 
-  <div class="integration-layout" *ngIf="!loading() && stores().length">
-    <div class="ui-table store-list">
-      <div class="ui-table-head store-row">
-        <span>Store</span>
-        <span>Status Meta</span>
+  <app-ui-state
+    *ngIf="!loading() && !error() && !stores().length"
+    type="empty"
+    icon="🏬"
+    title="Nenhuma loja disponível"
+    message="Adicione uma loja ao tenant para iniciar a integração com a Meta Ads."
+  />
+
+  <div class="integration-layout" *ngIf="!loading() && !error() && stores().length">
+    <aside class="store-panel">
+      <div class="panel-header">
+        <div>
+          <h2>Stores</h2>
+          <p>Selecione a loja para ver ou gerenciar a integração.</p>
+        </div>
       </div>
 
-      <button
-        class="ui-table-row store-row store-option"
-        type="button"
-        *ngFor="let store of stores(); trackBy: trackById"
-        [class.selected]="selectedStoreId() === store.id"
-        (click)="selectStore(store.id)"
-      >
-        <strong>{{ store.name }}</strong>
-        <app-ui-badge
-          [label]="statusLabel(getStoreIntegration(store.id)?.status)"
-          [tone]="statusTone(getStoreIntegration(store.id)?.status)"
-        />
-      </button>
-    </div>
-
-    <div class="section-panel integration-detail" *ngIf="selectedStoreId() as storeId">
-      <ng-container *ngIf="selectedStore() as store">
-        <div class="detail-header">
+      <div class="store-list">
+        <button
+          class="store-item"
+          type="button"
+          *ngFor="let store of stores(); trackBy: trackById"
+          [class.selected]="selectedStoreId() === store.id"
+          (click)="selectStore(store.id)"
+        >
           <div>
-            <h2 class="section-title">{{ store.name }}</h2>
-            <p class="muted">Provider preparado: Meta Ads</p>
+            <strong>{{ store.name }}</strong>
+            <span class="store-subtitle">{{ statusLabel(getStoreIntegration(store.id)?.status) }}</span>
+          </div>
+          <app-ui-badge
+            [label]="statusLabel(getStoreIntegration(store.id)?.status)"
+            [tone]="statusTone(getStoreIntegration(store.id)?.status)"
+          />
+        </button>
+      </div>
+    </aside>
+
+    <main class="integration-panel" *ngIf="selectedStore() as store">
+      <section class="integration-card">
+        <div class="card-header">
+          <div>
+            <span class="card-pretitle">Meta Ads</span>
+            <h2>Integração da loja</h2>
           </div>
           <app-ui-badge
             [label]="statusLabel(selectedIntegration()?.status)"
@@ -59,93 +76,104 @@
           />
         </div>
 
-        <div class="connection-copy">
-          <strong>Conexão real por OAuth.</strong>
-          <span>Você será redirecionado para a Meta. O token é recebido e salvo apenas pelo backend.</span>
-        </div>
+        <p class="card-copy">{{ integrationSummaryMessage() }}</p>
 
-        <div class="detail-actions primary-actions">
-          <button class="btn btn-primary" type="button" (click)="connect(store)" [disabled]="savingStoreId() === store.id || !canManageIntegrations()">
-            {{ savingStoreId() === store.id ? 'Abrindo Meta...' : 'Conectar com Meta' }}
-          </button>
-        </div>
-
-        <div class="status-grid">
-          <div>
-            <span class="metric-label">Conectado em</span>
-            <strong>{{ selectedIntegration()?.oauthConnectedAt || 'Não conectado' }}</strong>
+        <div class="card-details">
+          <div class="card-detail-item">
+            <span>Status</span>
+            <strong>{{ statusLabel(selectedIntegration()?.status) }}</strong>
           </div>
-          <div>
-            <span class="metric-label">Escopos concedidos</span>
-            <strong>{{ selectedIntegration()?.grantedScopes?.join(', ') || 'Nenhum' }}</strong>
-          </div>
-          <div>
-            <span class="metric-label">Expiração do token</span>
-            <strong>{{ selectedIntegration()?.tokenExpiresAt || 'Indefinida' }}</strong>
-          </div>
-          <div>
-            <span class="metric-label">Última sincronização</span>
+          <div class="card-detail-item">
+            <span>Última sincronização</span>
             <strong>{{ selectedIntegration()?.lastSyncAt || 'Nunca sincronizado' }}</strong>
           </div>
-          <div>
-            <span class="metric-label">Status de sync</span>
-            <app-ui-badge
-              [label]="syncStatusLabel(selectedIntegration()?.lastSyncStatus)"
-              [tone]="syncStatusTone(selectedIntegration()?.lastSyncStatus)"
-            />
-          </div>
-          <div>
-            <span class="metric-label">Erro registrado</span>
-            <strong>{{ selectedIntegration()?.lastSyncError || 'Sem erro' }}</strong>
-          </div>
-          <div>
-            <span class="metric-label">Contas carregadas</span>
-            <strong>{{ adAccounts().length }}</strong>
-          </div>
         </div>
 
-        <div class="detail-actions">
-          <button class="btn btn-danger" type="button" (click)="disconnect(store)" [disabled]="savingStoreId() === store.id || !canManageIntegrations()">
+        <div class="card-actions">
+          <button
+            class="btn btn-primary"
+            *ngIf="isOperational() && !isConnected()"
+            type="button"
+            (click)="connect(store)"
+            [disabled]="savingStoreId() === store.id"
+          >
+            {{ savingStoreId() === store.id ? 'Abrindo Meta...' : 'Conectar com Meta' }}
+          </button>
+
+          <button
+            class="btn btn-primary"
+            *ngIf="isOperational() && isConnected()"
+            type="button"
+            (click)="syncAdAccounts(store)"
+            [disabled]="isSyncInProgress()"
+          >
+            {{ isSyncInProgress() ? 'Sincronizando...' : 'Sincronizar contas' }}
+          </button>
+
+          <button
+            class="btn btn-secondary"
+            *ngIf="isOperational() && isConnected()"
+            type="button"
+            (click)="fetchAdAccounts(store)"
+            [disabled]="isSyncInProgress()"
+          >
+            {{ loadingAccounts() ? 'Buscando...' : 'Buscar contas' }}
+          </button>
+
+          <button
+            class="btn btn-secondary"
+            *ngIf="isOperational() && isConnected()"
+            type="button"
+            (click)="disconnect(store)"
+            [disabled]="savingStoreId() === store.id"
+          >
             Desconectar
           </button>
         </div>
 
-        <section class="ad-accounts-panel" *ngIf="selectedIntegration()?.status === 'CONNECTED'">
-          <div class="detail-header">
+        <div class="card-role-hint" *ngIf="isManager()">
+          Operação realizada pelo time.
+        </div>
+
+        <div class="card-role-hint" *ngIf="isClient()">
+          Dados conectados automaticamente.
+        </div>
+      </section>
+
+      <section class="accounts-section" *ngIf="selectedIntegration()?.status === 'CONNECTED'">
+        <div class="section-header">
+          <div>
+            <h3>Contas de anúncio</h3>
+            <p>Veja as contas vinculadas à loja conectada.</p>
+          </div>
+        </div>
+
+        <div class="accounts-grid" *ngIf="adAccounts().length; else noAccountsFound">
+          <article class="account-card" *ngFor="let account of adAccounts(); trackBy: trackByExternalId">
             <div>
-              <h3 class="section-title">Contas de anúncio</h3>
-              <p class="muted">Busque contas reais da Meta e salve as contas vinculadas a esta store.</p>
-            </div>
-            <div class="detail-actions">
-              <button class="btn btn-secondary" type="button" (click)="fetchAdAccounts(store)" [disabled]="isSyncInProgress() || !canManageIntegrations()">
-                {{ loadingAccounts() ? 'Buscando...' : 'Buscar contas' }}
-              </button>
-              <button class="btn btn-primary" type="button" (click)="syncAdAccounts(store)" [disabled]="isSyncInProgress() || !canManageIntegrations()">
-                {{ isSyncInProgress() ? 'Sincronizando...' : 'Sincronizar contas' }}
-              </button>
-            </div>
-          </div>
-
-          <p class="inline-alert info" *ngIf="selectedIntegration()?.lastSyncStatus === 'IN_PROGRESS'">
-            Sincronização em andamento. Aguarde a conclusão antes de iniciar uma nova.
-          </p>
-
-          <div class="account-list" *ngIf="adAccounts().length; else noAccountsLoaded">
-            <article class="account-card" *ngFor="let account of adAccounts(); trackBy: trackByExternalId">
+              <span class="account-label">Nome</span>
               <strong>{{ account.name }}</strong>
-              <span>ID: {{ account.externalId }}</span>
-              <app-ui-badge
-                [label]="account.status"
-                [tone]="account.status === 'ACTIVE' ? 'success' : account.status === 'DISABLED' ? 'warning' : 'neutral'"
-              />
-            </article>
-          </div>
+            </div>
+            <div>
+              <span class="account-label">ID externo</span>
+              <strong>{{ account.externalId }}</strong>
+            </div>
+            <app-ui-badge
+              [label]="account.status"
+              [tone]="account.status === 'ACTIVE' ? 'success' : account.status === 'DISABLED' ? 'warning' : 'neutral'"
+            />
+          </article>
+        </div>
 
-          <ng-template #noAccountsLoaded>
-            <p class="muted account-empty">Nenhuma conta carregada ainda.</p>
-          </ng-template>
-        </section>
-      </ng-container>
-    </div>
+        <ng-template #noAccountsFound>
+          <app-ui-state
+            type="empty"
+            icon="📭"
+            title="Nenhuma conta encontrada"
+            message="Nenhuma conta encontrada. Clique em sincronizar."
+          />
+        </ng-template>
+      </section>
+    </main>
   </div>
 </section>
