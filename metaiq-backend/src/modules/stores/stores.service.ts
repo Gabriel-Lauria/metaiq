@@ -6,10 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Role } from '../../common/enums';
+import { IsNull, Repository } from 'typeorm';
+import { IntegrationStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
+import { AdAccount } from '../ad-accounts/ad-account.entity';
+import { Campaign } from '../campaigns/campaign.entity';
+import { StoreIntegration } from '../integrations/store-integration.entity';
 import { Manager } from '../managers/manager.entity';
 import { Tenant } from '../tenants/tenant.entity';
 import { UserStore } from '../user-stores/user-store.entity';
@@ -30,6 +33,12 @@ export class StoresService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(UserStore)
     private readonly userStoreRepository: Repository<UserStore>,
+    @InjectRepository(AdAccount)
+    private readonly adAccountRepository: Repository<AdAccount>,
+    @InjectRepository(Campaign)
+    private readonly campaignRepository: Repository<Campaign>,
+    @InjectRepository(StoreIntegration)
+    private readonly storeIntegrationRepository: Repository<StoreIntegration>,
     private readonly accessScope: AccessScopeService,
   ) {}
 
@@ -51,6 +60,7 @@ export class StoresService {
   async findAll(requester: AuthenticatedUser): Promise<Store[]> {
     if (this.accessScope.isPlatformAdmin(requester)) {
       return this.storeRepository.find({
+        where: { deletedAt: IsNull() },
         relations: ['manager'],
         order: { createdAt: 'DESC' },
       });
@@ -61,7 +71,7 @@ export class StoresService {
     }
 
     return this.storeRepository.find({
-      where: { tenantId: requester.tenantId },
+      where: { tenantId: requester.tenantId, deletedAt: IsNull() },
       relations: ['manager'],
       order: { createdAt: 'DESC' },
     });
@@ -70,7 +80,7 @@ export class StoresService {
   async findAccessible(requester: AuthenticatedUser): Promise<Store[]> {
     if (this.accessScope.isPlatformAdmin(requester)) {
       return this.storeRepository.find({
-        where: { active: true },
+        where: { active: true, deletedAt: IsNull() },
         relations: ['manager'],
         order: { name: 'ASC' },
       });
@@ -82,7 +92,7 @@ export class StoresService {
       }
 
       return this.storeRepository.find({
-        where: { tenantId: requester.tenantId, active: true },
+        where: { tenantId: requester.tenantId, active: true, deletedAt: IsNull() },
         relations: ['manager'],
         order: { name: 'ASC' },
       });
@@ -96,7 +106,7 @@ export class StoresService {
 
     return links
       .map((link) => link.store)
-      .filter((store): store is Store => !!store && store.active);
+      .filter((store): store is Store => !!store && store.active && !store.deletedAt);
   }
 
   async findOne(id: string, requester: AuthenticatedUser): Promise<Store> {
@@ -144,6 +154,23 @@ export class StoresService {
     return this.storeRepository.save(store);
   }
 
+  async remove(id: string, requester: AuthenticatedUser): Promise<void> {
+    const store = await this.findOne(id, requester);
+    const dependencies = await this.countBlockingDependencies(store.id);
+    const totalDependencies = Object.values(dependencies).reduce((total, count) => total + count, 0);
+
+    if (totalDependencies > 0) {
+      throw new ConflictException(
+        `Loja possui dependências e não pode ser excluída com segurança: ${this.formatDependencies(dependencies)}.`,
+      );
+    }
+
+    await this.userStoreRepository.delete({ storeId: store.id });
+    store.active = false;
+    store.deletedAt = new Date();
+    await this.storeRepository.save(store);
+  }
+
   async listUsers(storeId: string, requester: AuthenticatedUser): Promise<Omit<User, 'password'>[]> {
     await this.findOne(storeId, requester);
 
@@ -156,7 +183,7 @@ export class StoresService {
     return links.map((link) => {
       const { password: _password, ...user } = link.user;
       return user;
-    });
+    }).filter((user) => user.active && !user.deletedAt);
   }
 
   async linkUserToStore(
@@ -198,7 +225,7 @@ export class StoresService {
 
   private async findOneUnsafeInternal(id: string): Promise<Store> {
     const store = await this.storeRepository.findOne({
-      where: { id },
+      where: { id, deletedAt: IsNull() },
       relations: ['manager', 'tenant'],
     });
     if (!store) {
@@ -209,7 +236,7 @@ export class StoresService {
   }
 
   private async findUserForLink(userId: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({ where: { id: userId, deletedAt: IsNull() } });
     if (!user || !user.active) {
       throw new NotFoundException('Usuário não encontrado');
     }
@@ -297,5 +324,34 @@ export class StoresService {
     if (linkedUsers > 0) {
       throw new BadRequestException('Store com usuários vinculados não pode trocar de manager');
     }
+  }
+
+  private async countBlockingDependencies(storeId: string): Promise<Record<string, number>> {
+    const [campaigns, adAccounts, connectedIntegrations] = await Promise.all([
+      this.campaignRepository.count({ where: { storeId } }),
+      this.adAccountRepository.count({ where: { storeId } }),
+      this.storeIntegrationRepository.count({
+        where: { storeId, status: IntegrationStatus.CONNECTED },
+      }),
+    ]);
+
+    return {
+      campaigns,
+      adAccounts,
+      connectedIntegrations,
+    };
+  }
+
+  private formatDependencies(dependencies: Record<string, number>): string {
+    const labels: Record<string, string> = {
+      campaigns: 'campanha(s)',
+      adAccounts: 'conta(s) de anúncio',
+      connectedIntegrations: 'integração(ões) Meta conectada(s)',
+    };
+
+    return Object.entries(dependencies)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => `${count} ${labels[key] ?? key}`)
+      .join(', ');
   }
 }

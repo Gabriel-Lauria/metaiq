@@ -32,7 +32,7 @@
         <span class="nav-label">Campanhas</span>
       </a>
       <a
-        *ngIf="canSeeOperationalReadouts()"
+        *ngIf="canSeeMetrics()"
         routerLink="/metrics"
         class="nav-item"
         [class.active]="isActive('/metrics')"
@@ -66,20 +66,20 @@
         routerLink="/admin/managers"
         class="nav-item"
         [class.active]="isActive('/admin/managers')"
-        title="Managers"
+        title="Empresas"
       >
         <span class="nav-icon">M</span>
-        <span class="nav-label">Managers</span>
+        <span class="nav-label">Empresas</span>
       </a>
       <a
         *ngIf="canSeeTenantManagement()"
         routerLink="/manager/stores"
         class="nav-item"
         [class.active]="isActive('/manager/stores')"
-        title="Stores"
+        title="Lojas"
       >
         <span class="nav-icon">S</span>
-        <span class="nav-label">Stores</span>
+        <span class="nav-label">Lojas</span>
       </a>
       <a
         *ngIf="canSeeTenantManagement()"
@@ -108,7 +108,7 @@
       <div class="profile-meta">
         <span class="profile-name">{{ user.name }}</span>
         <span class="profile-email">{{ user.email || 'Usuário' }}</span>
-        <span class="profile-role">{{ user.role }}</span>
+        <span class="profile-role">{{ roleLabel(user.role) }}</span>
       </div>
     </div>
 

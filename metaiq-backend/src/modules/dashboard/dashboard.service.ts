@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 import { calcCPA, calcCPC, calcCTR, calcROAS } from '../../common/utils/metrics.util';
 import { AuthenticatedUser } from '../../common/interfaces';
@@ -130,7 +130,7 @@ export class DashboardService {
   private async countStores(user: AuthenticatedUser): Promise<number> {
     const storeIds = await this.accessScope.getAllowedStoreIds(user);
     if (storeIds === null) {
-      return this.storeRepository.count({ where: { active: true } });
+      return this.storeRepository.count({ where: { active: true, deletedAt: IsNull() } });
     }
 
     return storeIds.length;
@@ -181,18 +181,26 @@ export class DashboardService {
     const query = this.insightRepository
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
-      .addSelect(
-        `CASE insight.severity WHEN 'danger' THEN 1 WHEN 'warning' THEN 2 WHEN 'success' THEN 3 ELSE 4 END`,
-        'severityRank',
-      )
       .where('insight.resolved = :resolved', { resolved: false })
-      .orderBy('severityRank', 'ASC')
-      .addOrderBy('insight.detectedAt', 'DESC')
-      .take(5);
+      .take(20); // Get more to sort in memory
 
     await this.accessScope.applyCampaignScope(query, 'campaign', user);
     this.applyStoreFilter(query, storeId);
-    return query.getMany();
+
+    const insights = await query.getMany();
+
+    // Sort by severity priority, then by detectedAt
+    const severityOrder = { danger: 1, warning: 2, success: 3, info: 4 };
+    return insights
+      .sort((a, b) => {
+        const aSeverity = severityOrder[a.severity] || 4;
+        const bSeverity = severityOrder[b.severity] || 4;
+        if (aSeverity !== bSeverity) {
+          return aSeverity - bSeverity;
+        }
+        return b.detectedAt.getTime() - a.detectedAt.getTime(); // Most recent first
+      })
+      .slice(0, 5);
   }
 
   private applyStoreFilter(query: any, storeId?: string): void {

@@ -6,6 +6,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 import { Manager, Role, Store, User } from '../../core/models';
+import { roleBadgeTone, roleLabel } from '../../core/role-labels';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
 
@@ -29,9 +30,16 @@ export class StoresComponent implements OnInit {
   selectedStoreId = signal<string | null>(null);
   loading = signal(false);
   saving = signal(false);
+  deleteTarget = signal<Store | null>(null);
   error = signal<string | null>(null);
   success = signal<string | null>(null);
+  lastCreatedStoreName = signal<string | null>(null);
   name = '';
+  cnpj = '';
+  phone = '';
+  email = '';
+  active = true;
+  notes = '';
   managerId = '';
   userId = '';
   isAdmin = computed(() => this.auth.getCurrentRole() === Role.PLATFORM_ADMIN);
@@ -43,7 +51,7 @@ export class StoresComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.error.set(null);
-    const storeRequest = [Role.PLATFORM_ADMIN, Role.MANAGER].includes(this.auth.getCurrentRole())
+    const storeRequest = [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(this.auth.getCurrentRole())
       ? this.api.getStores()
       : this.api.getAccessibleStores();
 
@@ -78,7 +86,7 @@ export class StoresComponent implements OnInit {
     const trimmedName = this.name.trim();
     if (!trimmedName) return;
     if (this.isAdmin() && !this.managerId) {
-      this.error.set('Selecione um manager para criar a store.');
+      this.error.set('Selecione uma empresa para criar a loja.');
       return;
     }
 
@@ -91,16 +99,22 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.name = '';
+          this.cnpj = '';
+          this.phone = '';
+          this.email = '';
+          this.active = true;
+          this.notes = '';
           this.managerId = '';
-          this.success.set('Store criada com sucesso.');
+          this.lastCreatedStoreName.set(trimmedName);
+          this.success.set('Loja criada com sucesso.');
           this.saving.set(false);
-          this.ui.showSuccess('Store criada', 'A loja já está disponível no tenant.');
+          this.ui.showSuccess('Loja criada', 'Agora crie o cliente e vincule o gestor de tráfego.');
           this.load();
         },
         error: err => {
           this.error.set(err.message);
           this.saving.set(false);
-          this.ui.showError('Não foi possível criar store', err.message);
+          this.ui.showError('Não foi possível criar loja', err.message);
         }
       });
     this.saving.set(true);
@@ -111,7 +125,7 @@ export class StoresComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.success.set('Status da store atualizado.');
+          this.success.set('Status da loja atualizado.');
           this.saving.set(false);
           this.ui.showSuccess('Status atualizado', `${store.name} foi ${store.active ? 'desativada' : 'ativada'}.`);
           this.load();
@@ -123,6 +137,43 @@ export class StoresComponent implements OnInit {
         }
       });
     this.saving.set(true);
+  }
+
+  askDelete(store: Store): void {
+    this.deleteTarget.set(store);
+    this.error.set(null);
+  }
+
+  cancelDelete(): void {
+    this.deleteTarget.set(null);
+  }
+
+  confirmDelete(): void {
+    const store = this.deleteTarget();
+    if (!store) return;
+
+    this.saving.set(true);
+    this.api.deleteStore(store.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          if (this.selectedStoreId() === store.id) {
+            this.selectedStoreId.set(null);
+            this.linkedUsers.set([]);
+          }
+
+          this.deleteTarget.set(null);
+          this.success.set('Loja excluída com segurança.');
+          this.saving.set(false);
+          this.ui.showSuccess('Loja excluída', `${store.name} foi removida das listagens.`);
+          this.load();
+        },
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível excluir loja', err.message);
+        }
+      });
   }
 
   selectStore(storeId: string): void {
@@ -144,8 +195,8 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.userId = '';
-          this.success.set('Usuário vinculado à store.');
-          this.ui.showSuccess('Usuário vinculado', 'O acesso à store foi atualizado.');
+          this.success.set('Usuário vinculado à loja.');
+          this.ui.showSuccess('Usuário vinculado', 'O acesso à loja foi atualizado.');
           this.selectStore(storeId);
         },
         error: err => {
@@ -164,7 +215,7 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.success.set('Vínculo removido.');
-          this.ui.showSuccess('Vínculo removido', 'O usuário não acessa mais esta store.');
+          this.ui.showSuccess('Vínculo removido', 'O usuário não acessa mais esta loja.');
           this.selectStore(storeId);
         },
         error: err => {
@@ -176,5 +227,40 @@ export class StoresComponent implements OnInit {
 
   trackById(_: number, item: { id: string }): string {
     return item.id;
+  }
+
+  roleLabel(role: Role | string | null | undefined): string {
+    return roleLabel(role);
+  }
+
+  roleTone(role: Role | string | null | undefined): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+    return roleBadgeTone(role);
+  }
+
+  selectedStore(): Store | null {
+    const storeId = this.selectedStoreId();
+    return this.stores().find(store => store.id === storeId) ?? null;
+  }
+
+  linkedClients(): User[] {
+    return this.linkedUsers().filter(user => user.role === Role.CLIENT);
+  }
+
+  linkedTrafficManagers(): User[] {
+    return this.linkedUsers().filter(user => user.role === Role.OPERATIONAL);
+  }
+
+  usersByRole(storeId: string, role: Role | string): string {
+    if (this.selectedStoreId() !== storeId) {
+      return 'Selecione para ver';
+    }
+    const names = this.linkedUsers()
+      .filter(user => user.role === role)
+      .map(user => user.name);
+    return names.length ? names.join(', ') : 'Nenhum vínculo';
+  }
+
+  hasPreparedStoreFields(): boolean {
+    return !!this.cnpj.trim() || !!this.phone.trim() || !!this.email.trim() || !!this.notes.trim() || !this.active;
   }
 }

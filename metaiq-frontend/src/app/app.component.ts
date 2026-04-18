@@ -6,6 +6,7 @@ import { UiService } from './core/services/ui.service';
 import { NotificationContainerComponent } from './core/components/notification-container.component';
 import { GlobalLoadingComponent } from './core/components/global-loading.component';
 import { Role } from './core/models';
+import { roleLabel } from './core/role-labels';
 import { filter } from 'rxjs';
 
 @Component({
@@ -71,13 +72,13 @@ export class AppComponent {
     const url = this.router.url;
     const role = this.authService.getCurrentRole();
     const titles: { [key: string]: string } = {
-      '/dashboard': role === Role.CLIENT ? 'Resumo da Loja' : role === Role.MANAGER ? 'Central do Tenant' : [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role as Role) ? 'Administração' : 'Operação da Loja',
+      '/dashboard': role === Role.CLIENT ? 'Resultados da Loja' : role === Role.MANAGER ? 'Central do Supervisor' : [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role as Role) ? 'Administração da Empresa' : 'Operação da Loja',
       '/campaigns': 'Campanhas Ativas',
       '/metrics': 'Métricas',
       '/insights': 'Insights',
       '/results': 'Resultados',
-      '/admin/managers': 'Gestão de Managers',
-      '/manager/stores': 'Gestão de Stores',
+      '/admin/managers': 'Empresas',
+      '/manager/stores': 'Lojas',
       '/manager/users': 'Gestão de Usuários',
       '/manager/integrations': 'Integrações'
     };
@@ -113,11 +114,11 @@ export class AppComponent {
   }
 
   canSeeCampaigns(): boolean {
-    return this.authService.hasAnyRole([Role.ADMIN, Role.MANAGER, Role.OPERATIONAL]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT]);
   }
 
   canSeeManagers(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN]);
   }
 
   canSeeTenantManagement(): boolean {
@@ -132,16 +133,24 @@ export class AppComponent {
     return this.authService.hasAnyRole([Role.OPERATIONAL]);
   }
 
+  canSeeMetrics(): boolean {
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT]);
+  }
+
   canSeeClientResults(): boolean {
     return this.authService.hasAnyRole([Role.CLIENT]);
   }
 
   dashboardLabel(): string {
     const role = this.authService.getCurrentRole();
-    if (role === Role.CLIENT) return 'Resumo';
+    if (role === Role.CLIENT) return 'Resultados';
     if (role === Role.MANAGER) return 'Central';
     if (role === Role.PLATFORM_ADMIN) return 'Plataforma';
-    if (role === Role.ADMIN) return 'Dashboard Admin';
+    if (role === Role.ADMIN) return 'Empresa';
     return 'Operação';
+  }
+
+  roleLabel(role: Role | string | null | undefined): string {
+    return roleLabel(role);
   }
 }

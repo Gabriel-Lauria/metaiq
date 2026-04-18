@@ -36,6 +36,8 @@ export interface User {
   role: Role;
   managerId?: string | null;
   tenantId?: string | null;
+  active?: boolean;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,7 +45,13 @@ export interface User {
 export interface Manager {
   id: string;
   name: string;
+  cnpj?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contactName?: string | null;
+  notes?: string | null;
   active: boolean;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +62,7 @@ export interface Store {
   managerId: string;
   tenantId: string;
   active: boolean;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -282,11 +291,21 @@ export interface RegisterRequest {
 
 export interface CreateManagerRequest {
   name: string;
+  cnpj?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contactName?: string | null;
+  notes?: string | null;
 }
 
 export interface UpdateManagerRequest {
   name?: string;
   active?: boolean;
+  cnpj?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  contactName?: string | null;
+  notes?: string | null;
 }
 
 export interface CreateStoreRequest {

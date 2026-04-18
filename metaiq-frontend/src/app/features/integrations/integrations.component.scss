@@ -268,7 +268,7 @@
 .page-picker-controls select {
   min-width: min(320px, 100%);
   min-height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
@@ -303,7 +303,7 @@
 .form-field textarea {
   width: 100%;
   min-height: 44px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);

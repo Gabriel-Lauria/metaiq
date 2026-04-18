@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/user.entity';
@@ -30,7 +30,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.userRepository.findOne({ where: { email } });
+    const user = await this.userRepository.findOne({ where: { email, deletedAt: IsNull() } });
     if (!user) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
@@ -83,7 +83,7 @@ export class AuthService {
     }
 
     const payload = await this.validateRefreshToken(refreshToken);
-    const user = await this.userRepository.findOne({ where: { id: payload.sub } });
+    const user = await this.userRepository.findOne({ where: { id: payload.sub, deletedAt: IsNull() } });
     if (!user) {
       throw new UnauthorizedException('Usuário não encontrado');
     }
@@ -112,7 +112,7 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
 
-    const user = await this.userRepository.findOne({ where: { id: payload.sub } });
+    const user = await this.userRepository.findOne({ where: { id: payload.sub, deletedAt: IsNull() } });
     if (!user || !user.refreshToken) {
       throw new UnauthorizedException('Usuário não encontrado ou refresh token inválido');
     }

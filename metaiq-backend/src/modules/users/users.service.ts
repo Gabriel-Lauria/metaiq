@@ -6,10 +6,11 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { User } from './user.entity';
 import { Manager } from '../managers/manager.entity';
 import { Tenant } from '../tenants/tenant.entity';
+import { UserStore } from '../user-stores/user-store.entity';
 import * as bcrypt from 'bcryptjs';
 import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthenticatedUser } from '../../common/interfaces';
@@ -96,6 +97,8 @@ export class UsersService {
     private readonly managerRepository: Repository<Manager>,
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
+    @InjectRepository(UserStore)
+    private readonly userStoreRepository: Repository<UserStore>,
     private readonly accessScope: AccessScopeService,
   ) {}
 
@@ -135,14 +138,14 @@ export class UsersService {
    * Busca usuário por email (para login)
    */
   async findByEmail(email: string): Promise<User | null> {
-    return this.userRepository.findOne({ where: { email } });
+    return this.userRepository.findOne({ where: { email, deletedAt: IsNull() } });
   }
 
   /**
    * Busca usuário por ID
    */
   async findOneUnsafeInternal(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.userRepository.findOne({ where: { id, deletedAt: IsNull() } });
     if (!user) {
       throw new NotFoundException(`Usuário ${id} não encontrado`);
     }
@@ -153,12 +156,12 @@ export class UsersService {
    * Lista todos os usuários (admin/manager)
    */
   async findAllUnsafeInternal(): Promise<User[]> {
-    return this.userRepository.find();
+    return this.userRepository.find({ where: { deletedAt: IsNull() } });
   }
 
   async findAllForUser(requester: AuthenticatedUser): Promise<User[]> {
     if (this.accessScope.isPlatformAdmin(requester)) {
-      return this.userRepository.find();
+      return this.userRepository.find({ where: { deletedAt: IsNull() } });
     }
 
     if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
@@ -167,12 +170,12 @@ export class UsersService {
       }
 
       return this.userRepository.find({
-        where: { tenantId: requester.tenantId },
+        where: { tenantId: requester.tenantId, deletedAt: IsNull() },
       });
     }
 
     return this.userRepository.find({
-      where: { id: requester.id },
+      where: { id: requester.id, deletedAt: IsNull() },
     });
   }
 
@@ -259,11 +262,14 @@ export class UsersService {
     requester: AuthenticatedUser,
     dto: ResetUserPasswordDto,
   ): Promise<User> {
-    if (!this.accessScope.isPlatformAdmin(requester)) {
+    if (!(this.accessScope.isPlatformAdmin(requester) || this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester))) {
       throw new ForbiddenException('Apenas ADMIN pode alterar a senha de qualquer usuário');
     }
 
-    const user = await this.findOneUnsafeInternal(id);
+    const user = await this.findOneForUser(id, requester);
+    if (this.accessScope.isManager(requester) && ![Role.OPERATIONAL, Role.CLIENT].includes(user.role)) {
+      throw new ForbiddenException('MANAGER só pode alterar senha de OPERATIONAL ou CLIENT');
+    }
     return this.applyUserProfileUpdate(user, { password: dto.password });
   }
 
@@ -300,7 +306,21 @@ export class UsersService {
    */
   async remove(id: string): Promise<void> {
     const user = await this.findOneUnsafeInternal(id);
+    await this.ensureCanDeleteUser(user, user);
+    await this.softDeleteUser(user);
+  }
+
+  async removeForUser(id: string, requester: AuthenticatedUser): Promise<void> {
+    const user = await this.findOneForUser(id, requester);
+    await this.ensureCanDeleteUser(user, requester);
+    await this.softDeleteUser(user);
+  }
+
+  private async softDeleteUser(user: User): Promise<void> {
+    await this.userStoreRepository.delete({ userId: user.id });
     user.active = false;
+    user.refreshToken = null;
+    user.deletedAt = new Date();
     await this.userRepository.save(user);
   }
 
@@ -344,6 +364,7 @@ export class UsersService {
       managerId,
       tenantId,
       active: dto.active ?? true,
+      deletedAt: null,
     });
 
     return this.userRepository.save(user);
@@ -371,9 +392,38 @@ export class UsersService {
   }
 
   private async ensureTenantExists(tenantId: string): Promise<void> {
-    const tenant = await this.tenantRepository.findOne({ where: { id: tenantId } });
-    if (!tenant) {
+    const tenant = await this.tenantRepository.findOne({ where: { id: tenantId, deletedAt: IsNull() } });
+    if (!tenant || !tenant.active) {
       throw new BadRequestException('tenantId inválido');
     }
+  }
+
+  private async ensureCanDeleteUser(user: User, requester: AuthenticatedUser | User): Promise<void> {
+    if (user.role === Role.PLATFORM_ADMIN) {
+      throw new ForbiddenException('PLATFORM_ADMIN não pode ser excluído pelo fluxo comum');
+    }
+
+    if (this.isRequesterManager(requester) && ![Role.OPERATIONAL, Role.CLIENT].includes(user.role)) {
+      throw new ForbiddenException('MANAGER só pode excluir OPERATIONAL ou CLIENT');
+    }
+
+    if (user.role === Role.ADMIN && user.tenantId) {
+      const activeAdmins = await this.userRepository.count({
+        where: {
+          tenantId: user.tenantId,
+          role: Role.ADMIN,
+          active: true,
+          deletedAt: IsNull(),
+        },
+      });
+
+      if (activeAdmins <= 1) {
+        throw new ForbiddenException('Não é permitido excluir o último administrador da empresa');
+      }
+    }
+  }
+
+  private isRequesterManager(requester: AuthenticatedUser | User): boolean {
+    return requester.role === Role.MANAGER;
   }
 }

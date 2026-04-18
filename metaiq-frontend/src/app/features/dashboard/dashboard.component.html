@@ -48,7 +48,7 @@
           [ngModel]="storeContext.selectedStoreId()"
           (ngModelChange)="setStore($event)"
         >
-          <option *ngIf="!requiresStoreContext()" value="">Todas as stores</option>
+          <option *ngIf="!requiresStoreContext()" value="">Todas as lojas</option>
           <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
         </select>
         <button
@@ -86,7 +86,7 @@
     </div>
 
     <div class="metrics-grid" *ngIf="summary() && (isAdmin() || isManager())">
-      <app-ui-kpi-card label="Stores" [value]="summary()!.counts.stores" marker="S" tone="info" />
+      <app-ui-kpi-card label="Lojas" [value]="summary()!.counts.stores" marker="S" tone="info" />
       <app-ui-kpi-card label="Usuários" [value]="summary()!.counts.users" marker="U" tone="info" />
       <app-ui-kpi-card label="Campanhas" [value]="summary()!.counts.campaigns" marker="C" tone="warning" />
       <app-ui-kpi-card label="Ativas" [value]="summary()!.counts.activeCampaigns" marker="A" tone="success" />

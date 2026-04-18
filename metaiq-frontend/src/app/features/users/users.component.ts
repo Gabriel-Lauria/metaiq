@@ -6,6 +6,7 @@ import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 import { Manager, Role, User } from '../../core/models';
+import { roleBadgeTone, roleLabel } from '../../core/role-labels';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
 
@@ -28,6 +29,7 @@ export class UsersComponent implements OnInit {
   saving = signal(false);
   error = signal<string | null>(null);
   success = signal<string | null>(null);
+  deleteTarget = signal<User | null>(null);
   name = '';
   email = '';
   password = '';
@@ -74,7 +76,7 @@ export class UsersComponent implements OnInit {
       return;
     }
     if (this.isPlatformAdmin() && ![Role.PLATFORM_ADMIN, Role.ADMIN].includes(this.role) && !this.managerId) {
-      this.error.set('Selecione um tenant para este usuário.');
+      this.error.set('Selecione uma empresa para este usuário.');
       return;
     }
 
@@ -97,7 +99,7 @@ export class UsersComponent implements OnInit {
           this.managerId = '';
           this.success.set('Usuário criado com sucesso.');
           this.saving.set(false);
-          this.ui.showSuccess('Usuário criado', 'O acesso já está disponível para o tenant.');
+          this.ui.showSuccess('Usuário criado', 'O acesso já está disponível para a empresa.');
           this.load();
         },
         error: err => {
@@ -135,11 +137,54 @@ export class UsersComponent implements OnInit {
     this.saving.set(true);
   }
 
+  askDelete(user: User): void {
+    this.deleteTarget.set(user);
+  }
+
+  cancelDelete(): void {
+    this.deleteTarget.set(null);
+  }
+
+  confirmDelete(): void {
+    const user = this.deleteTarget();
+    if (!user) return;
+
+    this.api.deleteUser(user.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.deleteTarget.set(null);
+          this.success.set('Usuário excluído com segurança.');
+          this.saving.set(false);
+          this.ui.showSuccess('Usuário excluído', 'O acesso foi removido e os vínculos com lojas foram limpos.');
+          this.load();
+        },
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível excluir usuário', err.message);
+        }
+      });
+    this.saving.set(true);
+  }
+
+  canDelete(user: User): boolean {
+    return user.role !== Role.PLATFORM_ADMIN;
+  }
+
   trackById(_: number, item: { id: string }): string {
     return item.id;
   }
 
   trackByRole(_: number, role: Role): Role {
     return role;
+  }
+
+  roleLabel(role: Role | string | null | undefined): string {
+    return roleLabel(role);
+  }
+
+  roleTone(role: Role | string | null | undefined): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
+    return roleBadgeTone(role);
   }
 }

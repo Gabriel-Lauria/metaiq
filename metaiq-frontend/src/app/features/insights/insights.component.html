@@ -3,7 +3,7 @@
     <div>
       <h1>Insights da operação</h1>
       <span class="demo-data-badge">Dados de demonstração</span>
-      <p>Alertas e oportunidades da store ativa para priorizar ações.</p>
+      <p>Alertas e oportunidades da loja ativa para priorizar ações.</p>
     </div>
 
     <div class="toolbar">
@@ -28,7 +28,7 @@
     *ngIf="loading()"
     type="loading"
     title="Carregando insights"
-    message="Buscando recomendações da store selecionada."
+    message="Buscando recomendações da loja selecionada."
   />
 
   <app-ui-state
@@ -46,7 +46,7 @@
     type="empty"
     icon="i"
     title="Nenhum insight no período"
-    message="Não há alertas ou recomendações para a store selecionada."
+    message="Não há alertas ou recomendações para a loja selecionada."
     actionLabel="Atualizar"
     (action)="load()"
   />

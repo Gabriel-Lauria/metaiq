@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { SelectQueryBuilder, Repository } from 'typeorm';
+import { IsNull, SelectQueryBuilder, Repository } from 'typeorm';
 import { Role } from '../enums';
 import { AuthenticatedUser } from '../interfaces';
 import { Store } from '../../modules/stores/store.entity';
@@ -51,7 +51,7 @@ export class AccessScopeService {
       }
 
       const stores = await this.storeRepository.find({
-        where: { tenantId: user.tenantId, active: true },
+        where: { tenantId: user.tenantId, active: true, deletedAt: IsNull() },
         select: ['id'],
       });
       return stores.map((store) => store.id);
@@ -59,9 +59,11 @@ export class AccessScopeService {
 
     const links = await this.userStoreRepository.find({
       where: { userId: user.id },
-      select: ['storeId'],
+      relations: ['store'],
     });
-    return links.map((link) => link.storeId);
+    return links
+      .filter((link) => link.store?.active && !link.store.deletedAt)
+      .map((link) => link.storeId);
   }
 
   async validateStoreAccess(user: AuthenticatedUser, storeId?: string | null): Promise<Store> {
@@ -69,7 +71,7 @@ export class AccessScopeService {
       throw new BadRequestException('storeId é obrigatório');
     }
 
-    const store = await this.storeRepository.findOne({ where: { id: storeId } });
+    const store = await this.storeRepository.findOne({ where: { id: storeId, deletedAt: IsNull() } });
     if (!store || !store.active) {
       throw new NotFoundException('Store não encontrada');
     }
@@ -127,7 +129,7 @@ export class AccessScopeService {
 
       return query.andWhere(
         `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId)
+          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId AND ${alias}_scopeStore.deletedAt IS NULL)
           OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
         )`,
         { scopeTenantId: user.tenantId },
@@ -170,7 +172,7 @@ export class AccessScopeService {
 
       return query.andWhere(
         `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId)
+          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId AND ${alias}_scopeStore.deletedAt IS NULL)
           OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
         )`,
         { scopeTenantId: user.tenantId },

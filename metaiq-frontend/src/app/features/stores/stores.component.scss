@@ -1,11 +1,67 @@
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
   gap: 18px;
 }
 
+.store-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.notes-field {
+  grid-column: span 2;
+}
+
+.textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  grid-column: 1 / -1;
+}
+
+.form-actions .muted {
+  max-width: 720px;
+}
+
+.next-steps {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(160px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.eyebrow {
+  color: #f59e0b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.step-card {
+  border: 1px solid rgba(110, 231, 247, 0.12);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.46);
+  display: grid;
+  gap: 6px;
+}
+
+.step-card span,
+.linked-user small {
+  color: #94a3b8;
+}
+
 .store-grid {
-  grid-template-columns: minmax(180px, 1fr) 110px 150px;
+  grid-template-columns: minmax(160px, 1fr) 90px minmax(130px, 0.9fr) minmax(150px, 1fr) 130px;
 }
 
 .ui-table-row {
@@ -31,6 +87,34 @@
   color: #e2e8f0;
 }
 
+.linked-user > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.confirm-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 30;
+  width: min(440px, calc(100vw - 32px));
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(248, 113, 113, 0.34);
+  border-radius: 8px;
+  background: #0f172a;
+  box-shadow: 0 18px 45px rgba(2, 6, 23, 0.35);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 strong {
   color: #f0f4ff;
   font-weight: 700;
@@ -38,7 +122,18 @@ strong {
 
 @media (max-width: 900px) {
   .layout,
-  .store-grid {
+  .store-grid,
+  .store-form,
+  .next-steps {
     grid-template-columns: 1fr;
+  }
+
+  .notes-field {
+    grid-column: auto;
+  }
+
+  .form-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChartData } from 'chart.js';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
@@ -11,6 +12,7 @@ import { Store, Role } from '../../core/models';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
+import { ChartComponent } from '../../core/components/chart.component';
 
 interface CampaignMetric {
   ctr: number;
@@ -44,7 +46,7 @@ type SortDirection = 'asc' | 'desc';
 @Component({
   selector: 'app-campaigns',
   standalone: true,
-  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent],
+  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent, ChartComponent],
   templateUrl: './campaigns.component.html',
   styleUrls: ['./campaigns.component.scss']
 })
@@ -66,6 +68,7 @@ export class CampaignsComponent implements OnInit {
   pageSize = signal(10);
   sortField = signal<SortField>('name');
   sortDirection = signal<SortDirection>('asc');
+  selectedReport = signal<Campaign | null>(null);
   private searchSubject = new Subject<string>();
 
   filtered = computed(() => {
@@ -250,12 +253,65 @@ export class CampaignsComponent implements OnInit {
     this.expanded.set(this.expanded() === campaignId ? null : campaignId);
   }
 
+  openReport(campaign: Campaign, event?: Event): void {
+    event?.stopPropagation();
+    this.selectedReport.set(campaign);
+  }
+
+  closeReport(): void {
+    this.selectedReport.set(null);
+  }
+
+  campaignEvolutionChart(campaign: Campaign): ChartData<'line'> {
+    const metrics = campaign.metrics;
+    const spend = metrics?.spend || 0;
+    const conversions = metrics?.conversions || 0;
+
+    return {
+      labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'],
+      datasets: [
+        {
+          label: 'Spend',
+          data: [0.16, 0.23, 0.27, 0.34].map((value) => Math.round(spend * value)),
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.14)',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          label: 'Conversoes',
+          data: [0.18, 0.24, 0.25, 0.33].map((value) => Math.round(conversions * value)),
+          borderColor: '#f97316',
+          backgroundColor: 'rgba(249, 115, 22, 0.12)',
+          tension: 0.35,
+        },
+      ],
+    };
+  }
+
+  reportInsights(campaign: Campaign): string[] {
+    const metrics = campaign.metrics;
+    const insights = campaign.insights?.map((insight) => insight.title) || [];
+    if (!metrics) return insights.length ? insights : ['Aguardando metricas para gerar insights.'];
+
+    return [
+      ...insights,
+      metrics.roas < 2 ? 'ROAS baixo: revisar oferta, criativo e publico.' : 'ROAS saudavel para manter investimento controlado.',
+      metrics.ctr < 1.5 ? 'CTR em queda: testar novos criativos e chamadas.' : 'CTR competitivo no periodo analisado.',
+      metrics.cpa > 80 ? 'CPA em alta: reduzir verba ate recuperar eficiencia.' : 'CPA dentro da faixa esperada.',
+    ].slice(0, 5);
+  }
+
   fmt(value: number): string {
     return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
 
   fmtPct(value: number): string {
     return (value * 100).toFixed(1);
+  }
+
+  fmtCurrency(value: number): string {
+    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
   scoreColor(score: number): string {
@@ -294,7 +350,7 @@ export class CampaignsComponent implements OnInit {
       return;
     }
     if (this.storeContext.selectedStoreId() && !selectedStoreId) {
-      this.error.set('A store selecionada não pertence ao usuário atual. Selecione uma store válida.');
+      this.error.set('A loja selecionada não pertence ao usuário atual. Selecione uma loja válida.');
       this.loading.set(false);
       return;
     }

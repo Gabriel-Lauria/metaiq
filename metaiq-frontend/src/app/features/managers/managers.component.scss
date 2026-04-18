@@ -3,7 +3,36 @@
 }
 
 .manager-grid {
-  grid-template-columns: minmax(180px, 1fr) 120px minmax(220px, 280px);
+  grid-template-columns: minmax(190px, 1.1fr) minmax(180px, 1fr) 100px minmax(260px, 320px);
+}
+
+.company-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 16px;
+  align-items: end;
+}
+
+.notes-field {
+  grid-column: span 2;
+}
+
+.textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.company-main,
+.company-edit {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.company-main span,
+.company-main small {
+  color: #94a3b8;
+  overflow-wrap: anywhere;
 }
 
 .actions {
@@ -18,7 +47,12 @@ strong {
 }
 
 @media (max-width: 760px) {
-  .manager-grid {
+  .manager-grid,
+  .company-form {
     grid-template-columns: 1fr;
+  }
+
+  .notes-field {
+    grid-column: auto;
   }
 }

@@ -20,6 +20,24 @@ export class Manager {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ nullable: true })
+  cnpj: string | null;
+
+  @Column({ nullable: true })
+  phone: string | null;
+
+  @Column({ nullable: true })
+  email: string | null;
+
+  @Column({ nullable: true })
+  contactName: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  notes: string | null;
+
+  @Column({ nullable: true })
+  deletedAt: Date | null;
+
   @OneToMany(() => Store, (store) => store.manager)
   stores: Store[];
 

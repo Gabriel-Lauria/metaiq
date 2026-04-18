@@ -56,6 +56,9 @@ export class User {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ nullable: true })
+  deletedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

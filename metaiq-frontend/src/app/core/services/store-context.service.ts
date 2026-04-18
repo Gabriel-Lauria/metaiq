@@ -66,7 +66,7 @@ export class StoreContextService {
       },
       error: (err) => {
         this.reset();
-        this.error.set(err.message || 'Não foi possível carregar stores.');
+        this.error.set(err.message || 'Não foi possível carregar lojas.');
         this.loading.set(false);
         this.loaded.set(true);
       },

@@ -1,15 +1,13 @@
 <div class="campaigns-container">
-  <!-- Header -->
   <div class="campaigns-header">
     <div>
-      <h2 class="page-title">Campanhas Ativas</h2>
-      <span class="demo-data-badge">Dados de demonstração</span>
-      <p class="page-sub">Gerencie e analise o desempenho de suas campanhas</p>
+      <h2 class="page-title">Campanhas</h2>
+      <span class="demo-data-badge">Dados de demonstracao</span>
+      <p class="page-sub">Acompanhe status, metricas e relatorios de performance.</p>
     </div>
     <button class="btn btn-primary" (click)="refresh()">Atualizar</button>
   </div>
 
-  <!-- Error State -->
   <app-ui-state
     *ngIf="error()"
     type="error"
@@ -20,17 +18,14 @@
     (action)="refresh()"
   />
 
-  <!-- Loading State -->
   <app-ui-state
     *ngIf="loading()"
     type="loading"
     title="Carregando campanhas"
-    message="Buscando campanhas e métricas do escopo selecionado."
+    message="Buscando campanhas e metricas do escopo selecionado."
   />
 
-  <!-- Content -->
   <div class="campaigns-content" *ngIf="!loading() && !error()">
-    <!-- Filters -->
     <div class="filters-bar">
       <input
         type="text"
@@ -41,80 +36,37 @@
       />
 
       <div class="status-filter">
-        <button
-          class="filter-btn"
-          [class.active]="filter() === 'ALL'"
-          (click)="setFilter('ALL')"
-        >
-          Todas
-        </button>
-        <button
-          class="filter-btn"
-          [class.active]="filter() === 'ACTIVE'"
-          (click)="setFilter('ACTIVE')"
-        >
-          Ativas
-        </button>
-        <button
-          class="filter-btn"
-          [class.active]="filter() === 'PAUSED'"
-          (click)="setFilter('PAUSED')"
-        >
-          Pausadas
-        </button>
+        <button class="filter-btn" [class.active]="filter() === 'ALL'" (click)="setFilter('ALL')">Todas</button>
+        <button class="filter-btn" [class.active]="filter() === 'ACTIVE'" (click)="setFilter('ACTIVE')">Ativas</button>
+        <button class="filter-btn" [class.active]="filter() === 'PAUSED'" (click)="setFilter('PAUSED')">Pausadas</button>
       </div>
 
-      <select
-        class="search-input"
-        [ngModel]="storeContext.selectedStoreId()"
-        (ngModelChange)="setStoreFilter($event)"
-      >
-        <option value="">Todas as stores</option>
+      <select class="search-input" [ngModel]="storeContext.selectedStoreId()" (ngModelChange)="setStoreFilter($event)">
+        <option value="">Todas as lojas</option>
         <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
       </select>
     </div>
 
-    <!-- Pagination Info -->
     <div class="pagination-info" *ngIf="totalItems() > 0">
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
-      <span class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</span>
+      <span class="demo-data-note">Metricas simuladas ate a integracao Meta ser ativada.</span>
     </div>
 
-    <!-- Sort Headers -->
     <div class="sort-headers" *ngIf="filtered().length > 0">
-      <button class="sort-header-btn" (click)="toggleSort('name')">
-        Nome {{ getSortIndicator('name') }}
-      </button>
-      <button class="sort-header-btn" (click)="toggleSort('ctr')">
-        CTR {{ getSortIndicator('ctr') }}
-      </button>
-      <button class="sort-header-btn" (click)="toggleSort('cpa')">
-        CPA {{ getSortIndicator('cpa') }}
-      </button>
-      <button class="sort-header-btn" (click)="toggleSort('roas')">
-        ROAS {{ getSortIndicator('roas') }}
-      </button>
-      <button class="sort-header-btn" (click)="toggleSort('status')">
-        Status {{ getSortIndicator('status') }}
-      </button>
-      <button class="sort-header-btn" (click)="toggleSort('score')">
-        Score {{ getSortIndicator('score') }}
-      </button>
+      <button class="sort-header-btn" (click)="toggleSort('name')">Nome {{ getSortIndicator('name') }}</button>
+      <button class="sort-header-btn" (click)="toggleSort('ctr')">CTR {{ getSortIndicator('ctr') }}</button>
+      <button class="sort-header-btn" (click)="toggleSort('cpa')">CPA {{ getSortIndicator('cpa') }}</button>
+      <button class="sort-header-btn" (click)="toggleSort('roas')">ROAS {{ getSortIndicator('roas') }}</button>
+      <button class="sort-header-btn" (click)="toggleSort('status')">Status {{ getSortIndicator('status') }}</button>
+      <button class="sort-header-btn" (click)="toggleSort('score')">Score {{ getSortIndicator('score') }}</button>
     </div>
 
-    <!-- Campaigns List -->
     <div class="campaigns-list" *ngIf="filtered().length > 0">
       <div class="campaign-row" *ngFor="let campaign of pagedCampaigns(); trackBy: trackById">
-        <!-- Summary Row -->
         <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
           <div class="campaign-info">
             <div class="campaign-header-left">
-              <button
-                class="toggle-btn"
-                [class.expanded]="expanded() === campaign.id"
-              >
-                ▼
-              </button>
+              <button class="toggle-btn" [class.expanded]="expanded() === campaign.id">v</button>
               <div class="campaign-names">
                 <div class="campaign-name">{{ campaign.name }}</div>
                 <div class="campaign-id">
@@ -132,15 +84,11 @@
             </div>
             <div class="metric" *ngIf="campaign.metrics">
               <span class="metric-label">CPA</span>
-              <span class="metric-value">{{
-                campaign.metrics.cpa > 0 ? fmt(campaign.metrics.cpa) : '—'
-              }}</span>
+              <span class="metric-value">{{ campaign.metrics.cpa > 0 ? fmtCurrency(campaign.metrics.cpa) : '-' }}</span>
             </div>
             <div class="metric" *ngIf="campaign.metrics">
               <span class="metric-label">ROAS</span>
-              <span class="metric-value">{{
-                campaign.metrics.roas > 0 ? fmtPct(campaign.metrics.roas) : '—'
-              }}</span>
+              <span class="metric-value">{{ campaign.metrics.roas > 0 ? fmtPct(campaign.metrics.roas) : '-' }}</span>
             </div>
             <div class="metric">
               <span class="metric-label">Status</span>
@@ -150,38 +98,27 @@
               <span class="metric-label">Score</span>
               <div class="score-mini">
                 <div class="score-bar">
-                  <div
-                    class="score-fill"
-                    [style.width.%]="campaign.metrics.score"
-                    [style.background]="scoreColor(campaign.metrics.score)"
-                  ></div>
+                  <div class="score-fill" [style.width.%]="campaign.metrics.score" [style.background]="scoreColor(campaign.metrics.score)"></div>
                 </div>
-                <span
-                  class="score-num"
-                  [style.color]="scoreColor(campaign.metrics.score)"
-                  >{{ campaign.metrics.score }}</span
-                >
+                <span class="score-num" [style.color]="scoreColor(campaign.metrics.score)">{{ campaign.metrics.score }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Expanded Details -->
         <div class="campaign-details" *ngIf="expanded() === campaign.id">
           <div class="details-grid" *ngIf="campaign.metrics">
             <div class="detail-card">
-              <div class="detail-label">Gasto Total</div>
-              <div class="detail-value">{{ fmt(campaign.metrics.spend) }}</div>
+              <div class="detail-label">Spend</div>
+              <div class="detail-value">{{ fmtCurrency(campaign.metrics.spend) }}</div>
             </div>
             <div class="detail-card">
-              <div class="detail-label">Conversões</div>
+              <div class="detail-label">Conversoes</div>
               <div class="detail-value">{{ campaign.metrics.conversions }}</div>
             </div>
             <div class="detail-card">
-              <div class="detail-label">Impressões</div>
-              <div class="detail-value">
-                {{ (campaign.metrics.impressions / 1000).toFixed(1) }}K
-              </div>
+              <div class="detail-label">Impressoes</div>
+              <div class="detail-value">{{ (campaign.metrics.impressions / 1000).toFixed(1) }}K</div>
             </div>
             <div class="detail-card">
               <div class="detail-label">Cliques</div>
@@ -200,57 +137,61 @@
           </div>
 
           <div class="detail-actions">
-            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ver relatório' : 'Você não tem permissão'">Visualizar Relatório</button>
-            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Editar campanha' : 'Você não tem permissão'">Editar</button>
-            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Pausar campanha' : 'Você não tem permissão'">
-              Pausar
-            </button>
-            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ativar campanha' : 'Você não tem permissão'">
-              Ativar
-            </button>
+            <button class="btn btn-primary" (click)="openReport(campaign, $event)">Ver relatorio</button>
+            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Editar campanha' : 'Voce nao tem permissao'">Editar</button>
+            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Pausar campanha' : 'Voce nao tem permissao'">Pausar</button>
+            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ativar campanha' : 'Voce nao tem permissao'">Ativar</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Pagination -->
     <div class="pagination" *ngIf="totalPages() > 1">
-      <button
-        class="pagination-btn"
-        [disabled]="!hasPrev()"
-        (click)="prevPage()"
-      >
-        ← Anterior
-      </button>
-
+      <button class="pagination-btn" [disabled]="!hasPrev()" (click)="prevPage()">Anterior</button>
       <div class="pagination-pages">
-        <button
-          class="page-btn"
-          *ngFor="let page of pageNumbers(); trackBy: trackByPage"
-          [class.active]="page === currentPage()"
-          (click)="goToPage(page)"
-          [disabled]="page === currentPage()"
-        >
-          {{ page }}
-        </button>
+        <button class="page-btn" *ngFor="let page of pageNumbers(); trackBy: trackByPage" [class.active]="page === currentPage()" (click)="goToPage(page)" [disabled]="page === currentPage()">{{ page }}</button>
       </div>
-
-      <button
-        class="pagination-btn"
-        [disabled]="!hasNext()"
-        (click)="nextPage()"
-      >
-        Próximo →
-      </button>
+      <button class="pagination-btn" [disabled]="!hasNext()" (click)="nextPage()">Proximo</button>
     </div>
 
-    <!-- Empty State -->
     <app-ui-state
       *ngIf="filtered().length === 0 && !loading()"
       type="empty"
       icon="C"
       title="Nenhuma campanha encontrada"
-      message="Ajuste os filtros ou aguarde a integração Meta para carregar campanhas reais."
+      message="Ajuste os filtros ou aguarde a integracao Meta para carregar campanhas reais."
     />
+  </div>
+
+  <div class="campaign-report-backdrop" *ngIf="selectedReport() as report" (click)="closeReport()">
+    <section class="campaign-report-modal" (click)="$event.stopPropagation()">
+      <header class="report-header">
+        <div>
+          <span class="report-eyebrow">Campaign report modal</span>
+          <h3>{{ report.name }}</h3>
+          <p>Status da campanha: {{ statusLabel(report.status) }}</p>
+        </div>
+        <button type="button" class="report-close" (click)="closeReport()">Fechar</button>
+      </header>
+
+      <div class="report-kpis" *ngIf="report.metrics as metrics">
+        <article><span>Spend</span><strong>{{ fmtCurrency(metrics.spend) }}</strong></article>
+        <article><span>ROAS</span><strong>{{ metrics.roas > 0 ? fmtPct(metrics.roas) : '0' }}</strong></article>
+        <article><span>CPA</span><strong>{{ fmtCurrency(metrics.cpa) }}</strong></article>
+        <article><span>CTR</span><strong>{{ fmt(metrics.ctr) }}%</strong></article>
+        <article><span>CPC</span><strong>{{ fmtCurrency(metrics.clicks ? metrics.spend / metrics.clicks : 0) }}</strong></article>
+        <article><span>Conversoes</span><strong>{{ metrics.conversions }}</strong></article>
+      </div>
+
+      <div class="report-chart">
+        <h4>Grafico de evolucao</h4>
+        <app-chart chartType="line" [chartData]="campaignEvolutionChart(report)" />
+      </div>
+
+      <div class="report-insights">
+        <h4>Insights da campanha</h4>
+        <div class="report-insight" *ngFor="let insight of reportInsights(report)">{{ insight }}</div>
+      </div>
+    </section>
   </div>
 </div>

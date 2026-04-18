@@ -40,7 +40,7 @@ export class InsightsComponent implements OnInit {
     const storeId = this.storeContext.getValidSelectedStoreId();
     if (!storeId) {
       this.loading.set(false);
-      this.error.set('Selecione uma store para visualizar os insights.');
+      this.error.set('Selecione uma loja para visualizar os insights.');
       return;
     }
 

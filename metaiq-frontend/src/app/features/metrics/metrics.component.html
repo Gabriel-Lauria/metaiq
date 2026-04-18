@@ -1,54 +1,152 @@
-<section class="role-page">
+<section class="performance-dashboard">
   <div class="page-header">
     <div>
-      <h1>Métricas da operação</h1>
-      <span class="demo-data-badge">Dados de demonstração</span>
-      <p>Indicadores principais da store ativa para leitura rápida.</p>
-    </div>
-
-    <div class="toolbar">
-      <select
-        class="select"
-        *ngIf="storeContext.stores().length > 1"
-        [ngModel]="storeContext.selectedStoreId()"
-        (ngModelChange)="setStore($event)"
-      >
-        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
-          {{ store.name }}
-        </option>
-      </select>
-
-      <button type="button" [class.active]="period() === 7" (click)="setPeriod(7)">7 dias</button>
-      <button type="button" [class.active]="period() === 30" (click)="setPeriod(30)">30 dias</button>
-      <button type="button" [class.active]="period() === 90" (click)="setPeriod(90)">90 dias</button>
+      <span class="eyebrow">Performance dashboard</span>
+      <h1>Metricas</h1>
+      <p>Analise spend, ROAS, CPA, CTR, CPC e conversoes por loja, conta e campanha.</p>
     </div>
   </div>
 
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando métricas"
-    message="Buscando os dados da store selecionada."
+    title="Carregando metricas"
+    message="Buscando os dados da loja selecionada."
   />
 
   <app-ui-state
     *ngIf="error() && !loading()"
     type="error"
     icon="!"
-    title="Erro ao carregar métricas"
+    title="Erro ao carregar metricas"
     [message]="error() || ''"
     actionLabel="Tentar novamente"
     (action)="load()"
   />
 
-  <div class="kpi-grid" *ngIf="!loading() && !error() && metrics() as data">
-    <app-ui-kpi-card label="Impressões" [value]="data.impressions.toLocaleString()" marker="I" tone="info" />
-    <app-ui-kpi-card label="Cliques" [value]="data.clicks.toLocaleString()" marker="C" tone="info" />
-    <app-ui-kpi-card label="Investimento" [value]="fmt(data.spend)" marker="$" tone="warning" />
-    <app-ui-kpi-card label="Conversões" [value]="data.conversions.toLocaleString()" marker="R" tone="success" />
-    <app-ui-kpi-card label="CTR" [value]="fmtPct(data.ctr)" marker="%" tone="info" />
-    <app-ui-kpi-card label="CPA" [value]="fmt(data.cpa)" marker="$" tone="warning" />
-    <app-ui-kpi-card label="ROAS" [value]="fmtRoas(data.roas)" marker="x" tone="success" />
-    <app-ui-kpi-card label="Receita" [value]="fmt(data.revenue)" marker="$" tone="success" />
-  </div>
+  <ng-container *ngIf="!loading() && !error()">
+    <section class="metrics-filters">
+      <label>
+        Data inicial
+        <input type="date" [ngModel]="startDate()" (ngModelChange)="startDate.set($event); setPeriodFromDates()" />
+      </label>
+      <label>
+        Data final
+        <input type="date" [ngModel]="endDate()" (ngModelChange)="endDate.set($event); setPeriodFromDates()" />
+      </label>
+      <label>
+        Loja
+        <select [ngModel]="selectedStoreId()" (ngModelChange)="selectedStoreId.set($event)">
+          <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
+        </select>
+      </label>
+      <label>
+        Conta de anuncio
+        <select [ngModel]="selectedAdAccount()" (ngModelChange)="selectedAdAccount.set($event)">
+          <option *ngFor="let account of adAccounts" [value]="account">{{ account }}</option>
+        </select>
+      </label>
+      <label>
+        Campanha
+        <select [ngModel]="selectedCampaign()" (ngModelChange)="selectedCampaign.set($event)">
+          <option>Todas as campanhas</option>
+          <option *ngFor="let row of campaignRows(); trackBy: trackById" [value]="row.campaign">{{ row.campaign }}</option>
+        </select>
+      </label>
+      <button type="button" (click)="applyFilters()">Aplicar filtros</button>
+    </section>
+
+    <div class="kpi-grid">
+      <app-ui-kpi-card label="Spend" [value]="fmtCurrency(totals().spend)" marker="$" tone="warning" />
+      <app-ui-kpi-card label="ROAS" [value]="fmtRoas(totals().roas)" marker="x" tone="success" />
+      <app-ui-kpi-card label="CPA" [value]="fmtCurrency(totals().cpa)" marker="$" tone="warning" />
+      <app-ui-kpi-card label="CTR" [value]="fmtPct(totals().ctr)" marker="%" tone="info" />
+      <app-ui-kpi-card label="CPC" [value]="fmtCurrency(totals().cpc)" marker="$" tone="info" />
+      <app-ui-kpi-card label="Conversoes" [value]="fmt(totals().conversions)" marker="C" tone="success" />
+    </div>
+
+    <section class="charts-grid">
+      <article class="chart-card chart-wide">
+        <div>
+          <h2>Evolucao no tempo</h2>
+          <p>Spend e conversoes no periodo selecionado.</p>
+        </div>
+        <app-chart chartType="line" [chartData]="lineChart()" [chartOptions]="chartOptions" />
+      </article>
+
+      <article class="chart-card">
+        <div>
+          <h2>Comparacao entre campanhas</h2>
+          <p>ROAS por campanha ou conta filtrada.</p>
+        </div>
+        <app-chart chartType="bar" [chartData]="barChart()" [chartOptions]="chartOptions" />
+      </article>
+
+      <article class="chart-card">
+        <div>
+          <h2>Distribuicao de gasto</h2>
+          <p>Participacao de spend por campanha.</p>
+        </div>
+        <app-chart chartType="doughnut" [chartData]="donutChart()" />
+      </article>
+
+      <article class="chart-card chart-wide">
+        <div>
+          <h2>Atual vs periodo anterior</h2>
+          <p>Comparativo normalizado dos principais indicadores.</p>
+        </div>
+        <app-chart chartType="bar" [chartData]="comparisonChart()" [chartOptions]="chartOptions" />
+      </article>
+    </section>
+
+    <section class="metrics-table-card">
+      <div class="section-heading">
+        <h2>Campanhas</h2>
+        <p>Leitura operacional dos indicadores por campanha.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Campanha</th>
+              <th>Spend</th>
+              <th>ROAS</th>
+              <th>CPA</th>
+              <th>CTR</th>
+              <th>CPC</th>
+              <th>Conversoes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let row of filteredRows(); trackBy: trackById">
+              <td>
+                <strong>{{ row.campaign }}</strong>
+                <span>{{ row.account }}</span>
+              </td>
+              <td>{{ fmtCurrency(row.spend) }}</td>
+              <td>{{ fmtRoas(row.roas) }}</td>
+              <td>{{ fmtCurrency(row.cpa) }}</td>
+              <td>{{ fmtPct(row.ctr) }}</td>
+              <td>{{ fmtCurrency(row.cpc) }}</td>
+              <td>{{ row.conversions }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="insights-panel">
+      <div class="section-heading">
+        <h2>Insights</h2>
+        <p>Sinais prioritarios para decisao de performance.</p>
+      </div>
+      <div class="insights-grid">
+        <article><span>Melhor campanha</span><strong>{{ bestCampaign()?.campaign }}</strong><p>ROAS acima da media do periodo.</p></article>
+        <article><span>Pior campanha</span><strong>{{ worstCampaign()?.campaign }}</strong><p>Precisa de revisao de publico e criativo.</p></article>
+        <article><span>Queda de CTR</span><strong>{{ worstCampaign()?.ctr | number:'1.1-2' }}%</strong><p>Teste novas chamadas e primeira dobra do criativo.</p></article>
+        <article><span>Aumento de CPA</span><strong>{{ fmtCurrency(worstCampaign()?.cpa || 0) }}</strong><p>Reduza verba ate recuperar eficiencia.</p></article>
+        <article><span>ROAS baixo</span><strong>{{ fmtRoas(worstCampaign()?.roas || 0) }}</strong><p>Validar oferta, pagina e qualidade do trafego.</p></article>
+      </div>
+    </section>
+  </ng-container>
 </section>

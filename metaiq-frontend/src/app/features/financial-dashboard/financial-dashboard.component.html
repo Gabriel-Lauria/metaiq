@@ -1,0 +1,319 @@
+<div class="financial-dashboard">
+  <!-- Header -->
+  <div class="dashboard-header">
+    <div class="header-content">
+      <h1 class="page-title">Dashboard Financeiro</h1>
+      <p class="page-subtitle">
+        Período: {{ dashboardData().period.from | date:'dd/MM/yyyy' }} - {{ dashboardData().period.to | date:'dd/MM/yyyy' }}
+      </p>
+    </div>
+
+    <div class="header-actions">
+      <!-- Period Selector -->
+      <div class="period-selector">
+        <label>Período:</label>
+        <select
+          [(ngModel)]="filters().period"
+          (ngModelChange)="updateFilters({ period: $event })">
+          <option [value]="7">7 dias</option>
+          <option [value]="30">30 dias</option>
+          <option [value]="90">90 dias</option>
+          <option [value]="180">6 meses</option>
+        </select>
+      </div>
+
+      <!-- View Toggle -->
+      <div class="view-toggle">
+        <button
+          class="btn-view"
+          [class.active]="selectedView() === 'overview'"
+          (click)="setView('overview')">
+          Visão Geral
+        </button>
+        <button
+          class="btn-view"
+          [class.active]="selectedView() === 'kanban'"
+          (click)="setView('kanban')">
+          Kanban
+        </button>
+        <button
+          class="btn-view"
+          [class.active]="selectedView() === 'charts'"
+          (click)="setView('charts')">
+          Gráficos
+        </button>
+        <button
+          class="btn-view"
+          [class.active]="selectedView() === 'table'"
+          (click)="setView('table')">
+          Tabela
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters Bar -->
+  <div class="filters-bar">
+    <div class="filter-group">
+      <label>Loja:</label>
+      <select
+        [(ngModel)]="filters().storeId"
+        (ngModelChange)="updateFilters({ storeId: $event || undefined })">
+        <option value="">Todas as lojas</option>
+        <option *ngFor="let store of storeSummaries()" [value]="store.storeId">
+          {{ store.storeName }}
+        </option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Status:</label>
+      <select
+        [(ngModel)]="filters().status"
+        (ngModelChange)="updateFilters({ status: $event || undefined })">
+        <option value="">Todos os status</option>
+        <option value="PENDENTE">Pendente</option>
+        <option value="FATURADO">Faturado</option>
+        <option value="PAGO">Pago</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label>Valor mínimo:</label>
+      <input
+        type="number"
+        [(ngModel)]="filters().minAmount"
+        (ngModelChange)="updateFilters({ minAmount: $event || undefined })"
+        placeholder="R$ 0,00">
+    </div>
+
+    <div class="filter-group">
+      <label>Valor máximo:</label>
+      <input
+        type="number"
+        [(ngModel)]="filters().maxAmount"
+        (ngModelChange)="updateFilters({ maxAmount: $event || undefined })"
+        placeholder="R$ 0,00">
+    </div>
+  </div>
+
+  <!-- Overview View -->
+  <div *ngIf="selectedView() === 'overview'" class="dashboard-content">
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card primary">
+        <div class="kpi-icon">💰</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ formatCurrency(metrics().totalBilled) }}</div>
+          <div class="kpi-label">Total Faturado</div>
+          <div class="kpi-change" [class]="metrics().growthPercentage >= 0 ? 'positive' : 'negative'">
+            {{ formatPercent(metrics().growthPercentage) }} vs período anterior
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card success">
+        <div class="kpi-icon">✅</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ formatCurrency(metrics().totalPaid) }}</div>
+          <div class="kpi-label">Total Pago</div>
+          <div class="kpi-change">
+            {{ formatPercent((metrics().totalPaid / metrics().totalBilled) * 100) }} do total
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card warning">
+        <div class="kpi-icon">⏳</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ formatCurrency(metrics().totalPending) }}</div>
+          <div class="kpi-label">Pendente</div>
+          <div class="kpi-change">
+            {{ metrics().pendingStoresCount }} loja(s)
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card info">
+        <div class="kpi-icon">🏪</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ metrics().storesCount }}</div>
+          <div class="kpi-label">Lojas Ativas</div>
+          <div class="kpi-change">
+            {{ formatCurrency(metrics().averagePerStore) }} médio por loja
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card secondary">
+        <div class="kpi-icon">📄</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ metrics().nfsCount }}</div>
+          <div class="kpi-label">NFS Emitidas</div>
+          <div class="kpi-change">
+            {{ formatCurrency(metrics().averageTicket) }} ticket médio
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-card accent">
+        <div class="kpi-icon">📈</div>
+        <div class="kpi-content">
+          <div class="kpi-value">{{ formatCurrency(metrics().highestBilling) }}</div>
+          <div class="kpi-label">Maior Faturamento</div>
+          <div class="kpi-change">
+            {{ formatCurrency(metrics().lowestBilling) }} menor
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Faturamento por Loja</h3>
+        <app-chart
+          [chartType]="'bar'"
+          [chartData]="revenueByStoreChart()"
+          [chartOptions]="barChartOptions">
+        </app-chart>
+      </div>
+
+      <div class="chart-card">
+        <h3>Status dos Faturamentos</h3>
+        <app-chart
+          [chartType]="'doughnut'"
+          [chartData]="statusChart()"
+          [chartOptions]="doughnutChartOptions">
+        </app-chart>
+      </div>
+    </div>
+
+    <!-- Composition Chart -->
+    <div class="chart-card full-width">
+      <h3>Composição dos Valores</h3>
+      <app-chart
+        [chartType]="'pie'"
+        [chartData]="compositionChart()"
+        [chartOptions]="pieChartOptions">
+      </app-chart>
+    </div>
+
+    <!-- Alerts Section -->
+    <div class="alerts-section" *ngIf="alerts().length > 0">
+      <h3>Alertas e Observações</h3>
+      <div class="alerts-grid">
+        <div
+          class="alert-card"
+          *ngFor="let alert of alerts()"
+          [class]="'alert-' + alert.type">
+          <div class="alert-icon">
+            <span *ngIf="alert.type === 'warning'">⚠️</span>
+            <span *ngIf="alert.type === 'error'">❌</span>
+            <span *ngIf="alert.type === 'info'">ℹ️</span>
+            <span *ngIf="alert.type === 'success'">✅</span>
+          </div>
+          <div class="alert-content">
+            <h4>{{ alert.title }}</h4>
+            <p>{{ alert.message }}</p>
+            <div class="alert-amount" *ngIf="alert.amount">
+              {{ formatCurrency(alert.amount) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kanban View -->
+  <div *ngIf="selectedView() === 'kanban'" class="kanban-view">
+    <app-kanban-board
+      [items]="kanbanItems()"
+      (itemMoved)="onKanbanItemMoved($event)"
+      (cardClicked)="onKanbanCardClicked($event)">
+    </app-kanban-board>
+  </div>
+
+  <!-- Charts View -->
+  <div *ngIf="selectedView() === 'charts'" class="charts-view">
+    <div class="charts-grid">
+      <div class="chart-card large">
+        <h3>Evolução do Faturamento</h3>
+        <app-chart
+          [chartType]="'line'"
+          [chartData]="revenueTrendChart()"
+          [chartOptions]="lineChartOptions">
+        </app-chart>
+      </div>
+
+      <div class="chart-card">
+        <h3>Faturamento por Loja</h3>
+        <app-chart
+          [chartType]="'bar'"
+          [chartData]="revenueByStoreChart()"
+          [chartOptions]="barChartOptions">
+        </app-chart>
+      </div>
+
+      <div class="chart-card">
+        <h3>Status dos Faturamentos</h3>
+        <app-chart
+          [chartType]="'doughnut'"
+          [chartData]="statusChart()"
+          [chartOptions]="doughnutChartOptions">
+        </app-chart>
+      </div>
+
+      <div class="chart-card">
+        <h3>Composição dos Valores</h3>
+        <app-chart
+          [chartType]="'pie'"
+          [chartData]="compositionChart()"
+          [chartOptions]="pieChartOptions">
+        </app-chart>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table View -->
+  <div *ngIf="selectedView() === 'table'" class="table-view">
+    <div class="table-container">
+      <table class="billing-table">
+        <thead>
+          <tr>
+            <th>Loja</th>
+            <th>CNPJ</th>
+            <th>NFS</th>
+            <th>Data</th>
+            <th>Valor Base</th>
+            <th>Extras</th>
+            <th>Ajustes</th>
+            <th>Total</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let item of kanbanItems()">
+            <td>{{ item.storeName }}</td>
+            <td>{{ item.cnpj }}</td>
+            <td>{{ item.nfsNumber }}</td>
+            <td>{{ item.date | date:'dd/MM/yyyy' }}</td>
+            <td>{{ formatCurrency(item.baseAmount) }}</td>
+            <td>{{ formatCurrency(item.extraAmount) }}</td>
+            <td>{{ formatCurrency(item.adjustmentAmount) }}</td>
+            <td class="total-cell">{{ formatCurrency(item.finalAmount) }}</td>
+            <td>
+              <span class="status-badge" [class]="'status-' + item.status.toLowerCase()">
+                {{ getStatusIcon(item.status) }} {{ item.status }}
+              </span>
+            </td>
+            <td>
+              <button class="btn-action" (click)="onKanbanCardClicked(item)">Ver</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

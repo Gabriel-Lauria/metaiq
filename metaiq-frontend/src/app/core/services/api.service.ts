@@ -225,6 +225,10 @@ export class ApiService {
     return this.patch<Manager>(`/managers/${id}/toggle-active`, {});
   }
 
+  deleteManager(id: string): Observable<{ message: string }> {
+    return this.delete<{ message: string }>(`/managers/${id}`);
+  }
+
   getStores(): Observable<Store[]> {
     return this.get<Store[]>('/stores');
   }
@@ -245,6 +249,10 @@ export class ApiService {
     return this.patch<Store>(`/stores/${id}/toggle-active`, {});
   }
 
+  deleteStore(id: string): Observable<{ message: string }> {
+    return this.delete<{ message: string }>(`/stores/${id}`);
+  }
+
   getUsers(): Observable<User[]> {
     return this.get<User[]>('/users');
   }
@@ -255,6 +263,10 @@ export class ApiService {
 
   resetUserPassword(id: string, body: ResetUserPasswordRequest): Observable<User> {
     return this.patch<User>(`/users/${id}/password`, body);
+  }
+
+  deleteUser(id: string): Observable<{ message: string }> {
+    return this.delete<{ message: string }>(`/users/${id}`);
   }
 
   getStoreUsers(storeId: string): Observable<User[]> {

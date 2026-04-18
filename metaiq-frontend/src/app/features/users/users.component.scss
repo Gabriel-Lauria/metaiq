@@ -1,5 +1,5 @@
 .user-grid {
-  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.2fr) 130px minmax(160px, 1fr);
+  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.2fr) 160px minmax(160px, 1fr) 150px;
 }
 
 strong {
@@ -12,8 +12,26 @@ strong {
   overflow-wrap: anywhere;
 }
 
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirm-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
 @media (max-width: 760px) {
   .user-grid {
     grid-template-columns: 1fr;
+  }
+
+  .confirm-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 }

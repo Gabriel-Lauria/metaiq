@@ -490,6 +490,27 @@ describe('Current tenant/store security E2E', () => {
         .send({ name: `${runId} Store Edited` })
         .expect(200);
 
+      await request(app.getHttpServer())
+        .delete(`/api/stores/${stores[0].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(409);
+
+      await request(app.getHttpServer())
+        .delete(`/api/stores/${createdStore.body.id}`)
+        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/api/stores/${createdStore.body.id}`)
+        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+        .expect(404);
+
+      const storesAfterDelete = await request(app.getHttpServer())
+        .get('/api/stores')
+        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+        .expect(200);
+      expect(storesAfterDelete.body.map((store: Store) => store.id)).not.toContain(createdStore.body.id);
+
       const createdUser = await request(app.getHttpServer())
         .post('/api/users')
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)

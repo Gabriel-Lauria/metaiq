@@ -5,13 +5,13 @@
  * Uso:
  *   npm run seed
  *
- * Credenciais criadas:
- *   Admin:  admin@metaiq.dev / Admin@1234
+ * Credenciais demo criadas:
+ *   Master: definido por PLATFORM_ADMIN_EMAIL / PLATFORM_ADMIN_PASSWORD
  *   Email:  demo@metaiq.dev
  *   Senha:  Demo@1234
  */
 
-import { DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -59,10 +59,220 @@ const getEnv = (...names: string[]): string | undefined => {
 
 const DB_TYPE = getEnv('DB_TYPE', 'DATABASE_TYPE') ?? 'postgres';
 const DB_PATH = getEnv('SQLITE_PATH', 'DATABASE') ?? './data/metaiq.db';
+const PLATFORM_ADMIN_EMAIL = getEnv('PLATFORM_ADMIN_EMAIL');
+const PLATFORM_ADMIN_PASSWORD = getEnv('PLATFORM_ADMIN_PASSWORD');
+const PLATFORM_ADMIN_NAME = getEnv('PLATFORM_ADMIN_NAME') ?? 'Administrador da Plataforma';
 
 // ── Utilitários para cálculos monetários ────────────────────────
 const roundMoney = (n: number): number => Math.round(n * 100) / 100;
 const safeCharAt = (str: string, idx: number): number => str.charCodeAt(idx) ?? 65; // 65 = 'A'
+
+// ── Interface para tipo de insight gerado ────────────────────────
+interface InsightToCreate {
+  type: 'alert' | 'warning' | 'opportunity' | 'info';
+  severity: 'danger' | 'warning' | 'success' | 'info';
+  message: string;
+  recommendation: string;
+  priority: 'low' | 'medium' | 'high';
+}
+
+/**
+ * Gera insights automáticos com base no desempenho agregado de uma campanha
+ */
+async function generateInsights(
+  insightRepo: Repository<Insight>,
+  campaign: Campaign,
+  metrics: any,
+  totalRaw: any,
+  metricsByDay: { [day: number]: any }
+): Promise<void> {
+  const insights: InsightToCreate[] = [];
+
+  // ── ROAS Analysis ────────────────────────────────────────────────
+  if (metrics.roas < 0.5) {
+    insights.push({
+      type: 'alert',
+      severity: 'danger',
+      message: `⚠️ ROAS CRÍTICO: R$${metrics.roas.toFixed(2)} por R$1 gasto. Campanha gerando prejuízo.`,
+      recommendation: 'Pausar campanha imediatamente ou revisar direcionamento, criativo e oferta.',
+      priority: 'high',
+    });
+  } else if (metrics.roas < 1.5) {
+    insights.push({
+      type: 'warning',
+      severity: 'danger',
+      message: `⚠️ ROAS ABAIXO DA META: R$${metrics.roas.toFixed(2)}. Margem muito baixa.`,
+      recommendation:
+        'Revisar público alvo, melhorar criativo ou aumentar valor da oferta. Considere pausar se não melhorar em 7 dias.',
+      priority: 'high',
+    });
+  } else if (metrics.roas > 5) {
+    insights.push({
+      type: 'opportunity',
+      severity: 'success',
+      message: `🎉 ROAS EXCELENTE: R$${metrics.roas.toFixed(2)}! Campanha altamente lucrativa.`,
+      recommendation: 'Aumentar orçamento gradualmente (10-20% por dia) para escalar retorno.',
+      priority: 'medium',
+    });
+  }
+
+  // ── CTR Analysis ────────────────────────────────────────────────
+  const ctr = (metrics.ctr || 0) / 100;
+  if (ctr < 0.005) {
+    insights.push({
+      type: 'warning',
+      severity: 'warning',
+      message: `📉 CTR MUITO BAIXO: ${(ctr * 100).toFixed(3)}%. Criativo ou público podem estar desalinhados.`,
+      recommendation: 'Testar criativo novo (imagem/vídeo diferente) ou refinar segmentação demográfica.',
+      priority: 'medium',
+    });
+  } else if (ctr > 0.05) {
+    insights.push({
+      type: 'opportunity',
+      severity: 'success',
+      message: `✨ CTR EXCELENTE: ${(ctr * 100).toFixed(3)}%! Criativo está gerando muita curiosidade.`,
+      recommendation: 'Criativo está bem. Foco agora em melhorar a página de destino para aumentar conversões.',
+      priority: 'low',
+    });
+  }
+
+  // ── CPA Analysis ────────────────────────────────────────────────
+  if (metrics.cpa > 0) {
+    if (metrics.cpa > 200) {
+      insights.push({
+        type: 'warning',
+        severity: 'warning',
+        message: `💰 CPA MUITO ALTO: R$${metrics.cpa.toFixed(0)} por conversão. Não é sustentável.`,
+        recommendation:
+          'Revisar processo de conversão, remover etapas desnecessárias do formulário ou aumentar preço da oferta.',
+        priority: 'medium',
+      });
+    } else if (metrics.cpa < 30 && totalRaw.conversions > 10) {
+      insights.push({
+        type: 'opportunity',
+        severity: 'success',
+        message: `⭐ CPA EFICIENTE: R$${metrics.cpa.toFixed(0)} por conversão com volume bom.`,
+        recommendation: 'Aumentar orçamento com segurança. Padrão está estabelecido.',
+        priority: 'low',
+      });
+    }
+  }
+
+  // ── Conversão Analysis ────────────────────────────────────────────
+  if (metrics.cpa > 0 && totalRaw.conversions === 0) {
+    insights.push({
+      type: 'alert',
+      severity: 'danger',
+      message: `❌ SEM CONVERSÕES: Campanha gastou R$${totalRaw.spend.toFixed(0)} mas não gerou nenhuma conversão.`,
+      recommendation:
+        'Verificar: página de destino está funcionando? Pixel está instalado? Considere pausar em 24h se não melhorar.',
+      priority: 'high',
+    });
+  } else if (metrics.cpa > 0 && totalRaw.conversions < 3) {
+    insights.push({
+      type: 'warning',
+      severity: 'warning',
+      message: `⚠️ CONVERSÕES MUITO BAIXAS: Apenas ${totalRaw.conversions} em ${Math.round(totalRaw.spend / 100)} R$ gastos.`,
+      recommendation: 'Aumentar tempo de teste (7+ dias) antes de pausar. Verifique landing page e fluxo de conversão.',
+      priority: 'medium',
+    });
+  }
+
+  // ── Spend Analysis ────────────────────────────────────────────────
+  if (totalRaw.spend < 50) {
+    insights.push({
+      type: 'info',
+      severity: 'info',
+      message: `📊 DADOS INSUFICIENTES: Apenas R$${totalRaw.spend.toFixed(0)} gastos. Aguarde mais volume.`,
+      recommendation: 'Dados ainda estão sendo coletados. Volte em 48h para análise mais confiável.',
+      priority: 'low',
+    });
+  }
+
+  // ── Status Analysis ────────────────────────────────────────────────
+  if (campaign.status === 'PAUSED') {
+    insights.push({
+      type: 'info',
+      severity: 'info',
+      message: `⏸️ CAMPANHA PAUSADA: ${campaign.name} não está gerando dados novos.`,
+      recommendation: 'Reativar se quiser continuar. Verifique os insights acima antes de reiniciar.',
+      priority: 'low',
+    });
+  }
+
+  // ── Trend Analysis (primeiros 30 dias vs últimos 30 dias) ─────────
+  if (Object.keys(metricsByDay).length >= 30) {
+    const daysArray = Object.keys(metricsByDay).map(Number).sort((a, b) => b - a);
+    const firstHalf = daysArray.slice(45).reverse(); // Dias 45-90
+    const secondHalf = daysArray.slice(0, 45); // Dias 0-45
+
+    if (firstHalf.length > 0 && secondHalf.length > 0) {
+      let roas1 = 0,
+        roas2 = 0;
+      firstHalf.forEach(d => {
+        roas1 += metricsByDay[d].roas || 0;
+      });
+      secondHalf.forEach(d => {
+        roas2 += metricsByDay[d].roas || 0;
+      });
+      roas1 /= firstHalf.length;
+      roas2 /= secondHalf.length;
+
+      const roasChange = ((roas2 - roas1) / Math.max(roas1, 0.01)) * 100;
+
+      if (roasChange < -30) {
+        insights.push({
+          type: 'warning',
+          severity: 'danger',
+          message: `📉 TENDÊNCIA DE PIORA: ROAS caiu ${Math.abs(roasChange).toFixed(0)}% nos últimos 45 dias.`,
+          recommendation:
+            'Público pode estar saturado. Considere expandir segmentação ou testar novo criativo urgentemente.',
+          priority: 'high',
+        });
+      } else if (roasChange > 40) {
+        insights.push({
+          type: 'opportunity',
+          severity: 'success',
+          message: `📈 TENDÊNCIA DE MELHORA: ROAS subiu ${roasChange.toFixed(0)}% nos últimos 45 dias!`,
+          recommendation: 'Campanha está encontrando seu ritmo. Manter estratégia atual e aumentar orçamento.',
+          priority: 'medium',
+        });
+      }
+    }
+  }
+
+  // ── Frequência Analysis (impressões elevadas, cliques baixos) ──────
+  if (totalRaw.impressions > 50000 && ctr < 0.01) {
+    insights.push({
+      type: 'warning',
+      severity: 'warning',
+      message: `🔄 FREQUÊNCIA ALTA, CTR BAIXO: ${totalRaw.impressions} impressões mas poucos cliques.`,
+      recommendation:
+        'Público pode estar saturado. Expandir público ou criar novo criativo para evitar banner blindness.',
+      priority: 'medium',
+    });
+  }
+
+  // Salvar todos os insights (se não existem)
+  for (const insightData of insights) {
+    const existing = await insightRepo.findOne({
+      where: {
+        campaignId: campaign.id,
+        message: insightData.message,
+        resolved: false,
+      },
+    });
+
+    if (!existing) {
+      const insight = insightRepo.create({
+        campaignId: campaign.id,
+        ...insightData,
+        detectedAt: new Date(),
+      });
+      await insightRepo.save(insight);
+    }
+  }
+}
 
 async function seed() {
   if (DB_TYPE === 'sqlite') {
@@ -117,34 +327,13 @@ async function seed() {
 
   // ── Usuário demo ──────────────────────────────────────────
   const userRepo = ds.getRepository(User);
-  let admin = await userRepo.findOne({ where: { email: 'admin@metaiq.dev' } });
-
-  if (!admin) {
-    const password = await bcrypt.hash('Admin@1234', 12);
-    admin = userRepo.create({
-      name: 'Admin MetaIQ',
-      email: 'admin@metaiq.dev',
-      password,
-      role: Role.PLATFORM_ADMIN,
-      managerId: null,
-      tenantId: null,
-      active: true,
-    });
-    await userRepo.save(admin);
-    console.log('👑 Admin criado: admin@metaiq.dev / Admin@1234');
-  } else {
-    admin.role = Role.PLATFORM_ADMIN;
-    admin.managerId = null;
-    admin.tenantId = null;
-    admin.active = true;
-    await userRepo.save(admin);
-    console.log('👑 Admin já existe — credenciais preservadas.');
-  }
+  await ensurePlatformAdmin(userRepo);
 
   let user = await userRepo.findOne({ where: { email: 'demo@metaiq.dev' } });
 
+  const password = await bcrypt.hash('Demo@1234', 12);
+
   if (!user) {
-    const password = await bcrypt.hash('Demo@1234', 12);
     user = userRepo.create({
       name: 'Demo User',
       email: 'demo@metaiq.dev',
@@ -155,12 +344,15 @@ async function seed() {
     await userRepo.save(user);
     console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
   } else {
+    // Sempre atualizar senha e dados do user demo
+    user.password = password;
     if (!user.managerId) {
       user.managerId = manager.id;
     }
     user.tenantId = user.tenantId ?? tenant.id;
+    user.active = true;
     await userRepo.save(user);
-    console.log('👤 Usuário demo já existe — pulando criação.');
+    console.log('👤 Usuário demo atualizado com senha: Demo@1234');
   }
 
   const userStoreRepo = ds.getRepository(UserStore);
@@ -196,13 +388,166 @@ async function seed() {
   // ── Campanhas ─────────────────────────────────────────────
   const campRepo = ds.getRepository(Campaign);
   const metRepo  = ds.getRepository(MetricDaily);
+  const insightRepo = ds.getRepository(Insight);
 
+  /**
+   * Definição de campanhas com características realistas para demonstração.
+   * 
+   * Estrutura:
+   * - metaId: ID único da campanha
+   * - name: Nome descritivo
+   * - status: ACTIVE, PAUSED, ARCHIVED
+   * - budget: Orçamento diário em R$
+   * - ctrBase: CTR esperado (0-1 em decimal)
+   * - cpaBase: CPA esperado em R$ (0 para campanhas sem conversão)
+   * - revenueMultiplier: Quanto cada R$ gasto gera em receita
+   * - trendMultiplier: Multiplicador de tendência (1.0 = flat, >1 = melhora, <1 = piora)
+   * - startDay: Em qual dia dos últimos 90 começou (90 = há 90 dias, 0 = hoje)
+   */
   const campaignDefs = [
-    { metaId: 'seed_camp_001', name: 'Conversão — Ecommerce Principal', status: 'ACTIVE'  as const, budget: 150, ctrBase: 0.032, cpaBase: 28,  revenueMultiplier: 5.2 },
-    { metaId: 'seed_camp_002', name: 'Leads — Formulário B2B',          status: 'ACTIVE'  as const, budget: 80,  ctrBase: 0.018, cpaBase: 72,  revenueMultiplier: 1.4 },
-    { metaId: 'seed_camp_003', name: 'Remarketing — Carrinho Abandonado',status: 'ACTIVE'  as const, budget: 60,  ctrBase: 0.048, cpaBase: 15,  revenueMultiplier: 7.8 },
-    { metaId: 'seed_camp_004', name: 'Brand Awareness Q1',               status: 'PAUSED' as const, budget: 200, ctrBase: 0.009, cpaBase: 0,   revenueMultiplier: 0   },
-    { metaId: 'seed_camp_005', name: 'Catálogo Dinâmico — Verão',        status: 'ACTIVE'  as const, budget: 120, ctrBase: 0.024, cpaBase: 44,  revenueMultiplier: 3.1 },
+    // ✅ Campanhas EXCELENTES (ROAS > 4, CTR > 2.5%)
+    {
+      metaId: 'seed_camp_001',
+      name: 'Remarketing — Carrinho Abandonado',
+      status: 'ACTIVE' as const,
+      budget: 80,
+      ctrBase: 0.065,
+      cpaBase: 12,
+      revenueMultiplier: 8.5,
+      trendMultiplier: 1.02,
+      startDay: 90,
+    },
+    {
+      metaId: 'seed_camp_002',
+      name: 'Conversão — Black Friday Flash Sales',
+      status: 'ACTIVE' as const,
+      budget: 180,
+      ctrBase: 0.048,
+      cpaBase: 18,
+      revenueMultiplier: 7.2,
+      trendMultiplier: 1.01,
+      startDay: 45,
+    },
+
+    // 🟡 Campanhas BOM DESEMPENHO (ROAS 2.5-4, CTR 1.5-2.5%)
+    {
+      metaId: 'seed_camp_003',
+      name: 'Conversão — Ecommerce Principal',
+      status: 'ACTIVE' as const,
+      budget: 200,
+      ctrBase: 0.032,
+      cpaBase: 32,
+      revenueMultiplier: 5.5,
+      trendMultiplier: 0.99,
+      startDay: 90,
+    },
+    {
+      metaId: 'seed_camp_004',
+      name: 'Tráfego — Novo Produto Launch',
+      status: 'ACTIVE' as const,
+      budget: 120,
+      ctrBase: 0.028,
+      cpaBase: 28,
+      revenueMultiplier: 3.8,
+      trendMultiplier: 1.03,
+      startDay: 60,
+    },
+    {
+      metaId: 'seed_camp_005',
+      name: 'Leads — B2B SaaS Trial',
+      status: 'ACTIVE' as const,
+      budget: 60,
+      ctrBase: 0.022,
+      cpaBase: 85,
+      revenueMultiplier: 1.8,
+      trendMultiplier: 1.00,
+      startDay: 75,
+    },
+
+    // ⚠️ Campanhas ATENÇÃO (ROAS 1.5-2.5, CTR 1-1.5%)
+    {
+      metaId: 'seed_camp_006',
+      name: 'Catálogo Dinâmico — Verão 2026',
+      status: 'ACTIVE' as const,
+      budget: 150,
+      ctrBase: 0.018,
+      cpaBase: 48,
+      revenueMultiplier: 2.8,
+      trendMultiplier: 0.97,
+      startDay: 70,
+    },
+    {
+      metaId: 'seed_camp_007',
+      name: 'Video Awareness — Série YouTubers',
+      status: 'ACTIVE' as const,
+      budget: 100,
+      ctrBase: 0.012,
+      cpaBase: 0,
+      revenueMultiplier: 0,
+      trendMultiplier: 0.98,
+      startDay: 80,
+    },
+
+    // 🔴 Campanhas CRÍTICA (ROAS < 1.5 ou sem conversão)
+    {
+      metaId: 'seed_camp_008',
+      name: 'Brand Awareness — Display Network',
+      status: 'ACTIVE' as const,
+      budget: 90,
+      ctrBase: 0.005,
+      cpaBase: 0,
+      revenueMultiplier: 0,
+      trendMultiplier: 0.92,
+      startDay: 50,
+    },
+    {
+      metaId: 'seed_camp_009',
+      name: 'Leads — Newsletter Upgrade',
+      status: 'ACTIVE' as const,
+      budget: 40,
+      ctrBase: 0.008,
+      cpaBase: 125,
+      revenueMultiplier: 0.5,
+      trendMultiplier: 0.88,
+      startDay: 60,
+    },
+
+    // ⏸ Campanhas PAUSADAS (com histórico)
+    {
+      metaId: 'seed_camp_010',
+      name: 'Q1 Seasonal Campaign — Encerrada',
+      status: 'PAUSED' as const,
+      budget: 200,
+      ctrBase: 0.015,
+      cpaBase: 55,
+      revenueMultiplier: 2.2,
+      trendMultiplier: 0.95,
+      startDay: 90,
+    },
+    {
+      metaId: 'seed_camp_011',
+      name: 'Experimento — Público Novo',
+      status: 'PAUSED' as const,
+      budget: 50,
+      ctrBase: 0.003,
+      cpaBase: 250,
+      revenueMultiplier: 0.1,
+      trendMultiplier: 0.75,
+      startDay: 90,
+    },
+
+    // 📊 Campanha COM FORTE PIORA (para alertas)
+    {
+      metaId: 'seed_camp_012',
+      name: 'Conversão — Antigo Público (Decaindo)',
+      status: 'ACTIVE' as const,
+      budget: 110,
+      ctrBase: 0.018,
+      cpaBase: 38,
+      revenueMultiplier: 1.9,
+      trendMultiplier: 0.80, // -20% ao longo dos 90 dias
+      startDay: 90,
+    },
   ];
 
   for (const def of campaignDefs) {
@@ -210,16 +555,16 @@ async function seed() {
 
     if (!camp) {
       camp = campRepo.create({
-        metaId:     def.metaId,
-        name:       def.name,
-        status:     def.status,
-        objective:  def.cpaBase > 0 ? 'CONVERSIONS' : 'REACH',
+        metaId: def.metaId,
+        name: def.name,
+        status: def.status,
+        objective: def.cpaBase > 0 ? 'CONVERSIONS' : 'REACH',
         dailyBudget: def.budget,
-        userId:     user.id,
-        storeId:    store.id,
+        userId: user.id,
+        storeId: store.id,
         createdByUserId: user.id,
         adAccountId: account.id,
-        startTime:  new Date('2026-03-01'),
+        startTime: new Date(Date.now() - def.startDay * 86400000),
       });
       await campRepo.save(camp);
     } else if (!camp.storeId || !camp.createdByUserId) {
@@ -228,11 +573,15 @@ async function seed() {
       await campRepo.save(camp);
     }
 
-    // Métricas dos últimos 30 dias
+    // ── Métricas dos últimos 90 dias ────────────────────────────
     const today = new Date();
     let totalRaw = { impressions: 0, clicks: 0, spend: 0, conversions: 0, revenue: 0 };
+    const metricsByDay: { [day: number]: any } = {};
 
-    for (let d = 29; d >= 0; d--) {
+    for (let d = 89; d >= 0; d--) {
+      // Pular dias anteriores ao início da campanha
+      if (d > def.startDay) continue;
+
       const date = new Date(today);
       date.setDate(today.getDate() - d);
       const dateStr = date.toISOString().split('T')[0];
@@ -241,36 +590,128 @@ async function seed() {
       const exists = await metRepo.findOne({ where: { campaignId: camp.id, date: dateStr } });
       if (exists) continue;
 
-      // Variação diária com seed determinístico
+      // Variação diária com seed determinístico + tendência
       const seed = (safeCharAt(def.metaId, 9) + d) * 0.1;
       const jitter = (Math.sin(seed) + 1) / 2; // 0..1
 
-      const impressions = Math.round((3000 + jitter * 4000) * (def.budget / 100));
-      const clicks      = Math.round(impressions * def.ctrBase * (0.85 + jitter * 0.3));
-      const spend       = roundMoney(def.budget * (0.7 + jitter * 0.6));
-      const conversions = def.cpaBase > 0 ? Math.round(spend / def.cpaBase * (0.8 + jitter * 0.4)) : 0;
-      const revenue     = roundMoney(conversions * spend * def.revenueMultiplier / Math.max(conversions, 1) * (0.9 + jitter * 0.2));
+      // Aplicar tendência ao longo do tempo (primeiros dias vs últimos dias)
+      const dayProgress = 1 - d / 90; // 0 no dia 90, 1 hoje
+      const trendEffect = def.trendMultiplier ** dayProgress; // Aplicar trend exponencialmente
+
+      const impressions = Math.round((3000 + jitter * 4000) * (def.budget / 100) * trendEffect);
+      const clicks = Math.round(impressions * def.ctrBase * (0.85 + jitter * 0.3) * trendEffect);
+      const spend = roundMoney(def.budget * (0.7 + jitter * 0.6) * trendEffect);
+      const conversions =
+        def.cpaBase > 0 ? Math.round((spend / def.cpaBase) * (0.8 + jitter * 0.4)) : 0;
+      const revenue = roundMoney(
+        (conversions *
+          spend *
+          def.revenueMultiplier) /
+          Math.max(conversions, 1) *
+          (0.9 + jitter * 0.2)
+      );
 
       const raw = { impressions, clicks, spend, conversions, revenue };
       const computed = engine.compute(raw);
       totalRaw.impressions += impressions;
-      totalRaw.clicks      += clicks;
-      totalRaw.spend       += spend;
+      totalRaw.clicks += clicks;
+      totalRaw.spend += spend;
       totalRaw.conversions += conversions;
-      totalRaw.revenue     += revenue;
+      totalRaw.revenue += revenue;
+      metricsByDay[d] = computed;
 
-      await metRepo.save(metRepo.create({ campaignId: camp.id, date: dateStr, ...raw, ctr: computed.ctr, cpa: computed.cpa, roas: computed.roas }));
+      await metRepo.save(
+        metRepo.create({
+          campaignId: camp.id,
+          date: dateStr,
+          ...raw,
+          ctr: computed.ctr,
+          cpa: computed.cpa,
+          roas: computed.roas,
+        })
+      );
     }
 
     // Atualizar score da campanha
     const agg = engine.compute(totalRaw);
     await campRepo.update(camp.id, { score: agg.score });
 
-    console.log(`📊 ${def.name.padEnd(40)} score=${agg.score.toString().padStart(3)} ROAS=${agg.roas.toFixed(2)}× CPA=R$${agg.cpa.toFixed(0)}`);
+    // ── Gerar insights automáticos para a campanha ────────────
+    await generateInsights(insightRepo, camp, agg, totalRaw, metricsByDay);
+
+    console.log(
+      `📊 ${def.name.padEnd(45)} score=${agg.score
+        .toString()
+        .padStart(3)} ROAS=${agg.roas.toFixed(2)}× CPA=R$${agg.cpa.toFixed(0)}`
+    );
   }
 
   await ds.destroy();
-  console.log('\n✅ Seed concluído! Acesse com: demo@metaiq.dev / Demo@1234');
+  console.log('\n');
+  console.log('═══════════════════════════════════════════════════════════════════');
+  console.log('✅ SEED COMPLETADO COM SUCESSO!');
+  console.log('═══════════════════════════════════════════════════════════════════');
+  console.log('\n📊 DADOS CRIADOS:');
+  console.log('   • 12 campanhas (9 ACTIVE, 2 PAUSED)');
+  console.log('   • 90 dias de histórico de métricas');
+  console.log('   • Dozens de insights automáticos');
+  console.log('   • Variações realistas de performance');
+  console.log('   • Tendências de melhora/piora');
+  console.log('\n🔐 CREDENCIAIS DE ACESSO:');
+  console.log('   Email: demo@metaiq.dev');
+  console.log('   Senha: Demo@1234');
+  console.log('\n🎯 O QUE VER:');
+  console.log('   1. Dashboard com KPIs agregados');
+  console.log('   2. Campanhas com diferentes performances');
+  console.log('   3. Insights automáticos por campanha');
+  console.log('   4. Gráficos de tendência (90 dias)');
+  console.log('   5. Kanban operacional com alertas');
+  console.log('\n═══════════════════════════════════════════════════════════════════\n');
+}
+
+async function ensurePlatformAdmin(userRepo: Repository<User>): Promise<void> {
+  if (!PLATFORM_ADMIN_EMAIL || !PLATFORM_ADMIN_PASSWORD) {
+    console.warn('⚠️  PLATFORM_ADMIN_EMAIL/PLATFORM_ADMIN_PASSWORD não definidos — usuário master não foi criado.');
+    return;
+  }
+
+  if (PLATFORM_ADMIN_PASSWORD.length < 12) {
+    throw new Error('PLATFORM_ADMIN_PASSWORD deve ter pelo menos 12 caracteres.');
+  }
+
+  const email = PLATFORM_ADMIN_EMAIL.trim().toLowerCase();
+  let platformAdmin = await userRepo.findOne({ where: { email } });
+
+  if (platformAdmin && platformAdmin.role !== Role.PLATFORM_ADMIN) {
+    throw new Error(`Usuário ${email} já existe, mas não possui role PLATFORM_ADMIN.`);
+  }
+
+  const password = await bcrypt.hash(PLATFORM_ADMIN_PASSWORD, 12);
+  if (!platformAdmin) {
+    platformAdmin = userRepo.create({
+      name: PLATFORM_ADMIN_NAME.trim() || 'Administrador da Plataforma',
+      email,
+      password,
+      role: Role.PLATFORM_ADMIN,
+      managerId: null,
+      tenantId: null,
+      active: true,
+      deletedAt: null,
+    });
+    await userRepo.save(platformAdmin);
+    console.log(`👑 PLATFORM_ADMIN criado: ${email}`);
+    return;
+  }
+
+  platformAdmin.name = PLATFORM_ADMIN_NAME.trim() || platformAdmin.name;
+  platformAdmin.password = password;
+  platformAdmin.role = Role.PLATFORM_ADMIN;
+  platformAdmin.managerId = null;
+  platformAdmin.tenantId = null;
+  platformAdmin.active = true;
+  platformAdmin.deletedAt = null;
+  await userRepo.save(platformAdmin);
+  console.log(`👑 PLATFORM_ADMIN atualizado: ${email}`);
 }
 
 seed().catch((err) => {

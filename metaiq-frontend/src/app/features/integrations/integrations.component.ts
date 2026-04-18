@@ -91,7 +91,7 @@ export class IntegrationsComponent implements OnInit {
           this.stores.set(stores);
           if (this.selectedStoreId() && !this.canUseStore(this.selectedStoreId())) {
             this.selectedStoreId.set('');
-            this.ui.showWarning('Store inválida', 'A store anterior não pertence ao usuário atual.');
+            this.ui.showWarning('Loja inválida', 'A loja anterior não pertence ao usuário atual.');
           }
           if (!this.selectedStoreId() && stores.length) {
             this.selectedStoreId.set(stores[0].id);
@@ -108,7 +108,7 @@ export class IntegrationsComponent implements OnInit {
   selectStore(storeId: string): void {
     if (!this.canUseStore(storeId)) {
       this.selectedStoreId.set('');
-      this.ui.showWarning('Store inválida', 'Selecione uma store disponível para o usuário atual.');
+      this.ui.showWarning('Loja inválida', 'Selecione uma loja disponível para o usuário atual.');
       return;
     }
     this.selectedStoreId.set(storeId);
@@ -149,7 +149,7 @@ export class IntegrationsComponent implements OnInit {
         next: (integration) => {
           this.mergeIntegration(integration);
           this.savingStoreId.set(null);
-          this.ui.showInfo('Integração desconectada', `${store.name} não está mais conectada ao provider Meta.`);
+          this.ui.showInfo('Integração desconectada', `${store.name} não está mais conectada à Meta.`);
         },
         error: (err) => {
           this.error.set(err.message);
@@ -478,7 +478,7 @@ export class IntegrationsComponent implements OnInit {
     }
 
     if (result === 'success') {
-      this.ui.showSuccess('Meta conectada', message || 'A store foi conectada com sucesso.');
+      this.ui.showSuccess('Meta conectada', message || 'A loja foi conectada com sucesso.');
       this.clearOAuthQueryParams();
     }
 

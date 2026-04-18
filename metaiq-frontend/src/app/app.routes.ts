@@ -14,13 +14,13 @@ export const routes: Routes = [
     path: 'campaigns',
     loadComponent: () => import('./features/campaigns/campaigns.component').then(m => m.CampaignsComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT] },
   },
   {
     path: 'metrics',
     loadComponent: () => import('./features/metrics/metrics.component').then(m => m.MetricsComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.OPERATIONAL] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT] },
   },
   {
     path: 'insights',
@@ -38,7 +38,7 @@ export const routes: Routes = [
     path: 'admin/managers',
     loadComponent: () => import('./features/managers/managers.component').then(m => m.ManagersComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN] },
+    data: { roles: [Role.PLATFORM_ADMIN] },
   },
   {
     path: 'manager/stores',

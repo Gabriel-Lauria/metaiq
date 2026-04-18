@@ -25,9 +25,20 @@ export class ManagersComponent implements OnInit {
   saving = signal(false);
   error = signal<string | null>(null);
   success = signal<string | null>(null);
+  deleteTarget = signal<Manager | null>(null);
   name = '';
+  cnpj = '';
+  phone = '';
+  email = '';
+  contactName = '';
+  notes = '';
   editingId: string | null = null;
   editingName = '';
+  editingCnpj = '';
+  editingPhone = '';
+  editingEmail = '';
+  editingContactName = '';
+  editingNotes = '';
 
   ngOnInit(): void {
     this.load();
@@ -54,20 +65,32 @@ export class ManagersComponent implements OnInit {
     const trimmedName = this.name.trim();
     if (!trimmedName) return;
 
-    this.api.createManager({ name: trimmedName })
+    this.api.createManager({
+      name: trimmedName,
+      cnpj: this.clean(this.cnpj),
+      phone: this.clean(this.phone),
+      email: this.clean(this.email),
+      contactName: this.clean(this.contactName),
+      notes: this.clean(this.notes),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.name = '';
-          this.success.set('Manager criado com sucesso.');
+          this.cnpj = '';
+          this.phone = '';
+          this.email = '';
+          this.contactName = '';
+          this.notes = '';
+          this.success.set('Empresa criada com sucesso.');
           this.saving.set(false);
-          this.ui.showSuccess('Manager criado', 'O tenant já está disponível para operação.');
+          this.ui.showSuccess('Empresa criada', 'A empresa já está disponível para configurar usuários e lojas.');
           this.load();
         },
         error: err => {
           this.error.set(err.message);
           this.saving.set(false);
-          this.ui.showError('Não foi possível criar manager', err.message);
+          this.ui.showError('Não foi possível criar empresa', err.message);
         }
       });
     this.saving.set(true);
@@ -76,20 +99,32 @@ export class ManagersComponent implements OnInit {
   startEdit(manager: Manager): void {
     this.editingId = manager.id;
     this.editingName = manager.name;
+    this.editingCnpj = manager.cnpj ?? '';
+    this.editingPhone = manager.phone ?? '';
+    this.editingEmail = manager.email ?? '';
+    this.editingContactName = manager.contactName ?? '';
+    this.editingNotes = manager.notes ?? '';
   }
 
   saveEdit(manager: Manager): void {
     const trimmedName = this.editingName.trim();
     if (!trimmedName) return;
 
-    this.api.updateManager(manager.id, { name: trimmedName })
+    this.api.updateManager(manager.id, {
+      name: trimmedName,
+      cnpj: this.clean(this.editingCnpj),
+      phone: this.clean(this.editingPhone),
+      email: this.clean(this.editingEmail),
+      contactName: this.clean(this.editingContactName),
+      notes: this.clean(this.editingNotes),
+    })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.editingId = null;
-          this.success.set('Manager atualizado.');
+          this.success.set('Empresa atualizada.');
           this.saving.set(false);
-          this.ui.showSuccess('Manager atualizado', 'As alterações foram salvas.');
+          this.ui.showSuccess('Empresa atualizada', 'As alterações foram salvas.');
           this.load();
         },
         error: err => {
@@ -101,12 +136,22 @@ export class ManagersComponent implements OnInit {
     this.saving.set(true);
   }
 
+  cancelEdit(): void {
+    this.editingId = null;
+    this.editingName = '';
+    this.editingCnpj = '';
+    this.editingPhone = '';
+    this.editingEmail = '';
+    this.editingContactName = '';
+    this.editingNotes = '';
+  }
+
   toggle(manager: Manager): void {
     this.api.toggleManagerActive(manager.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
-          this.success.set('Status do manager atualizado.');
+          this.success.set('Status da empresa atualizado.');
           this.saving.set(false);
           this.ui.showSuccess('Status atualizado', `${manager.name} foi ${manager.active ? 'desativado' : 'ativado'}.`);
           this.load();
@@ -120,7 +165,43 @@ export class ManagersComponent implements OnInit {
     this.saving.set(true);
   }
 
+  askDelete(manager: Manager): void {
+    this.deleteTarget.set(manager);
+  }
+
+  cancelDelete(): void {
+    this.deleteTarget.set(null);
+  }
+
+  confirmDelete(): void {
+    const manager = this.deleteTarget();
+    if (!manager) return;
+
+    this.saving.set(true);
+    this.api.deleteManager(manager.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.deleteTarget.set(null);
+          this.success.set('Empresa excluída com segurança.');
+          this.saving.set(false);
+          this.ui.showSuccess('Empresa excluída', 'A empresa foi removida da listagem.');
+          this.load();
+        },
+        error: err => {
+          this.error.set(err.message);
+          this.saving.set(false);
+          this.ui.showError('Não foi possível excluir empresa', err.message);
+        }
+      });
+  }
+
   trackById(_: number, manager: Manager): string {
     return manager.id;
+  }
+
+  private clean(value: string): string | null {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
   }
 }

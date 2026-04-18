@@ -35,6 +35,9 @@ export class Store {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ nullable: true })
+  deletedAt: Date | null;
+
   @ManyToOne(() => Manager, (manager) => manager.stores)
   @JoinColumn({ name: 'managerId' })
   manager: Manager;

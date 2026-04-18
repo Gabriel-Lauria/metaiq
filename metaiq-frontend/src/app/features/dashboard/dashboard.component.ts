@@ -57,9 +57,9 @@ export class DashboardComponent implements OnInit {
   isOperational = computed(() => this.currentRole() === Role.OPERATIONAL);
   requiresStoreContext = computed(() => this.isClient() || this.isOperational());
   dashboardTitle = computed(() => {
-    if (this.isClient()) return 'Resumo da loja';
-    if (this.isManager()) return 'Central do tenant';
-    if (this.isAdmin()) return 'Visão administrativa';
+    if (this.isClient()) return 'Resultados da Loja';
+    if (this.isManager()) return 'Central do Supervisor';
+    if (this.isAdmin()) return 'Visão da Empresa';
     return 'Operação da loja';
   });
 
@@ -112,7 +112,7 @@ export class DashboardComponent implements OnInit {
   loadData(): void {
     if (this.requiresStoreContext() && !this.storeContext.getValidSelectedStoreId()) {
       this.loading.set(false);
-      this.error.set('Selecione uma store válida para carregar o dashboard.');
+      this.error.set('Selecione uma loja válida para carregar o dashboard.');
       return;
     }
     this.periodSubject.next(this.period());
@@ -168,7 +168,7 @@ export class DashboardComponent implements OnInit {
     }
 
     const labels = {
-      spend: 'Spend total',
+      spend: 'Investimento',
       clicks: 'Cliques',
       conversions: 'Conversões',
       ctr: 'CTR',

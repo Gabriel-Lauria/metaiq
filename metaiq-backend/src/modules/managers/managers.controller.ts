@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -36,5 +36,12 @@ export class ManagersController {
   @Patch(':id/toggle-active')
   toggleActive(@Param('id') id: string): Promise<Manager> {
     return this.managersService.toggleActive(id);
+  }
+
+  @Delete(':id')
+  @Roles(Role.PLATFORM_ADMIN)
+  async remove(@Param('id') id: string): Promise<{ message: string }> {
+    await this.managersService.remove(id);
+    return { message: 'Empresa excluída com segurança' };
   }
 }

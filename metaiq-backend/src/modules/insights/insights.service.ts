@@ -465,18 +465,25 @@ export class InsightsService {
     };
   }
 
-  /** Regra 9: Gasto acima do orçamento diário */
-  private ruleOverspend(totalSpend: number, dailyBudget: number): InsightPayload | null {
-    if (!dailyBudget || totalSpend <= dailyBudget * this.THRESHOLDS.OVERSPEND_RATIO)
-      return null;
-    return {
-      type: 'alert',
-      severity: 'warning',
-      message: `⚠️ Overspend: R$${totalSpend.toFixed(2)} gasto vs R$${dailyBudget.toFixed(2)}/dia permitido`,
-      recommendation:
-        'Verifique: há duplicação de campanhas? Budget foi aumentado manualmente na Meta? Reduza o budget',
-    };
-  }
+/** Regra 9: Gasto acima do orçamento diário */
+private ruleOverspend(totalSpend: number, dailyBudget: number): InsightPayload | null {
+  const budget = Number(dailyBudget || 0);
+  const spend = Number(totalSpend || 0);
+
+  // Se não tem budget válido, ignora
+  if (!budget) return null;
+
+  if (spend <= budget * this.THRESHOLDS.OVERSPEND_RATIO)
+    return null;
+
+  return {
+    type: 'alert',
+    severity: 'warning',
+    message: `⚠️ Overspend: R$${spend.toFixed(2)} gasto vs R$${budget.toFixed(2)}/dia permitido`,
+    recommendation:
+      'Verifique: há duplicação de campanhas? Budget foi aumentado manualmente na Meta? Reduza o budget',
+  };
+}
 
   /** Regra 10: Gasto sem conversões */
   private ruleNoConversions(

@@ -2,7 +2,7 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Usuários</h1>
-      <p class="page-subtitle">Crie usuários do tenant e acompanhe os papéis ativos.</p>
+      <p class="page-subtitle">Crie supervisores, gestores de tráfego e clientes no escopo da empresa.</p>
     </div>
     <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
@@ -21,15 +21,15 @@
       <input id="password" class="form-input" name="password" [(ngModel)]="password" placeholder="Senha inicial" type="password" />
     </div>
     <div class="form-field">
-      <label for="role">Papel</label>
+      <label for="role">Perfil de acesso</label>
       <select id="role" class="form-select" name="role" [(ngModel)]="role">
-        <option *ngFor="let option of (isPlatformAdmin() ? platformRoles : isAdmin() ? adminRoles : roles); trackBy: trackByRole" [ngValue]="option">{{ option }}</option>
+        <option *ngFor="let option of (isPlatformAdmin() ? platformRoles : isAdmin() ? adminRoles : roles); trackBy: trackByRole" [ngValue]="option">{{ roleLabel(option) }}</option>
       </select>
     </div>
     <div class="form-field" *ngIf="isPlatformAdmin() && role !== 'ADMIN' && role !== 'PLATFORM_ADMIN'">
-      <label for="managerId">Tenant</label>
+      <label for="managerId">Empresa</label>
       <select id="managerId" class="form-select" name="managerId" [(ngModel)]="managerId">
-        <option value="">Selecione um manager</option>
+        <option value="">Selecione uma empresa</option>
         <option *ngFor="let manager of managers(); trackBy: trackById" [value]="manager.id">{{ manager.name }}</option>
       </select>
     </div>
@@ -77,21 +77,42 @@
     type="empty"
     icon="U"
     title="Nenhum usuário encontrado"
-    message="Crie usuários para operação, cliente ou gestão do tenant."
+    message="Crie supervisores, gestores de tráfego ou clientes para organizar a operação."
   />
 
   <div class="ui-table" *ngIf="!loading() && users().length">
     <div class="ui-table-head user-grid">
       <span>Nome</span>
       <span>Email</span>
-      <span>Role</span>
-      <span>Tenant</span>
+      <span>Perfil</span>
+      <span>Empresa</span>
+      <span>Ações</span>
     </div>
     <div class="ui-table-row user-grid" *ngFor="let user of users(); trackBy: trackById">
       <strong>{{ user.name }}</strong>
       <span>{{ user.email }}</span>
-      <app-ui-badge [label]="user.role" [tone]="user.role === 'ADMIN' ? 'danger' : user.role === 'MANAGER' ? 'info' : user.role === 'CLIENT' ? 'warning' : 'success'" />
-      <span>{{ user.tenantId || 'Sem tenant' }}</span>
+      <app-ui-badge [label]="roleLabel(user.role)" [tone]="roleTone(user.role)" />
+      <span>{{ user.tenantId || 'Sem empresa' }}</span>
+      <span class="actions">
+        <button class="btn btn-danger" type="button" (click)="askDelete(user)" [disabled]="saving() || !canDelete(user)">
+          Excluir usuário
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <div class="confirm-panel section-panel" *ngIf="deleteTarget() as target">
+    <div>
+      <h2 class="section-title">Excluir usuário?</h2>
+      <p class="muted">
+        O usuário <strong>{{ target.name }}</strong> será desativado e seus vínculos com lojas serão removidos. Histórico operacional será preservado.
+      </p>
+    </div>
+    <div class="actions">
+      <button class="btn btn-secondary" type="button" (click)="cancelDelete()" [disabled]="saving()">Cancelar</button>
+      <button class="btn btn-danger" type="button" (click)="confirmDelete()" [disabled]="saving()">
+        {{ saving() ? 'Excluindo...' : 'Confirmar exclusão' }}
+      </button>
     </div>
   </div>
 </section>

@@ -1,28 +1,75 @@
 <section class="page-shell management-page">
   <div class="page-header">
     <div>
-      <h1 class="page-title">Stores</h1>
-      <p class="page-subtitle">Gerencie lojas e vincule usuários ao tenant correto.</p>
+      <h1 class="page-title">Lojas</h1>
+      <p class="page-subtitle">Cadastre lojas, vincule clientes e escolha quais gestores de tráfego operam cada conta.</p>
     </div>
     <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
   </div>
 
-  <form class="toolbar section-panel" (ngSubmit)="create()">
+  <form class="section-panel store-form" (ngSubmit)="create()">
     <div class="form-field">
-      <label for="storeName">Nome da store</label>
+      <label for="storeName">Nome da Loja</label>
       <input id="storeName" class="form-input" name="name" [(ngModel)]="name" placeholder="Ex: Loja Centro" />
     </div>
+    <div class="form-field">
+      <label for="cnpj">CNPJ</label>
+      <input id="cnpj" class="form-input" name="cnpj" [(ngModel)]="cnpj" placeholder="00.000.000/0000-00" />
+    </div>
+    <div class="form-field">
+      <label for="phone">Telefone</label>
+      <input id="phone" class="form-input" name="phone" [(ngModel)]="phone" placeholder="(00) 00000-0000" />
+    </div>
+    <div class="form-field">
+      <label for="email">E-mail</label>
+      <input id="email" class="form-input" name="email" [(ngModel)]="email" placeholder="contato@loja.com" type="email" />
+    </div>
+    <div class="form-field">
+      <label for="active">Status</label>
+      <select id="active" class="form-select" name="active" [(ngModel)]="active">
+        <option [ngValue]="true">Ativa</option>
+        <option [ngValue]="false">Inativa</option>
+      </select>
+    </div>
     <div class="form-field" *ngIf="isAdmin()">
-      <label for="managerId">Tenant</label>
+      <label for="managerId">Empresa</label>
       <select id="managerId" class="form-select" name="managerId" [(ngModel)]="managerId">
-        <option value="">Selecione um tenant</option>
+        <option value="">Selecione uma empresa</option>
         <option *ngFor="let manager of managers(); trackBy: trackById" [value]="manager.id">{{ manager.name }}</option>
       </select>
     </div>
-    <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim() || (isAdmin() && !managerId)">
-      {{ saving() ? 'Salvando...' : 'Criar store' }}
-    </button>
+    <div class="form-field notes-field">
+      <label for="notes">Observações</label>
+      <textarea id="notes" class="form-input textarea" name="notes" [(ngModel)]="notes" placeholder="Informações úteis para atendimento e operação"></textarea>
+    </div>
+    <div class="form-actions">
+      <p class="muted" *ngIf="hasPreparedStoreFields()">
+        Estes dados comerciais estão preparados na tela. A persistência completa de CNPJ, telefone, e-mail e observações depende do backend.
+      </p>
+      <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim() || (isAdmin() && !managerId)">
+        {{ saving() ? 'Salvando...' : 'Criar Loja' }}
+      </button>
+    </div>
   </form>
+
+  <div class="next-steps section-panel" *ngIf="lastCreatedStoreName()">
+    <div>
+      <span class="eyebrow">Próximos passos</span>
+      <h2 class="section-title">{{ lastCreatedStoreName() }} está pronta para configurar</h2>
+    </div>
+    <div class="step-card">
+      <strong>1. Criar Cliente da Loja</strong>
+      <span>Cadastre o cliente que acompanhará os resultados.</span>
+    </div>
+    <div class="step-card">
+      <strong>2. Vincular Cliente à Loja</strong>
+      <span>Use o painel de vínculos desta tela para liberar acesso.</span>
+    </div>
+    <div class="step-card">
+      <strong>3. Escolher Gestor de Tráfego</strong>
+      <span>Vincule um gestor operacional para cuidar de campanhas e Meta.</span>
+    </div>
+  </div>
 
   <p class="inline-alert error" *ngIf="error()">{{ error() }}</p>
   <p class="inline-alert success" *ngIf="success()">{{ success() }}</p>
@@ -30,7 +77,7 @@
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando stores"
+    title="Carregando lojas"
     message="Buscando lojas acessíveis no seu escopo."
   />
 
@@ -38,46 +85,74 @@
     *ngIf="!loading() && !stores().length"
     type="empty"
     icon="S"
-    title="Nenhuma store cadastrada"
-    message="Crie uma store para organizar campanhas, contas e vínculos de usuário."
+    title="Nenhuma loja cadastrada"
+    message="Crie uma loja para organizar campanhas, contas e vínculos de clientes."
   />
 
   <div class="layout" *ngIf="!loading() && stores().length">
     <div class="ui-table">
       <div class="ui-table-head store-grid">
-        <span>Nome</span>
+        <span>Loja</span>
         <span>Status</span>
+        <span>Cliente vinculado</span>
+        <span>Gestores de Tráfego</span>
         <span>Ações</span>
       </div>
       <div class="ui-table-row store-grid" *ngFor="let store of stores(); trackBy: trackById" (click)="selectStore(store.id)" [class.selected]="selectedStoreId() === store.id">
         <strong>{{ store.name }}</strong>
         <app-ui-badge [label]="store.active ? 'Ativa' : 'Inativa'" [tone]="store.active ? 'success' : 'neutral'" />
+        <span>{{ usersByRole(store.id, 'CLIENT') }}</span>
+        <span>{{ usersByRole(store.id, 'OPERATIONAL') }}</span>
         <span class="actions">
           <button class="btn btn-secondary" type="button" (click)="toggle(store); $event.stopPropagation()" [disabled]="saving()">
             {{ store.active ? 'Desativar' : 'Ativar' }}
+          </button>
+          <button class="btn btn-danger" type="button" (click)="askDelete(store); $event.stopPropagation()" [disabled]="saving()">
+            Excluir loja
           </button>
         </span>
       </div>
     </div>
 
     <div class="links section-panel">
-      <h2 class="section-title">Usuários vinculados</h2>
+      <h2 class="section-title">Vínculos da Loja</h2>
+      <p class="muted" *ngIf="selectedStore()">Loja selecionada: <strong>{{ selectedStore()?.name }}</strong></p>
       <form class="toolbar" (ngSubmit)="link()">
         <div class="form-field">
-          <label for="userId">Usuário</label>
+          <label for="userId">Cliente ou Gestor de Tráfego</label>
           <select id="userId" class="form-select" name="userId" [(ngModel)]="userId">
           <option value="">Selecionar usuário</option>
-          <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id">{{ user.name }} - {{ user.role }}</option>
+          <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id">{{ user.name }} - {{ roleLabel(user.role) }}</option>
           </select>
         </div>
         <button class="btn btn-primary" type="submit" [disabled]="!selectedStoreId() || !userId">Vincular</button>
       </form>
 
       <div class="linked-user" *ngFor="let user of linkedUsers(); trackBy: trackById">
-        <span>{{ user.name }} - {{ user.email }}</span>
+        <span>
+          <strong>{{ user.name }}</strong>
+          <small>{{ user.email }} · {{ roleLabel(user.role) }}</small>
+        </span>
+        <app-ui-badge [label]="roleLabel(user.role)" [tone]="roleTone(user.role)" />
         <button class="btn btn-secondary" type="button" (click)="unlink(user)">Remover</button>
       </div>
-      <p class="muted" *ngIf="!linkedUsers().length">Nenhum usuário vinculado a esta store.</p>
+      <p class="muted" *ngIf="!linkedUsers().length">Nenhum cliente ou gestor vinculado a esta loja.</p>
+    </div>
+  </div>
+
+  <div class="confirm-panel" *ngIf="deleteTarget() as store">
+    <div>
+      <h2 class="section-title">Excluir loja?</h2>
+      <p class="muted">
+        {{ store.name }} será removida das listagens e seus vínculos com usuários serão apagados.
+        Lojas com campanhas, contas de anúncio ou integração Meta conectada não podem ser excluídas.
+      </p>
+    </div>
+    <div class="confirm-actions">
+      <button class="btn btn-secondary" type="button" (click)="cancelDelete()" [disabled]="saving()">Cancelar</button>
+      <button class="btn btn-danger" type="button" (click)="confirmDelete()" [disabled]="saving()">
+        {{ saving() ? 'Excluindo...' : 'Confirmar exclusão' }}
+      </button>
     </div>
   </div>
 </section>

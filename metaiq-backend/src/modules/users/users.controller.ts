@@ -61,7 +61,7 @@ export class UsersController {
    */
   @Delete('me')
   async deleteCurrentUser(@Request() req: any): Promise<{ message: string }> {
-    await this.usersService.remove(req.user.id);
+    await this.usersService.removeForUser(req.user.id, req.user);
     this.logger.log(`Usuário ${req.user.email} deletou sua conta`);
     return { message: 'Conta deletada' };
   }
@@ -93,7 +93,7 @@ export class UsersController {
   }
 
   @Patch(':id/password')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.MANAGER)
   async resetUserPassword(
     @Param('id') id: string,
     @Request() req: any,
@@ -124,5 +124,16 @@ export class UsersController {
   async findAll(@Request() req: any): Promise<Omit<User, 'password'>[]> {
     const users = await this.usersService.findAllForUser(req.user);
     return users.map(({ password: _password, ...user }) => user);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN, Role.MANAGER)
+  async deleteUser(
+    @Param('id') id: string,
+    @Request() req: any,
+  ): Promise<{ message: string }> {
+    await this.usersService.removeForUser(id, req.user);
+    this.logger.log(`Usuário ${req.user.email} excluiu usuário ${id}`);
+    return { message: 'Usuário excluído com segurança' };
   }
 }

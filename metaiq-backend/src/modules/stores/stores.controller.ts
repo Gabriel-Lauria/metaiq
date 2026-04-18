@@ -77,4 +77,11 @@ export class StoresController {
   toggleActive(@Param('id') id: string, @Request() req: any): Promise<Store> {
     return this.storesService.toggleActive(id, req.user);
   }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @Request() req: any): Promise<{ message: string }> {
+    return this.storesService
+      .remove(id, req.user)
+      .then(() => ({ message: 'Loja excluída com segurança' }));
+  }
 }
