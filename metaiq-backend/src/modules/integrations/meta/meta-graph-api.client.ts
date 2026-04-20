@@ -81,6 +81,48 @@ export class MetaGraphApiClient {
     }
   }
 
+  async delete<T>(
+    path: string,
+    accessToken: string,
+    timeout = 15000,
+  ): Promise<T> {
+    const url = this.resolveUrl(path);
+    const body = new URLSearchParams();
+    body.set('access_token', accessToken);
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'META_GRAPH_DELETE_REQUEST',
+          method: 'DELETE',
+          url,
+        }),
+      );
+
+      const response = await axios.delete(url, {
+        data: body,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        timeout,
+      });
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'META_GRAPH_DELETE_RESPONSE',
+          method: 'DELETE',
+          url,
+          response: this.sanitizeResponseData(response.data),
+        }),
+      );
+
+      return response.data as T;
+    } catch (error) {
+      this.logAxiosError('DELETE', url, undefined, error);
+      throw error;
+    }
+  }
+
   private resolveUrl(pathOrUrl: string): string {
     if (/^https?:\/\//i.test(pathOrUrl)) {
       return pathOrUrl;

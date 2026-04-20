@@ -8,14 +8,15 @@ import { StoreIntegration } from '../store-integration.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaCampaignCreation } from './meta-campaign-creation.entity';
 import { MetaGraphApiClient } from './meta-graph-api.client';
-import { MetaCampaignCreationAuditController, MetaIntegrationController, MetaOAuthCallbackController } from './meta.controller';
+import { MetaCampaignRecoveryService } from './meta-campaign-recovery.service';
+import { MetaCampaignCreationAuditController, MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignRecoveryController } from './meta.controller';
 import { MetaIntegrationService } from './meta.service';
 import { MetaSyncService } from './meta-sync.service';
 
 @Module({
   imports: [CommonModule, TypeOrmModule.forFeature([StoreIntegration, OAuthState, AdAccount, Campaign, MetaCampaignCreation])],
-  controllers: [MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignCreationAuditController],
-  providers: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator],
-  exports: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator],
+  controllers: [MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignCreationAuditController, MetaCampaignRecoveryController],
+  providers: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
+  exports: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
 })
 export class MetaIntegrationModule {}

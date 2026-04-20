@@ -197,3 +197,90 @@ export interface MetaSyncPlan {
     | 'RECORD_SYNC_RESULT'
   >;
 }
+
+// ─────────────────────────────────────────────────────────
+// Recovery DTOs - Para recuperação de campanhas parciais
+// ─────────────────────────────────────────────────────────
+
+export class RetryPartialCampaignDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  accessToken: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  adAccountExternalId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  pageId: string;
+
+  @IsUrl({ require_protocol: true })
+  @IsNotEmpty()
+  @MaxLength(1000)
+  destinationUrl: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  objective: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  dailyBudget: number;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2)
+  country: string;
+
+  @IsString()
+  @IsIn(['ACTIVE', 'PAUSED'])
+  initialStatus: 'ACTIVE' | 'PAUSED';
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  message: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  cta?: string;
+
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(1000)
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  headline?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  description?: string;
+}
+
+export class CleanupPartialResourcesDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  accessToken: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  adAccountExternalId: string;
+}
