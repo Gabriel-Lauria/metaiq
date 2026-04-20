@@ -1,4 +1,4 @@
-import { Component, OnInit, DestroyRef, signal, computed, inject, effect } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,13 +6,15 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ChartData } from 'chart.js';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
-import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
-import { Store, Role } from '../../core/models';
-import { StoreContextService } from '../../core/services/store-context.service';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
 import { ChartComponent } from '../../core/components/chart.component';
+import { Role, Store } from '../../core/models';
+import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
+import { StoreContextService } from '../../core/services/store-context.service';
+import { UiService } from '../../core/services/ui.service';
+import { CampaignCreatePanelComponent, CampaignCreateSuccessEvent } from './campaign-create-panel.component';
 
 interface CampaignMetric {
   ctr: number;
@@ -32,6 +34,7 @@ interface CampaignInsight {
 
 interface Campaign {
   id: string;
+  metaId?: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
   storeId?: string | null;
@@ -40,19 +43,33 @@ interface Campaign {
   insights?: CampaignInsight[];
 }
 
+interface CampaignCreationNotice {
+  name: string;
+  storeName: string;
+  response: CampaignCreateSuccessEvent['response'];
+}
+
 type SortField = 'name' | 'ctr' | 'cpa' | 'roas' | 'score' | 'status';
 type SortDirection = 'asc' | 'desc';
 
 @Component({
   selector: 'app-campaigns',
   standalone: true,
-  imports: [CommonModule, FormsModule, UiBadgeComponent, UiStateComponent, ChartComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    UiBadgeComponent,
+    UiStateComponent,
+    ChartComponent,
+    CampaignCreatePanelComponent,
+  ],
   templateUrl: './campaigns.component.html',
-  styleUrls: ['./campaigns.component.scss']
+  styleUrls: ['./campaigns.component.scss'],
 })
 export class CampaignsComponent implements OnInit {
   private apiService = inject(ApiService);
   private authService = inject(AuthService);
+  private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -69,26 +86,33 @@ export class CampaignsComponent implements OnInit {
   sortField = signal<SortField>('name');
   sortDirection = signal<SortDirection>('asc');
   selectedReport = signal<Campaign | null>(null);
+  createPanelOpen = signal(false);
+  creationNotice = signal<CampaignCreationNotice | null>(null);
+  highlightedCampaignId = signal<string | null>(null);
+
   private searchSubject = new Subject<string>();
+  private pendingRouteStoreId: string | null = null;
+  private pendingOpenCreateFromRoute = false;
+  private pendingCreatedMetaCampaignId: string | null = null;
 
   filtered = computed(() => {
     const query = this.searchTerm().trim().toLowerCase();
-    let filtered = this.campaigns().filter((campaign) => {
-      const matchesStatus =
-        this.filter() === 'ALL' || campaign.status === this.filter();
-      const matchesSearch =
-        !query ||
-        campaign.name.toLowerCase().includes(query) ||
-        campaign.id.toLowerCase().includes(query);
+    const filteredCampaigns = this.campaigns().filter((campaign) => {
+      const matchesStatus = this.filter() === 'ALL' || campaign.status === this.filter();
+      const matchesSearch = !query
+        || campaign.name.toLowerCase().includes(query)
+        || campaign.id.toLowerCase().includes(query)
+        || campaign.metaId?.toLowerCase().includes(query)
+        || campaign.store?.name?.toLowerCase().includes(query);
+
       return matchesStatus && matchesSearch;
     });
 
-    // Aplicar ordenação
     const field = this.sortField();
     const direction = this.sortDirection();
     const multiplier = direction === 'asc' ? 1 : -1;
 
-    return filtered.sort((a, b) => {
+    return filteredCampaigns.sort((a, b) => {
       let aVal: any;
       let bVal: any;
 
@@ -114,59 +138,78 @@ export class CampaignsComponent implements OnInit {
     });
   });
 
-  sorted = computed(() => this.filtered());
-
   pagedCampaigns = computed(() => {
     const start = (this.currentPage() - 1) * this.pageSize();
-    return this.sorted().slice(start, start + this.pageSize());
+    return this.filtered().slice(start, start + this.pageSize());
   });
 
-  totalItems = computed(() => this.sorted().length);
+  totalItems = computed(() => this.filtered().length);
   totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
   pageNumbers = computed(() => Array.from({ length: this.totalPages() }, (_, index) => index + 1));
-  pageStart = computed(() => (this.currentPage() - 1) * this.pageSize() + 1);
-  pageEnd = computed(() => Math.min(this.currentPage() * this.pageSize(), this.totalItems()));
+  pageStart = computed(() => (this.totalItems() ? (this.currentPage() - 1) * this.pageSize() + 1 : 0));
+  pageEnd = computed(() => (this.totalItems() ? Math.min(this.currentPage() * this.pageSize(), this.totalItems()) : 0));
+  activeCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'ACTIVE').length);
+  pausedCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'PAUSED').length);
+  archivedCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'ARCHIVED').length);
+  averageRoas = computed(() => {
+    const campaignsWithMetrics = this.campaigns().filter((campaign) => campaign.metrics?.roas != null);
+    if (!campaignsWithMetrics.length) return 0;
+
+    const totalRoas = campaignsWithMetrics.reduce((sum, campaign) => sum + (campaign.metrics?.roas ?? 0), 0);
+    return totalRoas / campaignsWithMetrics.length;
+  });
+  selectedScopeName = computed(() => this.storeContext.selectedStore()?.name || 'Todas as lojas');
 
   constructor() {
-    // Setup debounce para busca
     this.searchSubject
       .pipe(
         debounceTime(300),
         distinctUntilChanged(),
-        takeUntilDestroyed(this.destroyRef)
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((term) => {
         this.searchTerm.set(term);
         this.currentPage.set(1);
-        this.updateQueryParams();
       });
 
-    // Sincronizar paginação com URL
     effect(() => {
       this.updateQueryParams();
     });
 
-    effect(() => {
-      if (!this.storeContext.loaded()) return;
-      this.loadCampaigns();
-    });
+    effect(
+      () => {
+        if (!this.storeContext.loaded()) return;
+
+        this.storeContext.selectedStoreId();
+        this.applyRouteIntent();
+        this.loadCampaigns();
+      },
+      { allowSignalWrites: true },
+    );
   }
 
   ngOnInit(): void {
     this.storeContext.load();
-    // Restaurar estado da URL
+
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
         const page = parseInt(params['page'] || '1', 10);
-        if (page >= 1) {
+        if (!Number.isNaN(page) && page >= 1) {
           this.currentPage.set(page);
         }
 
         const sort = params['sort'];
+        const dir = params['dir'] === 'desc' ? 'desc' : 'asc';
         if (sort && ['name', 'ctr', 'cpa', 'roas', 'score', 'status'].includes(sort)) {
-          this.toggleSort(sort as SortField);
+          this.sortField.set(sort as SortField);
+          this.sortDirection.set(dir);
         }
+
+        this.pendingRouteStoreId = typeof params['storeId'] === 'string' ? params['storeId'] : null;
+        this.pendingOpenCreateFromRoute = params['openCreate'] === '1' || params['openCreate'] === 'true';
+
+        this.applyRouteIntent();
       });
   }
 
@@ -174,15 +217,46 @@ export class CampaignsComponent implements OnInit {
     this.loadCampaigns();
   }
 
+  openCreatePanel(): void {
+    if (!this.canCreateCampaigns()) {
+      this.ui.showWarning(
+        'Criação indisponível',
+        'Seu perfil pode analisar campanhas, mas a criação real fica disponível para Operação.',
+      );
+      return;
+    }
+
+    this.createPanelOpen.set(true);
+  }
+
+  closeCreatePanel(): void {
+    this.createPanelOpen.set(false);
+  }
+
+  handleCampaignCreated(event: CampaignCreateSuccessEvent): void {
+    this.creationNotice.set({
+      name: event.name,
+      storeName: event.storeName,
+      response: event.response,
+    });
+    this.pendingCreatedMetaCampaignId = event.response.campaignId;
+    this.createPanelOpen.set(false);
+    this.refresh();
+  }
+
+  dismissCreationNotice(): void {
+    this.creationNotice.set(null);
+  }
+
   setFilter(filterValue: 'ALL' | 'ACTIVE' | 'PAUSED'): void {
     this.filter.set(filterValue);
     this.currentPage.set(1);
-    this.updateQueryParams();
   }
 
   setStoreFilter(storeId: string): void {
     this.storeContext.select(storeId);
     this.currentPage.set(1);
+    this.highlightedCampaignId.set(null);
   }
 
   setSearchTerm(value: string): void {
@@ -196,7 +270,6 @@ export class CampaignsComponent implements OnInit {
       this.sortField.set(field);
       this.sortDirection.set('asc');
     }
-    this.updateQueryParams();
   }
 
   getSortIndicator(field: SortField): string {
@@ -204,23 +277,34 @@ export class CampaignsComponent implements OnInit {
     return this.sortDirection() === 'asc' ? ' ↑' : ' ↓';
   }
 
-  private updateQueryParams(): void {
-    const queryParams: any = {};
-    if (this.currentPage() > 1) {
-      queryParams['page'] = this.currentPage();
-    }
-    if (this.sortField() !== 'name') {
-      queryParams['sort'] = this.sortField();
-    }
-    if (this.sortDirection() === 'desc') {
-      queryParams['dir'] = 'desc';
-    }
+  canCreateCampaigns(): boolean {
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
+  }
 
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: Object.keys(queryParams).length > 0 ? queryParams : {},
-      queryParamsHandling: 'merge'
-    });
+  canManageOperations(): boolean {
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
+  }
+
+  createButtonHint(): string {
+    return this.canCreateCampaigns()
+      ? 'Abrir builder de campanha'
+      : 'Criação real disponível para Operação e Plataforma.';
+  }
+
+  creationOverviewLabel(): string {
+    if (!this.canCreateCampaigns()) return 'Acompanhamento';
+    if (!this.storeContext.getValidSelectedStoreId()) return 'Selecione uma store';
+    return 'Builder centralizado';
+  }
+
+  creationOverviewMessage(): string {
+    if (!this.canCreateCampaigns()) {
+      return 'Seu perfil acompanha análise, status e relatório das campanhas.';
+    }
+    if (!this.storeContext.getValidSelectedStoreId()) {
+      return 'Escolha uma store para criar, revisar e enviar novas campanhas.';
+    }
+    return `Abra o builder para revisar setup, preview e envio de ${this.selectedScopeName()}.`;
   }
 
   hasPrev(): boolean {
@@ -253,6 +337,10 @@ export class CampaignsComponent implements OnInit {
     this.expanded.set(this.expanded() === campaignId ? null : campaignId);
   }
 
+  isHighlighted(campaignId: string): boolean {
+    return this.highlightedCampaignId() === campaignId;
+  }
+
   openReport(campaign: Campaign, event?: Event): void {
     event?.stopPropagation();
     this.selectedReport.set(campaign);
@@ -273,13 +361,13 @@ export class CampaignsComponent implements OnInit {
         {
           label: 'Spend',
           data: [0.16, 0.23, 0.27, 0.34].map((value) => Math.round(spend * value)),
-          borderColor: '#2563eb',
-          backgroundColor: 'rgba(37, 99, 235, 0.14)',
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15, 118, 110, 0.12)',
           tension: 0.35,
           fill: true,
         },
         {
-          label: 'Conversoes',
+          label: 'Conversões',
           data: [0.18, 0.24, 0.25, 0.33].map((value) => Math.round(conversions * value)),
           borderColor: '#f97316',
           backgroundColor: 'rgba(249, 115, 22, 0.12)',
@@ -292,13 +380,13 @@ export class CampaignsComponent implements OnInit {
   reportInsights(campaign: Campaign): string[] {
     const metrics = campaign.metrics;
     const insights = campaign.insights?.map((insight) => insight.title) || [];
-    if (!metrics) return insights.length ? insights : ['Aguardando metricas para gerar insights.'];
+    if (!metrics) return insights.length ? insights : ['Aguardando métricas para gerar insights.'];
 
     return [
       ...insights,
-      metrics.roas < 2 ? 'ROAS baixo: revisar oferta, criativo e publico.' : 'ROAS saudavel para manter investimento controlado.',
-      metrics.ctr < 1.5 ? 'CTR em queda: testar novos criativos e chamadas.' : 'CTR competitivo no periodo analisado.',
-      metrics.cpa > 80 ? 'CPA em alta: reduzir verba ate recuperar eficiencia.' : 'CPA dentro da faixa esperada.',
+      metrics.roas < 2 ? 'ROAS baixo: revisar oferta, criativo e público.' : 'ROAS saudável para manter investimento controlado.',
+      metrics.ctr < 1.5 ? 'CTR em queda: testar novos criativos e chamadas.' : 'CTR competitivo no período analisado.',
+      metrics.cpa > 80 ? 'CPA em alta: reduzir verba até recuperar eficiência.' : 'CPA dentro da faixa esperada.',
     ].slice(0, 5);
   }
 
@@ -315,9 +403,9 @@ export class CampaignsComponent implements OnInit {
   }
 
   scoreColor(score: number): string {
-    if (score >= 80) return '#34d399';
-    if (score >= 55) return '#fbbf24';
-    return '#fc8181';
+    if (score >= 80) return '#10b981';
+    if (score >= 55) return '#f59e0b';
+    return '#ef4444';
   }
 
   statusLabel(status: Campaign['status']): string {
@@ -344,6 +432,27 @@ export class CampaignsComponent implements OnInit {
     return page;
   }
 
+  private updateQueryParams(): void {
+    const queryParams: Record<string, string | number> = {};
+
+    if (this.currentPage() > 1) {
+      queryParams['page'] = this.currentPage();
+    }
+    if (this.sortField() !== 'name') {
+      queryParams['sort'] = this.sortField();
+    }
+    if (this.sortDirection() === 'desc') {
+      queryParams['dir'] = 'desc';
+    }
+
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: Object.keys(queryParams).length > 0 ? queryParams : {},
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   private loadCampaigns(): void {
     const selectedStoreId = this.storeContext.getValidSelectedStoreId();
     if (!this.storeContext.loaded()) {
@@ -363,17 +472,72 @@ export class CampaignsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
-          this.campaigns.set(response.data);
+          const campaigns = response.data;
+          this.campaigns.set(campaigns);
           this.loading.set(false);
+
+          if (this.pendingCreatedMetaCampaignId) {
+            const createdCampaign = campaigns.find((campaign) => campaign.metaId === this.pendingCreatedMetaCampaignId);
+            if (createdCampaign) {
+              this.highlightedCampaignId.set(createdCampaign.id);
+              this.expanded.set(createdCampaign.id);
+            }
+            this.pendingCreatedMetaCampaignId = null;
+          }
         },
-        error: (err) => {
+        error: () => {
           this.error.set('Não foi possível carregar campanhas no momento.');
           this.loading.set(false);
-        }
+        },
       });
   }
 
-  canManageOperations(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
+  private applyRouteIntent(): void {
+    if (!this.storeContext.loaded()) return;
+
+    let shouldClearParams = false;
+
+    if (this.pendingRouteStoreId !== null) {
+      shouldClearParams = true;
+      const requestedStoreId = this.pendingRouteStoreId.trim();
+      this.pendingRouteStoreId = null;
+
+      if (requestedStoreId) {
+        if (this.storeContext.hasAccessToStore(requestedStoreId)) {
+          if (this.storeContext.selectedStoreId() !== requestedStoreId) {
+            this.storeContext.select(requestedStoreId);
+          }
+        } else {
+          this.ui.showWarning('Loja inválida', 'A loja enviada pela navegação não pertence ao usuário atual.');
+        }
+      }
+    }
+
+    if (this.pendingOpenCreateFromRoute) {
+      shouldClearParams = true;
+      this.pendingOpenCreateFromRoute = false;
+
+      if (this.canCreateCampaigns()) {
+        this.createPanelOpen.set(true);
+      } else {
+        this.ui.showWarning(
+          'Criação indisponível',
+          'Seu perfil pode acompanhar campanhas, mas a criação real fica disponível para Operação.',
+        );
+      }
+    }
+
+    if (shouldClearParams) {
+      this.clearCreateRouteParams();
+    }
+  }
+
+  private clearCreateRouteParams(): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { openCreate: null, storeId: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 }

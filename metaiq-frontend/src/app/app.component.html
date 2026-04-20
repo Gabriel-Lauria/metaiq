@@ -4,11 +4,22 @@
 
   <!-- Sidebar -->
   <aside class="sidebar" [class.open]="sidebarOpen()">
-    <div class="logo-section">
-      <h1 class="logo">
-        <span>meta</span>IQ
-        <span class="version">v2.0</span>
-      </h1>
+    <div class="sidebar-topbar">
+      <div class="logo-section">
+        <h1 class="logo">
+          <span>meta</span>IQ
+          <span class="version">v2.0</span>
+        </h1>
+      </div>
+
+      <button
+        class="sidebar-control"
+        type="button"
+        (click)="toggleSidebar()"
+        [title]="sidebarOpen() ? 'Fechar sidebar' : 'Abrir sidebar'"
+      >
+        {{ sidebarOpen() ? '←' : '→' }}
+      </button>
     </div>
 
     <nav class="nav-menu">
@@ -120,7 +131,9 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-content">
-        <button class="toggle-sidebar" (click)="toggleSidebar()" title="Alternar sidebar">☰</button>
+        <button class="toggle-sidebar" (click)="toggleSidebar()" [title]="sidebarOpen() ? 'Fechar sidebar' : 'Abrir sidebar'">
+          {{ sidebarOpen() ? 'Fechar menu' : 'Abrir menu' }}
+        </button>
         <div class="page-title-container">
           <h2 class="page-title-header">{{ currentTitle }}</h2>
         </div>

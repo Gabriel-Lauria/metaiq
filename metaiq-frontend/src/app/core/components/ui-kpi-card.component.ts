@@ -17,89 +17,91 @@ type KpiTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
       <span class="kpi-hint" *ngIf="hint">{{ hint }}</span>
     </article>
   `,
-  styles: [`
-    .kpi-card {
-      display: grid;
-      gap: 10px;
-      min-height: 136px;
-      padding: 18px;
-      border: 1px solid rgba(110, 231, 247, 0.1);
-      border-radius: 8px;
-      background: rgba(15, 19, 32, 0.86);
-      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.16);
-    }
-
-    .kpi-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-    }
-
-    .kpi-label {
-      color: #94a3b8;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    .kpi-marker {
-      display: grid;
-      place-items: center;
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: rgba(110, 231, 247, 0.1);
-      color: #6ee7f7;
-      font-size: 13px;
-      font-weight: 800;
-    }
-
-    .kpi-value {
-      color: #f0f4ff;
-      font-family: 'Space Mono', monospace;
-      font-size: 30px;
-      line-height: 1.1;
-      overflow-wrap: anywhere;
-    }
-
-    .kpi-hint {
-      color: #64748b;
-      font-size: 13px;
-    }
-
-    .tone-success .kpi-marker {
-      background: rgba(52, 211, 153, 0.12);
-      color: #52e0aa;
-    }
-
-    .tone-warning .kpi-marker {
-      background: rgba(251, 191, 36, 0.12);
-      color: #fcd34d;
-    }
-
-    .tone-danger .kpi-marker {
-      background: rgba(252, 129, 129, 0.12);
-      color: #fc8181;
-    }
-
-    .tone-info .kpi-marker {
-      background: rgba(110, 231, 247, 0.12);
-      color: #6ee7f7;
-    }
-
-    @media (max-width: 767px) {
+  styles: [
+    `
       .kpi-card {
-        min-height: 120px;
-        padding: 16px;
+        display: grid;
+        gap: 14px;
+        min-height: 150px;
+        padding: 22px;
+        border-radius: 24px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+      }
+
+      .kpi-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+      }
+
+      .kpi-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .kpi-marker {
+        display: grid;
+        place-items: center;
+        min-width: 32px;
+        min-height: 32px;
+        border-radius: 12px;
+        background: rgba(37, 99, 235, 0.12);
+        color: var(--primary);
+        font-size: 13px;
+        font-weight: 800;
       }
 
       .kpi-value {
-        font-size: 26px;
+        color: var(--text);
+        font-family: 'Space Mono', monospace;
+        font-size: 32px;
+        line-height: 1.05;
       }
-    }
-  `]
+
+      .kpi-hint {
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .tone-success .kpi-marker {
+        background: rgba(22, 163, 74, 0.12);
+        color: var(--success);
+      }
+
+      .tone-warning .kpi-marker {
+        background: rgba(245, 158, 11, 0.14);
+        color: var(--warning);
+      }
+
+      .tone-danger .kpi-marker {
+        background: rgba(220, 38, 38, 0.14);
+        color: var(--danger);
+      }
+
+      .tone-info .kpi-marker {
+        background: rgba(37, 99, 235, 0.16);
+        color: var(--primary);
+      }
+
+      @media (max-width: 767px) {
+        .kpi-card {
+          min-height: 130px;
+          padding: 18px;
+        }
+
+        .kpi-value {
+          font-size: 28px;
+        }
+      }
+    `
+  ]
 })
 export class UiKpiCardComponent {
   @Input() label = '';

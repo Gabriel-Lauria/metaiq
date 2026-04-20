@@ -1,13 +1,13 @@
-import { Component, inject, signal, effect } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { AsyncPipe, DatePipe, NgIf } from '@angular/common';
-import { Router, NavigationEnd, RouterLink, RouterOutlet } from '@angular/router';
-import { AuthService } from './core/services/auth.service';
-import { UiService } from './core/services/ui.service';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
 import { NotificationContainerComponent } from './core/components/notification-container.component';
 import { GlobalLoadingComponent } from './core/components/global-loading.component';
 import { Role } from './core/models';
 import { roleLabel } from './core/role-labels';
-import { filter } from 'rxjs';
+import { AuthService } from './core/services/auth.service';
+import { UiService } from './core/services/ui.service';
 
 @Component({
   selector: 'app-root',
@@ -19,16 +19,16 @@ import { filter } from 'rxjs';
     RouterLink,
     RouterOutlet,
     NotificationContainerComponent,
-    GlobalLoadingComponent
+    GlobalLoadingComponent,
   ],
   templateUrl: './app.component.html',
-  styleUrls: ['./app.component.scss']
+  styleUrls: ['./app.component.scss'],
 })
 export class AppComponent {
   private authService = inject(AuthService);
   private uiService = inject(UiService);
   private router = inject(Router);
-  
+
   isAuthenticated$ = this.authService.isAuthenticated$;
   currentUser$ = this.authService.currentUser$;
   currentRole$ = this.authService.currentRole$;
@@ -39,20 +39,17 @@ export class AppComponent {
 
   constructor() {
     this.router.events
-      .pipe(filter(event => event instanceof NavigationEnd))
+      .pipe(filter((event) => event instanceof NavigationEnd))
       .subscribe(() => {
         this.updatePageTitle();
-        // Fechar overlay ao navegar em mobile
         if (this.isSmallScreen()) {
           this.sidebarOpen.set(false);
           this.sidebarOverlayOpen.set(false);
         }
       });
 
-    // Persistir estado da sidebar quando mudar
     effect(() => {
       const state = this.sidebarOpen();
-      // Só salvar estado collapsed em desktop (mobile sempre volta collapsed)
       if (!this.isSmallScreen()) {
         localStorage.setItem('sidebar-state', state ? 'open' : 'collapsed');
       }
@@ -72,15 +69,21 @@ export class AppComponent {
     const url = this.router.url;
     const role = this.authService.getCurrentRole();
     const titles: { [key: string]: string } = {
-      '/dashboard': role === Role.CLIENT ? 'Resultados da Loja' : role === Role.MANAGER ? 'Central do Supervisor' : [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role as Role) ? 'Administração da Empresa' : 'Operação da Loja',
-      '/campaigns': 'Campanhas Ativas',
+      '/dashboard': role === Role.CLIENT
+        ? 'Resultados da Loja'
+        : role === Role.MANAGER
+          ? 'Central do Supervisor'
+          : [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role as Role)
+            ? 'Administração da Empresa'
+            : 'Operação da Loja',
+      '/campaigns': 'Campanhas',
       '/metrics': 'Métricas',
       '/insights': 'Insights',
       '/results': 'Resultados',
       '/admin/managers': 'Empresas',
       '/manager/stores': 'Lojas',
       '/manager/users': 'Gestão de Usuários',
-      '/manager/integrations': 'Integrações'
+      '/manager/integrations': 'Integrações',
     };
     this.currentTitle = titles[url] || 'Dashboard';
   }
@@ -88,7 +91,6 @@ export class AppComponent {
   toggleSidebar(): void {
     const newState = !this.sidebarOpen();
     this.sidebarOpen.set(newState);
-    // No mobile, abrir overlay quando sidebar abre
     if (this.isSmallScreen()) {
       this.sidebarOverlayOpen.set(newState);
     }
@@ -118,7 +120,7 @@ export class AppComponent {
   }
 
   canSeeManagers(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN]);
   }
 
   canSeeTenantManagement(): boolean {

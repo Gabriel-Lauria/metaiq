@@ -1,0 +1,929 @@
+<div class="create-panel-backdrop" (click)="closePanel()">
+  <section class="create-panel" (click)="$event.stopPropagation()" (scroll)="onMainScroll($event)">
+    <header class="builder-hero">
+      <div class="hero-copy">
+        <span class="panel-eyebrow">Builder avançado</span>
+        <h2>Crie campanhas com mais clareza, menos ruído e revisão real</h2>
+        <p>O fluxo continua conectado ao backend atual da Meta, mas agora com preenchimento mais guiado, IA por prompt e revisão contínua.</p>
+
+        <div class="hero-mini-meta">
+          <span class="hero-chip">{{ selectedStoreName() }}</span>
+          <span class="hero-chip" *ngIf="state.ui.aiApplied">Preenchido com sugestões da IA</span>
+          <span class="hero-chip" *ngIf="draftRestored()">Rascunho restaurado</span>
+          <span class="hero-chip autosave-chip" [class.is-saving]="autosaveState() === 'saving'">{{ autosaveLabel() }}</span>
+        </div>
+      </div>
+
+      <div class="hero-progress-card">
+        <span class="section-kicker">Progresso de preenchimento</span>
+        <strong>{{ progressPercent() }}%</strong>
+        <p>{{ state.campaign.name || 'Campanha em edição' }}</p>
+        <div class="progress-bar" aria-hidden="true">
+          <span [style.width.%]="progressPercent()"></span>
+        </div>
+      </div>
+    </header>
+
+    <div class="top-actions">
+      <button class="btn btn-secondary" type="button" (click)="focusAiSection()">Criar com IA</button>
+      <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
+      <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+      <button class="btn btn-secondary" type="button" (click)="goToNextPendingSection()">Próxima pendência</button>
+      <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar agora</button>
+      <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Ir para Integrações</button>
+      <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
+        {{ submitting() ? 'Criando campanha...' : 'Criar campanha' }}
+      </button>
+    </div>
+
+    <nav class="builder-nav">
+      <button
+        type="button"
+        class="nav-pill"
+        *ngFor="let section of sectionAnchors; trackBy: trackByValue"
+        [class.active]="activeSection() === section.id"
+        (click)="scrollToSection(section.id)"
+      >
+        {{ section.label }}
+      </button>
+    </nav>
+
+    <div class="panel-grid">
+      <div class="panel-main">
+        <section class="section-block status-block">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Prontidão</span>
+              <h3>Nome da campanha em edição</h3>
+            </div>
+            <app-ui-badge
+              [label]="canSubmit() ? 'Pronta para envio' : 'Revisão pendente'"
+              [tone]="canSubmit() ? 'success' : 'warning'"
+            />
+          </div>
+
+          <div class="editing-name-card">
+            <strong>{{ state.campaign.name || 'Sem nome definido ainda' }}</strong>
+            <p>{{ blockerMessage() }}</p>
+            <div class="inline-next-step">
+              <span>Próximo foco:</span>
+              <button type="button" class="link-btn" (click)="goToNextPendingSection()">{{ nextPendingSection().label }}</button>
+            </div>
+          </div>
+
+          <div class="review-checklist compact">
+            <div class="review-item" *ngFor="let item of readinessItems(); trackBy: trackByValue" [class.done]="item.done">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.done ? 'OK' : 'Pendente' }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block ai-section" id="builder-ai">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">IA por prompt</span>
+              <h3>Descreva a campanha em linguagem natural</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-ai')" [tone]="sectionTone('builder-ai')" />
+              <app-ui-badge *ngIf="state.ui.aiApplied" label="Sugestões aplicadas" tone="info" />
+            </div>
+          </div>
+
+          <div class="ai-section-intro">
+            <p>Use a IA para ganhar velocidade no primeiro preenchimento. Ela ajuda com nome, objetivo, mensagem, headline, interesses e UTMs, sem alterar o payload real compatível com o backend.</p>
+            <div class="prompt-presets">
+              <button class="prompt-preset" type="button" *ngFor="let preset of aiPromptPresets" (click)="applyPromptPreset(preset)">
+                {{ preset }}
+              </button>
+            </div>
+          </div>
+
+          <div class="ai-workspace">
+            <label class="form-field field-span-2">
+              <span>Prompt em linguagem natural</span>
+              <textarea
+                [(ngModel)]="state.ui.aiPrompt"
+                (ngModelChange)="touchState()"
+                rows="6"
+                placeholder="Ex.: campanha de leads para loja de moda feminina no Brasil, orçamento 150 por dia, foco em remarketing e CTA falar no WhatsApp"
+              ></textarea>
+            </label>
+
+            <div class="ai-sidecards">
+              <article class="ai-tip-card">
+                <span>Preenche melhor quando você cita</span>
+                <strong>objetivo, público, orçamento, destino e CTA</strong>
+              </article>
+              <article class="ai-tip-card">
+                <span>Melhora a revisão final</span>
+                <strong>nome da campanha, criativo e UTMs já saem mais coerentes</strong>
+              </article>
+              <article class="ai-tip-card ai-summary-card" *ngIf="state.ui.aiLastSummary">
+                <span>Leitura do briefing</span>
+                <strong>{{ state.ui.aiLastSummary }}</strong>
+              </article>
+            </div>
+          </div>
+
+          <div class="ai-detected-fields" *ngIf="state.ui.aiDetectedFields.length">
+            <span class="section-kicker">Campos entendidos pela IA</span>
+            <div class="token-list">
+              <span class="token" *ngFor="let field of aiDetectedFieldsPreview()">{{ field }}</span>
+              <span class="token token-muted" *ngIf="state.ui.aiDetectedFields.length > aiDetectedFieldsPreview().length">
+                +{{ state.ui.aiDetectedFields.length - aiDetectedFieldsPreview().length }} campos
+              </span>
+            </div>
+          </div>
+
+          <div class="ai-actions">
+            <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar prompt</button>
+            <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()">Gerar sugestões</button>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-general">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Dados gerais</span>
+              <h3>Base da campanha</h3>
+            </div>
+            <app-ui-badge [label]="sectionModeLabel('builder-general')" [tone]="sectionTone('builder-general')" />
+          </div>
+
+          <div class="objective-cards">
+            <button
+              type="button"
+              class="objective-card"
+              *ngFor="let option of objectiveOptions; trackBy: trackByValue"
+              [class.active]="state.campaign.objective === option.value"
+              (click)="selectObjective(option.value)"
+            >
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.hint }}</span>
+            </button>
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field field-span-2" [class.invalid]="fieldInvalid('campaign.name')">
+              <span>Nome da campanha</span>
+              <input type="text" [(ngModel)]="state.campaign.name" (ngModelChange)="touchState()" (blur)="markFieldTouched('campaign.name')" maxlength="120" placeholder="Ex.: MetaIQ | Remarketing Abril" />
+              <small *ngIf="fieldInvalid('campaign.name')">O nome é obrigatório para montar o payload real.</small>
+            </label>
+
+            <label class="form-field">
+              <span>Status inicial</span>
+              <select [ngModel]="state.campaign.initialStatus" (ngModelChange)="setInitialStatus($event)">
+                <option *ngFor="let option of initialStatusOptions; trackBy: trackByValue" [value]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+
+            <label class="form-field">
+              <span>Categoria especial</span>
+              <input type="text" [(ngModel)]="state.campaign.specialCategory" (ngModelChange)="touchState()" placeholder="Nenhuma" />
+            </label>
+
+            <label class="form-field">
+              <span>Tipo de compra</span>
+              <input type="text" [(ngModel)]="state.campaign.buyingType" (ngModelChange)="touchState()" placeholder="Auction" />
+            </label>
+
+            <label class="form-field">
+              <span>Limite de gasto da campanha</span>
+              <input type="number" [(ngModel)]="state.campaign.campaignSpendLimit" (ngModelChange)="touchState()" min="0" step="10" />
+            </label>
+          </div>
+
+          <div class="toggle-grid">
+            <label class="toggle-card">
+              <input type="checkbox" [(ngModel)]="state.campaign.abTest" (ngModelChange)="touchState()" />
+              <div>
+                <strong>Teste A/B</strong>
+                <span>Separar variações para leitura comparativa.</span>
+              </div>
+            </label>
+
+            <label class="toggle-card">
+              <input type="checkbox" [(ngModel)]="state.campaign.campaignBudgetOptimization" (ngModelChange)="touchState()" />
+              <div>
+                <strong>Orçamento no nível da campanha</strong>
+                <span>Manter controle superior do budget para otimização.</span>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-identity">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Conta e identidade</span>
+              <h3>Origem e presença da campanha</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-identity')" [tone]="sectionTone('builder-identity')" />
+              <app-ui-badge [label]="statusLabel(integration()?.status)" [tone]="statusTone(integration()?.status)" />
+            </div>
+          </div>
+
+          <div class="status-grid">
+            <div class="status-tile">
+              <span>Store</span>
+              <strong>{{ selectedStoreName() }}</strong>
+            </div>
+            <div class="status-tile">
+              <span>Página Meta</span>
+              <strong>{{ selectedPageName() }}</strong>
+            </div>
+            <div class="status-tile">
+              <span>Conta ativa</span>
+              <strong>{{ selectedAdAccountName() }}</strong>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field" [class.invalid]="fieldInvalid('identity.adAccountId')">
+              <span>Conta de anúncio</span>
+              <select [(ngModel)]="state.identity.adAccountId" (ngModelChange)="touchState()" (blur)="markFieldTouched('identity.adAccountId')" [disabled]="loadingContext() || !internalAdAccounts().length">
+                <option value="" disabled>Selecione uma conta sincronizada</option>
+                <option *ngFor="let account of internalAdAccounts(); trackBy: trackByValue" [value]="account.id">
+                  {{ account.name }} · {{ account.externalId || account.metaId || account.id }}
+                </option>
+              </select>
+              <small *ngIf="fieldInvalid('identity.adAccountId')">A campanha precisa de uma conta sincronizada da store.</small>
+            </label>
+
+            <label class="form-field">
+              <span>Página do Facebook</span>
+              <input type="text" [ngModel]="selectedPageName()" disabled />
+            </label>
+
+            <label class="form-field">
+              <span>Conta do Instagram</span>
+              <input type="text" [(ngModel)]="state.identity.instagramAccount" (ngModelChange)="touchState()" placeholder="@sualoja" />
+            </label>
+
+            <label class="form-field">
+              <span>Nome exibido</span>
+              <input type="text" [(ngModel)]="state.identity.displayName" (ngModelChange)="touchState()" placeholder="Nome público do anúncio" />
+            </label>
+
+            <label class="form-field">
+              <span>Fuso horário</span>
+              <input type="text" [(ngModel)]="state.identity.timezone" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>Moeda</span>
+              <input type="text" [(ngModel)]="state.identity.currency" (ngModelChange)="touchState()" />
+            </label>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-audience">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Público e segmentação</span>
+              <h3>Entrega e leitura rápida</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-audience')" [tone]="sectionTone('builder-audience')" />
+              <button class="link-btn" type="button" (click)="audienceAdvancedOpen.set(!audienceAdvancedOpen())">
+                {{ audienceAdvancedOpen() ? 'Ocultar avançado' : 'Mostrar avançado' }}
+              </button>
+            </div>
+          </div>
+
+          <label class="toggle-card">
+            <input type="checkbox" [(ngModel)]="state.audience.autoAudience" (ngModelChange)="touchState()" />
+            <div>
+              <strong>Otimização automática de público</strong>
+              <span>Permitir expansão automática quando houver ganho potencial.</span>
+            </div>
+          </label>
+
+          <div class="field-grid">
+            <label class="form-field" [class.invalid]="fieldInvalid('audience.country')">
+              <span>País</span>
+              <input type="text" [ngModel]="state.audience.country" (ngModelChange)="setCountry($event)" (blur)="markFieldTouched('audience.country')" maxlength="2" placeholder="BR" />
+              <small *ngIf="fieldInvalid('audience.country')">Use um código ISO de 2 letras, como `BR`.</small>
+            </label>
+
+            <label class="form-field">
+              <span>Estado / região</span>
+              <input type="text" [(ngModel)]="state.audience.region" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>Cidade</span>
+              <input type="text" [(ngModel)]="state.audience.city" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>CEP</span>
+              <input type="text" [(ngModel)]="state.audience.zipCode" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>Raio em km</span>
+              <input type="number" [(ngModel)]="state.audience.radiusKm" (ngModelChange)="touchState()" min="1" />
+            </label>
+
+            <label class="form-field">
+              <span>Tipo de presença</span>
+              <input type="text" [(ngModel)]="state.audience.presenceType" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>Idade mínima</span>
+              <input type="number" [(ngModel)]="state.audience.ageMin" (ngModelChange)="touchState()" min="13" />
+            </label>
+
+            <label class="form-field">
+              <span>Idade máxima</span>
+              <input type="number" [(ngModel)]="state.audience.ageMax" (ngModelChange)="touchState()" min="18" />
+            </label>
+
+            <label class="form-field">
+              <span>Gênero</span>
+              <select [ngModel]="state.audience.gender" (ngModelChange)="setGender($event)">
+                <option *ngFor="let option of genderOptions; trackBy: trackByValue" [value]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+
+            <label class="form-field">
+              <span>Idioma principal</span>
+              <input type="text" [(ngModel)]="state.audience.languagePrimary" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field field-span-2">
+              <span>Idiomas adicionais</span>
+              <input type="text" [(ngModel)]="state.audience.languagesAdditional" (ngModelChange)="touchState()" placeholder="Espanhol, Inglês" />
+            </label>
+          </div>
+
+          <div class="summary-chip-row">
+            <span class="summary-chip">{{ audienceSummary() }}</span>
+            <span class="summary-chip">{{ state.audience.presenceType }}</span>
+            <span class="summary-chip">{{ state.audience.languagePrimary }}</span>
+          </div>
+
+          <div class="advanced-block" *ngIf="audienceAdvancedOpen()">
+            <div class="field-grid">
+              <label class="form-field field-span-2">
+                <span>Interesses</span>
+                <input type="text" [(ngModel)]="state.audience.interests" (ngModelChange)="touchState()" placeholder="Moda, beleza, tecnologia" />
+              </label>
+
+              <label class="form-field field-span-2">
+                <span>Comportamentos</span>
+                <input type="text" [(ngModel)]="state.audience.behaviors" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field field-span-2">
+                <span>Dados demográficos detalhados</span>
+                <input type="text" [(ngModel)]="state.audience.demographics" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field">
+                <span>Excluir interesses</span>
+                <input type="text" [(ngModel)]="state.audience.excludedInterests" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field">
+                <span>Público salvo</span>
+                <input type="text" [(ngModel)]="state.audience.savedAudience" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field">
+                <span>Público personalizado</span>
+                <input type="text" [(ngModel)]="state.audience.customAudience" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field">
+                <span>Público semelhante</span>
+                <input type="text" [(ngModel)]="state.audience.lookalikeAudience" (ngModelChange)="touchState()" />
+              </label>
+
+              <label class="form-field field-span-2">
+                <span>Excluir públicos</span>
+                <input type="text" [(ngModel)]="state.audience.excludedAudiences" (ngModelChange)="touchState()" />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-budget">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Orçamento e lance</span>
+              <h3>Controle e estimativas simuladas</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-budget')" [tone]="sectionTone('builder-budget')" />
+              <button class="link-btn" type="button" (click)="budgetAdvancedOpen.set(!budgetAdvancedOpen())">
+                {{ budgetAdvancedOpen() ? 'Ocultar avançado' : 'Mostrar avançado' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field">
+              <span>Tipo de orçamento</span>
+              <select [(ngModel)]="state.budget.budgetType" (ngModelChange)="touchState()">
+                <option *ngFor="let option of budgetTypeOptions; trackBy: trackByValue" [value]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+
+            <label class="form-field" [class.invalid]="fieldInvalid('budget.value')">
+              <span>Valor do orçamento</span>
+              <input type="number" [(ngModel)]="state.budget.value" (ngModelChange)="touchState()" (blur)="markFieldTouched('budget.value')" min="1" step="1" />
+              <small *ngIf="fieldInvalid('budget.value')">O orçamento precisa ser maior que zero para publicar.</small>
+            </label>
+
+            <label class="form-field">
+              <span>Limite de gasto do conjunto</span>
+              <input type="number" [(ngModel)]="state.budget.adSetSpendLimit" (ngModelChange)="touchState()" min="0" step="10" />
+            </label>
+
+            <label class="form-field">
+              <span>Estratégia de lance</span>
+              <input type="text" [(ngModel)]="state.budget.bidStrategy" (ngModelChange)="touchState()" />
+            </label>
+
+            <label class="form-field">
+              <span>Controle de custo</span>
+              <input type="number" [(ngModel)]="state.budget.costControl" (ngModelChange)="touchState()" min="0" step="0.1" />
+            </label>
+          </div>
+
+          <div class="chip-row">
+            <button class="budget-chip" type="button" *ngFor="let budget of quickBudgetOptions" (click)="setBudgetChip(budget)">
+              {{ budget | currency:'BRL':'symbol':'1.0-0':'pt-BR' }}
+            </button>
+          </div>
+
+          <div class="estimate-grid">
+            <article class="estimate-card">
+              <span>Alcance estimado</span>
+              <strong>{{ simulatedMetrics().reach | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+            <article class="estimate-card">
+              <span>Cliques simulados</span>
+              <strong>{{ simulatedMetrics().clicks | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+            <article class="estimate-card">
+              <span>Leads simulados</span>
+              <strong>{{ simulatedMetrics().leads | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+            <article class="estimate-card">
+              <span>CPL simulado</span>
+              <strong>{{ simulatedMetrics().cpl | currency:'BRL':'symbol':'1.2-2':'pt-BR' }}</strong>
+            </article>
+          </div>
+
+          <div class="advanced-block" *ngIf="budgetAdvancedOpen()">
+            <div class="field-grid">
+              <label class="form-field">
+                <span>ROAS mínimo</span>
+                <input type="number" [(ngModel)]="state.budget.minRoas" (ngModelChange)="touchState()" step="0.1" />
+              </label>
+              <label class="form-field">
+                <span>Meta de custo</span>
+                <input type="number" [(ngModel)]="state.budget.costPerResultGoal" (ngModelChange)="touchState()" step="0.1" />
+              </label>
+              <label class="form-field">
+                <span>Lance manual</span>
+                <input type="number" [(ngModel)]="state.budget.manualBid" (ngModelChange)="touchState()" step="0.1" />
+              </label>
+              <label class="form-field">
+                <span>Billing event</span>
+                <input type="text" [(ngModel)]="state.budget.billingEvent" (ngModelChange)="touchState()" />
+              </label>
+              <label class="form-field">
+                <span>Optimization goal</span>
+                <input type="text" [(ngModel)]="state.budget.optimizationGoal" (ngModelChange)="touchState()" />
+              </label>
+              <label class="form-field">
+                <span>Janela de conversão</span>
+                <input type="text" [(ngModel)]="state.budget.conversionWindow" (ngModelChange)="touchState()" />
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-schedule">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Agenda</span>
+              <h3>Calendário e ritmo de entrega</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-schedule')" [tone]="sectionTone('builder-schedule')" />
+              <button class="link-btn" type="button" (click)="scheduleAdvancedOpen.set(!scheduleAdvancedOpen())">
+                {{ scheduleAdvancedOpen() ? 'Ocultar avançado' : 'Mostrar avançado' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field">
+              <span>Data de início</span>
+              <input type="date" [(ngModel)]="state.schedule.startDate" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>Hora de início</span>
+              <input type="time" [(ngModel)]="state.schedule.startTime" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>Data de fim</span>
+              <input type="date" [(ngModel)]="state.schedule.endDate" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>Hora de fim</span>
+              <input type="time" [(ngModel)]="state.schedule.endTime" (ngModelChange)="touchState()" />
+            </label>
+          </div>
+
+          <div class="chip-row">
+            <label class="choice-chip" *ngFor="let day of weekDayOptions; trackBy: trackByValue">
+              <input type="checkbox" [checked]="isWeekDaySelected(day.value)" (change)="toggleWeekDay(day.value, $any($event.target).checked)" />
+              <span>{{ day.label }}</span>
+            </label>
+          </div>
+
+          <div class="advanced-block" *ngIf="scheduleAdvancedOpen()">
+            <div class="field-grid">
+              <label class="form-field field-span-2">
+                <span>Blocos de horário</span>
+                <input type="text" [(ngModel)]="state.schedule.timeBlocks" (ngModelChange)="touchState()" placeholder="09:00-12:00, 14:00-18:00" />
+              </label>
+            </div>
+            <label class="toggle-card">
+              <input type="checkbox" [(ngModel)]="state.schedule.advancedScheduling" (ngModelChange)="touchState()" />
+              <div>
+                <strong>Agenda avançada</strong>
+                <span>Salvar a intenção de horários finos para futura expansão do backend.</span>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-placements">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Posicionamentos</span>
+              <h3>Seleção visual por canal</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="sectionModeLabel('builder-placements')" [tone]="sectionTone('builder-placements')" />
+              <button class="link-btn" type="button" (click)="placementAdvancedOpen.set(!placementAdvancedOpen())">
+                {{ placementAdvancedOpen() ? 'Ocultar opções' : 'Mostrar opções' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="placement-grid">
+            <label class="placement-card" *ngFor="let option of placementOptions; trackBy: trackByValue" [class.active]="isPlacementSelected(option.value)">
+              <input type="checkbox" [checked]="isPlacementSelected(option.value)" (change)="togglePlacement(option.value, $any($event.target).checked)" />
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.platform }}</span>
+            </label>
+          </div>
+
+          <div class="advanced-block" *ngIf="placementAdvancedOpen()">
+            <div class="toggle-grid">
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="state.placements.platforms.facebook" (ngModelChange)="touchState()" />
+                <div><strong>Facebook</strong><span>Ativar contexto da plataforma.</span></div>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="state.placements.platforms.instagram" (ngModelChange)="touchState()" />
+                <div><strong>Instagram</strong><span>Ativar superfícies do Instagram.</span></div>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="state.placements.platforms.messenger" (ngModelChange)="touchState()" />
+                <div><strong>Messenger</strong><span>Ativar conversa como inventário.</span></div>
+              </label>
+              <label class="toggle-card">
+                <input type="checkbox" [(ngModel)]="state.placements.platforms.audienceNetwork" (ngModelChange)="touchState()" />
+                <div><strong>Audience Network</strong><span>Ativar rede de audiência.</span></div>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-destination">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Destino</span>
+              <h3>Onde a campanha leva o usuário</h3>
+            </div>
+            <app-ui-badge [label]="sectionModeLabel('builder-destination')" [tone]="sectionTone('builder-destination')" />
+          </div>
+
+          <div class="destination-cards">
+            <button
+              type="button"
+              class="objective-card compact"
+              *ngFor="let option of destinationOptions; trackBy: trackByValue"
+              [class.active]="state.destination.type === option.value"
+              (click)="setDestinationType(option.value)"
+            >
+              <strong>{{ option.label }}</strong>
+            </button>
+          </div>
+
+          <div class="field-grid" *ngIf="state.destination.type === 'site'">
+            <label class="form-field field-span-2" [class.invalid]="fieldInvalid('destination.websiteUrl')">
+              <span>URL do site</span>
+              <input type="url" [(ngModel)]="state.destination.websiteUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('destination.websiteUrl')" placeholder="https://..." />
+              <small *ngIf="fieldInvalid('destination.websiteUrl')">O destino do tipo site precisa de uma URL válida.</small>
+            </label>
+          </div>
+
+          <div class="field-grid" *ngIf="state.destination.type === 'messages'">
+            <label class="form-field field-span-2">
+              <span>Destino de mensagens</span>
+              <input type="text" [(ngModel)]="state.destination.messagesDestination" (ngModelChange)="touchState()" placeholder="WhatsApp / Instagram Direct / Messenger" />
+            </label>
+          </div>
+
+          <div class="field-grid" *ngIf="state.destination.type === 'form'">
+            <label class="form-field field-span-2">
+              <span>Formulário</span>
+              <input type="text" [(ngModel)]="state.destination.formName" (ngModelChange)="touchState()" placeholder="Nome interno do formulário" />
+            </label>
+          </div>
+
+          <div class="field-grid" *ngIf="state.destination.type === 'app'">
+            <label class="form-field field-span-2">
+              <span>Link do app</span>
+              <input type="text" [(ngModel)]="state.destination.appLink" (ngModelChange)="touchState()" placeholder="App Store / Play Store / deep link" />
+            </label>
+          </div>
+
+          <div class="field-grid" *ngIf="state.destination.type === 'catalog'">
+            <label class="form-field field-span-2">
+              <span>Catálogo</span>
+              <input type="text" [(ngModel)]="state.destination.catalogId" (ngModelChange)="touchState()" placeholder="Identificador ou nome do catálogo" />
+            </label>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-creative">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Criativo</span>
+              <h3>Mensagem, CTA e suporte visual</h3>
+            </div>
+            <app-ui-badge [label]="sectionModeLabel('builder-creative')" [tone]="sectionTone('builder-creative')" />
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.message')">
+              <span>Mensagem principal</span>
+              <textarea [(ngModel)]="state.creative.message" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.message')" rows="5" maxlength="500" placeholder="Escreva a mensagem principal do anúncio"></textarea>
+              <small *ngIf="fieldInvalid('creative.message')">A mensagem principal entra no payload real enviado à Meta.</small>
+            </label>
+            <label class="form-field">
+              <span>Headline</span>
+              <input type="text" [(ngModel)]="state.creative.headline" (ngModelChange)="touchState()" maxlength="80" />
+            </label>
+            <label class="form-field">
+              <span>Descrição</span>
+              <input type="text" [(ngModel)]="state.creative.description" (ngModelChange)="touchState()" maxlength="120" />
+            </label>
+            <label class="form-field">
+              <span>CTA</span>
+              <select [(ngModel)]="state.creative.cta" (ngModelChange)="touchState()">
+                <option *ngFor="let option of ctaOptions" [value]="option">{{ option }}</option>
+              </select>
+            </label>
+            <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
+              <span>URL da imagem</span>
+              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
+              <small *ngIf="fieldInvalid('creative.imageUrl')">A URL da imagem deve começar com `http://` ou `https://`.</small>
+            </label>
+          </div>
+
+          <label class="toggle-card">
+            <input type="checkbox" [(ngModel)]="state.creative.carousel" (ngModelChange)="touchState()" />
+            <div>
+              <strong>Criativo em carrossel</strong>
+              <span>Estrutura visual preparada para futura expansão sem mudar o payload atual.</span>
+            </div>
+          </label>
+
+          <div class="preview-modes">
+            <article class="preview-mode-card">
+              <span>Preview feed</span>
+              <strong>{{ previewHeadline() }}</strong>
+            </article>
+            <article class="preview-mode-card">
+              <span>Preview story</span>
+              <strong>{{ previewCta() }}</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="section-block" id="builder-tracking">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Rastreamento</span>
+              <h3>Mensuração e observações</h3>
+            </div>
+            <app-ui-badge [label]="sectionModeLabel('builder-tracking')" [tone]="sectionTone('builder-tracking')" />
+          </div>
+
+          <div class="field-grid">
+            <label class="form-field">
+              <span>Pixel</span>
+              <input type="text" [(ngModel)]="state.tracking.pixel" (ngModelChange)="touchState()" placeholder="Meta Pixel principal" />
+            </label>
+            <label class="form-field">
+              <span>Evento principal</span>
+              <input type="text" [(ngModel)]="state.tracking.mainEvent" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>Rastreamento de conversão</span>
+              <input type="text" [(ngModel)]="state.tracking.conversionTracking" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>Metas</span>
+              <input type="text" [(ngModel)]="state.tracking.goals" (ngModelChange)="touchState()" placeholder="ROAS 3+, CPL até 20, ticket..." />
+            </label>
+            <label class="form-field">
+              <span>UTM source</span>
+              <input type="text" [(ngModel)]="state.tracking.utmSource" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field">
+              <span>UTM medium</span>
+              <input type="text" [(ngModel)]="state.tracking.utmMedium" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field field-span-2">
+              <span>UTM campaign</span>
+              <input type="text" [(ngModel)]="state.tracking.utmCampaign" (ngModelChange)="touchState()" />
+            </label>
+            <label class="form-field field-span-2">
+              <span>Observações para mensuração</span>
+              <textarea [(ngModel)]="state.tracking.notes" (ngModelChange)="touchState()" rows="4"></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="section-block review-block" id="builder-review">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Revisão final</span>
+              <h3>Checklist, alertas e payload</h3>
+            </div>
+            <app-ui-badge [label]="sectionModeLabel('builder-review')" [tone]="sectionTone('builder-review')" />
+          </div>
+
+          <p class="compatibility-note">{{ compatibilityNote() }}</p>
+
+          <div class="signal-row">
+            <span class="signal-chip" *ngFor="let item of reviewSignals(); trackBy: trackByValue" [class]="'tone-' + item.tone">
+              {{ item.label }}
+            </span>
+          </div>
+
+          <div class="review-checklist">
+            <div class="review-item" *ngFor="let item of readinessItems(); trackBy: trackByValue" [class.done]="item.done">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.done ? 'OK' : 'Pendente' }}</span>
+            </div>
+          </div>
+
+          <div class="summary-list">
+            <div class="summary-row" *ngFor="let row of summaryRows(); trackBy: trackByValue">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.value }}</strong>
+            </div>
+          </div>
+
+          <div class="json-preview">
+            <span class="section-kicker">JSON final expandido</span>
+            <pre>{{ reviewJson() }}</pre>
+          </div>
+
+          <div class="submit-error" *ngIf="submitError()">
+            {{ submitError() }}
+          </div>
+
+          <div class="review-actions">
+            <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+            <button class="btn btn-secondary" type="button" (click)="closePanel()">Voltar</button>
+            <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
+              {{ submitting() ? 'Criando campanha...' : 'Publicar / criar campanha' }}
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <aside class="summary-sidebar">
+        <section class="sidebar-block">
+          <div class="sidebar-heading">
+            <span class="section-kicker">Resumo em tempo real</span>
+            <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
+          </div>
+
+          <div class="summary-list">
+            <div class="summary-row" *ngFor="let row of summaryRows(); trackBy: trackByValue">
+              <span>{{ row.label }}</span>
+              <strong>{{ row.value }}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-block">
+          <div class="sidebar-heading">
+            <span class="section-kicker">Sinais de revisão</span>
+            <strong>{{ progressPercent() }}% concluído</strong>
+          </div>
+
+          <div class="checklist-list">
+            <div class="checklist-item" *ngFor="let item of readinessItems(); trackBy: trackByValue">
+              <span class="check-indicator" [class.done]="item.done"></span>
+              <span>{{ item.label }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar-block">
+          <div class="sidebar-heading">
+            <span class="section-kicker">Estimativas simuladas</span>
+            <strong>Leitura rápida</strong>
+          </div>
+
+          <div class="estimate-grid sidebar-estimates">
+            <article class="estimate-card">
+              <span>Reach</span>
+              <strong>{{ simulatedMetrics().reach | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+            <article class="estimate-card">
+              <span>CTR simulado</span>
+              <strong>{{ simulatedMetrics().ctr }}%</strong>
+            </article>
+            <article class="estimate-card">
+              <span>Cliques</span>
+              <strong>{{ simulatedMetrics().clicks | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+            <article class="estimate-card">
+              <span>Leads</span>
+              <strong>{{ simulatedMetrics().leads | number:'1.0-0':'pt-BR' }}</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="sidebar-block preview-block">
+          <div class="sidebar-heading">
+            <span class="section-kicker">Preview</span>
+            <strong>{{ previewHeadline() }}</strong>
+          </div>
+
+          <div class="creative-preview">
+            <div class="preview-media" *ngIf="state.creative.imageUrl.trim(); else previewPlaceholder">
+              <img [src]="state.creative.imageUrl" alt="Preview do criativo" />
+            </div>
+
+            <ng-template #previewPlaceholder>
+              <div class="preview-placeholder">Preview com fallback elegante</div>
+            </ng-template>
+
+            <div class="preview-copy">
+              <span class="preview-store">{{ selectedStoreName() }}</span>
+              <strong>{{ previewHeadline() }}</strong>
+              <p>{{ previewDescription() }}</p>
+              <div class="preview-message">{{ previewMessage() }}</div>
+              <button class="preview-cta" type="button">{{ previewCta() }}</button>
+            </div>
+          </div>
+
+          <div class="token-list" *ngIf="previewInterests().length || previewTags().length">
+            <span class="token" *ngFor="let interest of previewInterests()">{{ interest }}</span>
+            <span class="token token-muted" *ngFor="let tag of previewTags()">{{ tag }}</span>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <div class="success-overlay" *ngIf="successOverlay() as success">
+    <div class="success-card">
+      <span class="section-kicker">Campanha criada</span>
+      <strong>{{ success.name }}</strong>
+      <p>A criação real foi concluída com sucesso. IDs retornados pela API:</p>
+      <div class="success-meta">
+        <span>Campaign: {{ success.response.campaignId }}</span>
+        <span>AdSet: {{ success.response.adSetId }}</span>
+        <span>Creative: {{ success.response.creativeId }}</span>
+        <span>Ad: {{ success.response.adId }}</span>
+      </div>
+      <div class="review-actions success-actions">
+        <button class="btn btn-primary" type="button" (click)="finishSuccessFlow()">Voltar para campanhas</button>
+      </div>
+    </div>
+  </div>
+</div>

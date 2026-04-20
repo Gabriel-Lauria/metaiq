@@ -1,203 +1,390 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ChartConfiguration, ChartData } from 'chart.js';
-import { ApiService } from '../../core/services/api.service';
-import { StoreContextService } from '../../core/services/store-context.service';
-import { AggregatedMetrics } from '../../core/models';
+import { ChartData, ChartOptions } from 'chart.js';
 import { ChartComponent } from '../../core/components/chart.component';
 import { UiKpiCardComponent } from '../../core/components/ui-kpi-card.component';
-import { UiStateComponent } from '../../core/components/ui-state.component';
+import { AggregatedMetrics } from '../../core/models';
+import { StoreContextService } from '../../core/services/store-context.service';
 
-interface CampaignMetricsRow {
-  id: string;
-  campaign: string;
-  account: string;
+interface CampaignMetricHistory {
+  date: string;
   spend: number;
-  roas: number;
-  cpa: number;
-  ctr: number;
-  cpc: number;
   conversions: number;
+}
+
+interface MetricsCampaign {
+  id: string;
+  name: string;
+  account: string;
+  storeId: string;
+  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  metrics: AggregatedMetrics & {
+    cpc: number;
+    history: CampaignMetricHistory[];
+    previousPerformance: Partial<AggregatedMetrics>;
+  };
+}
+
+interface InsightCard {
+  id: string;
+  title: string;
+  detail: string;
 }
 
 @Component({
   selector: 'app-metrics',
   standalone: true,
-  imports: [CommonModule, FormsModule, ChartComponent, UiKpiCardComponent, UiStateComponent],
+  imports: [CommonModule, FormsModule, ChartComponent, UiKpiCardComponent],
   templateUrl: './metrics.component.html',
   styleUrls: ['./metrics.component.scss'],
 })
-export class MetricsComponent implements OnInit {
-  private api = inject(ApiService);
-  storeContext = inject(StoreContextService);
+export class MetricsComponent {
+  readonly storeContext = inject(StoreContextService);
 
-  loading = signal(true);
-  error = signal<string | null>(null);
-  period = signal(30);
-  metrics = signal<AggregatedMetrics | null>(null);
-  startDate = signal(this.isoDaysAgo(30));
-  endDate = signal(this.isoDaysAgo(0));
-  selectedStoreId = signal('');
-  selectedAdAccount = signal('Todas as contas');
-  selectedCampaign = signal('Todas as campanhas');
+  readonly fromDate = signal(this.formatDateOffset(-30));
+  readonly toDate = signal(this.formatDateOffset(0));
+  readonly selectedStore = signal('');
+  readonly selectedAccount = signal('Todas');
+  readonly selectedCampaign = signal('Todas');
 
-  adAccounts = ['Todas as contas', 'Meta Ads Principal', 'Meta Ads Retargeting', 'Meta Ads Expansao'];
+  readonly accounts = ['Todas', 'Conta Meta 1', 'Conta Meta 2'];
 
-  campaignRows = computed<CampaignMetricsRow[]>(() => {
-    const base = this.metrics();
-    const spend = base?.spend || 18640;
-    const conversions = base?.conversions || 412;
-    const roas = base?.roas || 3.42;
-    const ctr = base?.ctr || 2.8;
-    const cpa = base?.cpa || 45.24;
-    const clicks = base?.clicks || 8140;
-    const cpc = clicks > 0 ? spend / clicks : 2.28;
+  readonly allCampaigns = signal<MetricsCampaign[]>([
+    {
+      id: 'cmp-1',
+      name: 'Campanha Lançamento',
+      account: 'Conta Meta 1',
+      storeId: 'store-1',
+      status: 'ACTIVE',
+      metrics: {
+        impressions: 620000,
+        clicks: 26000,
+        spend: 14200,
+        conversions: 320,
+        revenue: 45120,
+        ctr: 4.2,
+        cpa: 44.4,
+        roas: 3.18,
+        cpc: 0.55,
+        score: 88,
+        history: [
+          { date: '2026-03-25', spend: 1400, conversions: 30 },
+          { date: '2026-03-31', spend: 1800, conversions: 42 },
+          { date: '2026-04-07', spend: 2200, conversions: 50 },
+          { date: '2026-04-14', spend: 2500, conversions: 80 },
+          { date: '2026-04-20', spend: 3300, conversions: 118 },
+        ],
+        previousPerformance: {
+          impressions: 580000,
+          clicks: 24500,
+          spend: 13800,
+          conversions: 300,
+          revenue: 41600,
+          ctr: 4.1,
+          cpa: 46,
+          roas: 3.01,
+          score: 84,
+        },
+      },
+    },
+    {
+      id: 'cmp-2',
+      name: 'Promoção Férias',
+      account: 'Conta Meta 2',
+      storeId: 'store-1',
+      status: 'PAUSED',
+      metrics: {
+        impressions: 488000,
+        clicks: 19000,
+        spend: 9800,
+        conversions: 190,
+        revenue: 23450,
+        ctr: 3.9,
+        cpa: 51.6,
+        roas: 2.39,
+        cpc: 0.52,
+        score: 68,
+        history: [
+          { date: '2026-03-25', spend: 1200, conversions: 18 },
+          { date: '2026-03-31', spend: 1600, conversions: 24 },
+          { date: '2026-04-07', spend: 2200, conversions: 40 },
+          { date: '2026-04-14', spend: 2400, conversions: 60 },
+          { date: '2026-04-20', spend: 2400, conversions: 48 },
+        ],
+        previousPerformance: {
+          impressions: 520000,
+          clicks: 20500,
+          spend: 10200,
+          conversions: 210,
+          revenue: 26300,
+          ctr: 3.95,
+          cpa: 48.6,
+          roas: 2.58,
+          score: 72,
+        },
+      },
+    },
+    {
+      id: 'cmp-3',
+      name: 'Black Friday',
+      account: 'Conta Meta 1',
+      storeId: 'store-2',
+      status: 'ACTIVE',
+      metrics: {
+        impressions: 890000,
+        clicks: 41000,
+        spend: 21800,
+        conversions: 480,
+        revenue: 125000,
+        ctr: 4.6,
+        cpa: 45.4,
+        roas: 5.73,
+        cpc: 0.53,
+        score: 95,
+        history: [
+          { date: '2026-03-25', spend: 2900, conversions: 68 },
+          { date: '2026-03-31', spend: 3800, conversions: 82 },
+          { date: '2026-04-07', spend: 4500, conversions: 96 },
+          { date: '2026-04-14', spend: 5200, conversions: 126 },
+          { date: '2026-04-20', spend: 5400, conversions: 108 },
+        ],
+        previousPerformance: {
+          impressions: 820000,
+          clicks: 37000,
+          spend: 20200,
+          conversions: 430,
+          revenue: 113000,
+          ctr: 4.5,
+          cpa: 47,
+          roas: 5.59,
+          score: 91,
+        },
+      },
+    },
+  ]);
 
-    return [
-      { id: 'cmp-1', campaign: 'Prospeccao Meta - Topo', account: 'Meta Ads Principal', spend: spend * 0.34, roas: roas * 1.18, cpa: cpa * 0.84, ctr: ctr * 1.16, cpc: cpc * 0.92, conversions: Math.round(conversions * 0.38) },
-      { id: 'cmp-2', campaign: 'Remarketing Checkout', account: 'Meta Ads Retargeting', spend: spend * 0.27, roas: roas * 1.32, cpa: cpa * 0.76, ctr: ctr * 1.28, cpc: cpc * 0.88, conversions: Math.round(conversions * 0.31) },
-      { id: 'cmp-3', campaign: 'Conversao Catalogo', account: 'Meta Ads Principal', spend: spend * 0.23, roas: roas * 0.86, cpa: cpa * 1.12, ctr: ctr * 0.91, cpc: cpc * 1.08, conversions: Math.round(conversions * 0.2) },
-      { id: 'cmp-4', campaign: 'Teste Criativos Abril', account: 'Meta Ads Expansao', spend: spend * 0.16, roas: roas * 0.58, cpa: cpa * 1.46, ctr: ctr * 0.72, cpc: cpc * 1.24, conversions: Math.max(1, Math.round(conversions * 0.11)) },
-    ];
+  readonly selectedStoreName = computed(() => {
+    const store = this.storeContext.stores().find((item) => item.id === this.selectedStore());
+    return store?.name || 'Todas as lojas';
   });
 
-  filteredRows = computed(() => this.campaignRows().filter((row) => {
-    const accountOk = this.selectedAdAccount() === 'Todas as contas' || row.account === this.selectedAdAccount();
-    const campaignOk = this.selectedCampaign() === 'Todas as campanhas' || row.campaign === this.selectedCampaign();
-    return accountOk && campaignOk;
-  }));
+  readonly filteredCampaigns = computed(() =>
+    this.allCampaigns().filter((campaign) => {
+      const matchesStore = !this.selectedStore() || campaign.storeId === this.selectedStore();
+      const matchesAccount = this.selectedAccount() === 'Todas' || campaign.account === this.selectedAccount();
+      const matchesCampaign = this.selectedCampaign() === 'Todas' || campaign.name === this.selectedCampaign();
+      return matchesStore && matchesAccount && matchesCampaign;
+    }),
+  );
 
-  totals = computed(() => {
-    const rows = this.filteredRows();
-    const spend = rows.reduce((sum, row) => sum + row.spend, 0);
-    const conversions = rows.reduce((sum, row) => sum + row.conversions, 0);
-    const weighted = (field: keyof Pick<CampaignMetricsRow, 'roas' | 'ctr' | 'cpc'>) =>
-      spend ? rows.reduce((sum, row) => sum + row[field] * row.spend, 0) / spend : 0;
+  readonly aggregatedMetrics = computed(() => {
+    const campaigns = this.filteredCampaigns();
+    const totals = campaigns.reduce(
+      (acc, campaign) => ({
+        impressions: acc.impressions + campaign.metrics.impressions,
+        clicks: acc.clicks + campaign.metrics.clicks,
+        spend: acc.spend + campaign.metrics.spend,
+        conversions: acc.conversions + campaign.metrics.conversions,
+        revenue: acc.revenue + campaign.metrics.revenue,
+        score: acc.score + campaign.metrics.score,
+      }),
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0, revenue: 0, score: 0 },
+    );
+
+    const impressions = totals.impressions;
+    const clicks = totals.clicks;
+    const spend = totals.spend;
+    const conversions = totals.conversions;
+    const revenue = totals.revenue;
+    const count = Math.max(campaigns.length, 1);
 
     return {
+      impressions,
+      clicks,
       spend,
       conversions,
-      roas: weighted('roas'),
-      ctr: weighted('ctr'),
-      cpc: weighted('cpc'),
-      cpa: conversions ? spend / conversions : 0,
+      revenue,
+      ctr: impressions ? +(clicks / impressions * 100).toFixed(1) : 0,
+      cpa: conversions ? +(spend / conversions).toFixed(2) : 0,
+      roas: spend ? +(revenue / spend).toFixed(2) : 0,
+      score: +(totals.score / count).toFixed(1),
+      cpc: clicks ? +(spend / clicks).toFixed(2) : 0,
     };
   });
 
-  bestCampaign = computed(() => [...this.filteredRows()].sort((a, b) => b.roas - a.roas)[0]);
-  worstCampaign = computed(() => [...this.filteredRows()].sort((a, b) => a.roas - b.roas)[0]);
+  readonly lineChartData = computed<ChartData<'line'>>(() => {
+    const grouped = new Map<string, { spend: number; conversions: number }>();
 
-  chartOptions: ChartConfiguration['options'] = {
-    plugins: { legend: { labels: { color: '#475569' } } },
-    scales: {
-      x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148, 163, 184, 0.16)' } },
-      y: { ticks: { color: '#64748b' }, grid: { color: 'rgba(148, 163, 184, 0.16)' } },
-    },
-  };
+    this.filteredCampaigns()
+      .flatMap((campaign) => campaign.metrics.history)
+      .forEach((point) => {
+        if (!grouped.has(point.date)) {
+          grouped.set(point.date, { spend: 0, conversions: 0 });
+        }
 
-  lineChart = computed<ChartData<'line'>>(() => ({
-    labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'],
+        const row = grouped.get(point.date)!;
+        row.spend += point.spend;
+        row.conversions += point.conversions;
+      });
+
+    const labels = Array.from(grouped.keys()).sort((left, right) => left.localeCompare(right));
+    const points = labels.map((label) => grouped.get(label)!);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Spend',
+          data: points.map((point) => point.spend),
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.16)',
+          fill: true,
+          tension: 0.32,
+        },
+        {
+          label: 'Conversões',
+          data: points.map((point) => point.conversions),
+          borderColor: '#f97316',
+          backgroundColor: 'rgba(249, 115, 22, 0.16)',
+          fill: true,
+          tension: 0.32,
+          yAxisID: 'y1',
+        },
+      ],
+    };
+  });
+
+  readonly barChartData = computed<ChartData<'bar'>>(() => ({
+    labels: this.filteredCampaigns().map((campaign) => campaign.name),
     datasets: [
       {
         label: 'Spend',
-        data: [0.18, 0.24, 0.28, 0.3].map((value) => Math.round(this.totals().spend * value)),
-        borderColor: '#2563eb',
-        backgroundColor: 'rgba(37, 99, 235, 0.14)',
-        tension: 0.35,
-        fill: true,
+        data: this.filteredCampaigns().map((campaign) => campaign.metrics.spend),
+        backgroundColor: '#2563eb',
       },
       {
-        label: 'Conversoes',
-        data: [0.2, 0.22, 0.26, 0.32].map((value) => Math.round(this.totals().conversions * value)),
-        borderColor: '#f97316',
-        backgroundColor: 'rgba(249, 115, 22, 0.12)',
-        tension: 0.35,
+        label: 'Conversões',
+        data: this.filteredCampaigns().map((campaign) => campaign.metrics.conversions),
+        backgroundColor: '#f97316',
       },
     ],
   }));
 
-  barChart = computed<ChartData<'bar'>>(() => ({
-    labels: this.filteredRows().map((row) => row.campaign),
-    datasets: [{ label: 'ROAS', data: this.filteredRows().map((row) => Number(row.roas.toFixed(2))), backgroundColor: '#2563eb' }],
-  }));
-
-  donutChart = computed<ChartData<'doughnut'>>(() => ({
-    labels: this.filteredRows().map((row) => row.campaign),
-    datasets: [{ data: this.filteredRows().map((row) => Math.round(row.spend)), backgroundColor: ['#2563eb', '#f97316', '#22c55e', '#64748b'] }],
-  }));
-
-  comparisonChart = computed<ChartData<'bar'>>(() => ({
-    labels: ['Spend', 'ROAS', 'CPA', 'CTR', 'Conversoes'],
+  readonly donutChartData = computed<ChartData<'doughnut'>>(() => ({
+    labels: this.filteredCampaigns().map((campaign) => campaign.name),
     datasets: [
-      { label: 'Periodo atual', data: [100, 100, 100, 100, 100], backgroundColor: '#2563eb' },
-      { label: 'Periodo anterior', data: [88, 92, 114, 81, 76], backgroundColor: '#f97316' },
+      {
+        label: 'Distribuição de spend',
+        data: this.filteredCampaigns().map((campaign) => campaign.metrics.spend),
+        backgroundColor: ['#2563eb', '#f97316', '#16a34a', '#0ea5e9', '#f59e0b'],
+      },
     ],
   }));
+
+  readonly periodComparisonData = computed<ChartData<'bar'>>(() => {
+    const current = this.filteredCampaigns()[0]?.metrics;
+    const previous = current?.previousPerformance ?? {};
+
+    return {
+      labels: ['Spend', 'Conversões', 'Receita'],
+      datasets: [
+        {
+          label: 'Período atual',
+          data: [current?.spend ?? 0, current?.conversions ?? 0, current?.revenue ?? 0],
+          backgroundColor: '#2563eb',
+        },
+        {
+          label: 'Período anterior',
+          data: [previous.spend ?? 0, previous.conversions ?? 0, previous.revenue ?? 0],
+          backgroundColor: '#0ea5e9',
+        },
+      ],
+    };
+  });
+
+  readonly insights = computed<InsightCard[]>(() => {
+    const campaigns = [...this.filteredCampaigns()];
+    const best = [...campaigns].sort((left, right) => right.metrics.score - left.metrics.score)[0];
+    const worst = [...campaigns].sort((left, right) => left.metrics.score - right.metrics.score)[0];
+    const lowRoas = campaigns.find((campaign) => campaign.metrics.roas < 2.5);
+    const highCpa = campaigns.find((campaign) => campaign.metrics.cpa > 50);
+    const lowCtr = campaigns.find((campaign) => campaign.metrics.ctr < 4);
+
+    return [
+      { id: 'best', title: 'Melhor campanha', detail: best ? best.name : 'Sem campanhas para analisar.' },
+      { id: 'worst', title: 'Ponto de atenção', detail: worst ? `${worst.name} precisa de revisão de eficiência.` : 'Nenhum alerta no momento.' },
+      { id: 'ctr', title: 'Queda de CTR', detail: lowCtr ? `${lowCtr.name} está abaixo de 4% de CTR.` : 'CTR dentro do esperado.' },
+      { id: 'cpa', title: 'Aumento de CPA', detail: highCpa ? `${highCpa.name} ultrapassou a faixa saudável de CPA.` : 'CPA controlado.' },
+      { id: 'roas', title: 'ROAS baixo', detail: lowRoas ? `${lowRoas.name} está abaixo da meta de retorno.` : 'ROAS dentro do alvo.' },
+    ];
+  });
+
+  readonly chartOptions: ChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { position: 'bottom' },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: (value) => this.formatNumber(Number(value)),
+        },
+      },
+      y1: {
+        position: 'right',
+        beginAtZero: true,
+        grid: { drawOnChartArea: false },
+        ticks: {
+          callback: (value) => this.formatNumber(Number(value)),
+        },
+      },
+    },
+  };
 
   constructor() {
     effect(() => {
-      if (!this.storeContext.loaded() || !this.storeContext.getValidSelectedStoreId()) return;
-      this.selectedStoreId.set(this.storeContext.getValidSelectedStoreId() || '');
-      queueMicrotask(() => this.load());
+      const stores = this.storeContext.stores();
+      if (!stores.length || this.selectedStore()) {
+        return;
+      }
+
+      this.selectedStore.set(this.storeContext.selectedStoreId() || stores[0]?.id || '');
     });
   }
 
-  ngOnInit(): void {
-    this.storeContext.load();
-    if (this.storeContext.loaded() && this.storeContext.getValidSelectedStoreId()) {
-      this.selectedStoreId.set(this.storeContext.getValidSelectedStoreId() || '');
-      this.load();
+  setStore(storeId: string): void {
+    this.selectedStore.set(storeId);
+  }
+
+  setAccount(account: string): void {
+    this.selectedAccount.set(account);
+  }
+
+  setCampaign(campaignName: string): void {
+    this.selectedCampaign.set(campaignName);
+  }
+
+  formatCurrency(value: number): string {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  }
+
+  formatNumber(value: number): string {
+    if (Math.abs(value) >= 1000) {
+      return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(value);
     }
+
+    return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(value);
   }
 
-  load(): void {
-    const storeId = this.storeContext.getValidSelectedStoreId();
-    if (!storeId) {
-      this.loading.set(false);
-      this.error.set('Selecione uma loja para visualizar as metricas.');
-      return;
-    }
-
-    this.loading.set(true);
-    this.error.set(null);
-    this.api.getMetricsSummaryForStore(this.period(), storeId).subscribe({
-      next: (metrics) => {
-        this.metrics.set(metrics);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Nao foi possivel carregar as metricas.');
-        this.loading.set(false);
-      },
-    });
+  formatPercent(value: number): string {
+    return `${value.toFixed(1)}%`;
   }
 
-  applyFilters(): void {
-    if (this.selectedStoreId()) this.storeContext.select(this.selectedStoreId());
-    this.load();
-  }
-
-  setPeriodFromDates(): void {
-    const start = new Date(this.startDate()).getTime();
-    const end = new Date(this.endDate()).getTime();
-    const days = Math.max(1, Math.ceil((end - start) / 86400000));
-    this.period.set(days);
-  }
-
-  fmtCurrency(value: number): string {
-    return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  }
-
-  fmt(value: number): string {
-    return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  }
-
-  fmtPct(value: number): string {
-    return `${value.toFixed(2)}%`;
-  }
-
-  fmtRoas(value: number): string {
+  formatRoas(value: number): string {
     return `${value.toFixed(2)}x`;
   }
 
@@ -205,9 +392,9 @@ export class MetricsComponent implements OnInit {
     return item.id;
   }
 
-  private isoDaysAgo(days: number): string {
+  private formatDateOffset(days: number): string {
     const date = new Date();
-    date.setDate(date.getDate() - days);
+    date.setDate(date.getDate() + days);
     return date.toISOString().slice(0, 10);
   }
 }

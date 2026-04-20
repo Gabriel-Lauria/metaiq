@@ -1,12 +1,50 @@
 <div class="campaigns-container">
   <div class="campaigns-header">
     <div>
+      <p class="page-kicker">Central de campanhas</p>
       <h2 class="page-title">Campanhas</h2>
-      <span class="demo-data-badge">Dados de demonstracao</span>
-      <p class="page-sub">Acompanhe status, metricas e relatorios de performance.</p>
+      <p class="page-sub">Liste, filtre, revise e opere campanhas no mesmo fluxo de trabalho.</p>
+
+      <div class="header-meta">
+        <span class="context-chip">Escopo: {{ selectedScopeName() }}</span>
+        <span class="demo-data-badge">Dados de demonstração</span>
+      </div>
     </div>
-    <button class="btn btn-primary" (click)="refresh()">Atualizar</button>
+
+    <div class="header-actions">
+      <button class="btn btn-secondary" type="button" (click)="refresh()">Atualizar</button>
+      <button
+        class="btn btn-primary"
+        type="button"
+        (click)="openCreatePanel()"
+        [disabled]="!canCreateCampaigns()"
+        [title]="createButtonHint()"
+      >
+        Nova campanha
+      </button>
+    </div>
   </div>
+
+  <p class="permission-hint" *ngIf="!canCreateCampaigns()">
+    Seu perfil acompanha campanhas, mas a criação real fica disponível para Operação.
+  </p>
+
+  <section class="creation-success-banner" *ngIf="creationNotice() as notice">
+    <div>
+      <span class="success-kicker">Campanha criada</span>
+      <strong>{{ notice.name }}</strong>
+      <p>{{ notice.storeName }} recebeu a campanha com status inicial pausado na Meta.</p>
+    </div>
+
+    <div class="success-meta">
+      <span>Campaign ID: {{ notice.response.campaignId }}</span>
+      <span>AdSet ID: {{ notice.response.adSetId }}</span>
+      <span>Creative ID: {{ notice.response.creativeId }}</span>
+      <span>Ad ID: {{ notice.response.adId }}</span>
+    </div>
+
+    <button class="btn btn-secondary" type="button" (click)="dismissCreationNotice()">Fechar aviso</button>
+  </section>
 
   <app-ui-state
     *ngIf="error()"
@@ -22,51 +60,83 @@
     *ngIf="loading()"
     type="loading"
     title="Carregando campanhas"
-    message="Buscando campanhas e metricas do escopo selecionado."
+    message="Buscando campanhas e métricas do escopo selecionado."
   />
 
   <div class="campaigns-content" *ngIf="!loading() && !error()">
+    <div class="overview-grid">
+      <article class="overview-card accent-orange">
+        <span>Total no escopo</span>
+        <strong>{{ campaigns().length }}</strong>
+        <p>Campanhas disponíveis para análise e operação.</p>
+      </article>
+
+      <article class="overview-card accent-green">
+        <span>Ativas</span>
+        <strong>{{ activeCount() }}</strong>
+        <p>Campanhas rodando neste recorte.</p>
+      </article>
+
+      <article class="overview-card accent-amber">
+        <span>Pausadas</span>
+        <strong>{{ pausedCount() }}</strong>
+        <p>{{ archivedCount() }} arquivada(s) continuam visíveis no histórico.</p>
+      </article>
+
+      <article class="overview-card accent-teal">
+        <span>Criação</span>
+        <strong>{{ creationOverviewLabel() }}</strong>
+        <p>{{ creationOverviewMessage() }}</p>
+      </article>
+    </div>
+
     <div class="filters-bar">
       <input
         type="text"
         class="search-input"
-        placeholder="Pesquisar por nome ou ID..."
+        placeholder="Pesquisar por nome, ID ou store..."
         [ngModel]="searchTerm()"
         (ngModelChange)="setSearchTerm($event)"
       />
 
       <div class="status-filter">
-        <button class="filter-btn" [class.active]="filter() === 'ALL'" (click)="setFilter('ALL')">Todas</button>
-        <button class="filter-btn" [class.active]="filter() === 'ACTIVE'" (click)="setFilter('ACTIVE')">Ativas</button>
-        <button class="filter-btn" [class.active]="filter() === 'PAUSED'" (click)="setFilter('PAUSED')">Pausadas</button>
+        <button class="filter-btn" type="button" [class.active]="filter() === 'ALL'" (click)="setFilter('ALL')">Todas</button>
+        <button class="filter-btn" type="button" [class.active]="filter() === 'ACTIVE'" (click)="setFilter('ACTIVE')">Ativas</button>
+        <button class="filter-btn" type="button" [class.active]="filter() === 'PAUSED'" (click)="setFilter('PAUSED')">Pausadas</button>
       </div>
 
-      <select class="search-input" [ngModel]="storeContext.selectedStoreId()" (ngModelChange)="setStoreFilter($event)">
+      <select
+        class="search-input"
+        [ngModel]="storeContext.selectedStoreId()"
+        (ngModelChange)="setStoreFilter($event)"
+      >
         <option value="">Todas as lojas</option>
-        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">{{ store.name }}</option>
+        <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
+          {{ store.name }}
+        </option>
       </select>
     </div>
 
     <div class="pagination-info" *ngIf="totalItems() > 0">
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
-      <span class="demo-data-note">Metricas simuladas ate a integracao Meta ser ativada.</span>
+      <span class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</span>
     </div>
 
     <div class="sort-headers" *ngIf="filtered().length > 0">
-      <button class="sort-header-btn" (click)="toggleSort('name')">Nome {{ getSortIndicator('name') }}</button>
-      <button class="sort-header-btn" (click)="toggleSort('ctr')">CTR {{ getSortIndicator('ctr') }}</button>
-      <button class="sort-header-btn" (click)="toggleSort('cpa')">CPA {{ getSortIndicator('cpa') }}</button>
-      <button class="sort-header-btn" (click)="toggleSort('roas')">ROAS {{ getSortIndicator('roas') }}</button>
-      <button class="sort-header-btn" (click)="toggleSort('status')">Status {{ getSortIndicator('status') }}</button>
-      <button class="sort-header-btn" (click)="toggleSort('score')">Score {{ getSortIndicator('score') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('name')">Nome {{ getSortIndicator('name') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('ctr')">CTR {{ getSortIndicator('ctr') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('cpa')">CPA {{ getSortIndicator('cpa') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('roas')">ROAS {{ getSortIndicator('roas') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('status')">Status {{ getSortIndicator('status') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('score')">Score {{ getSortIndicator('score') }}</button>
     </div>
 
     <div class="campaigns-list" *ngIf="filtered().length > 0">
-      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns(); trackBy: trackById">
+      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns(); trackBy: trackById" [class.is-highlighted]="isHighlighted(campaign.id)">
         <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
           <div class="campaign-info">
             <div class="campaign-header-left">
-              <button class="toggle-btn" [class.expanded]="expanded() === campaign.id">v</button>
+              <button class="toggle-btn" type="button" [class.expanded]="expanded() === campaign.id">v</button>
               <div class="campaign-names">
                 <div class="campaign-name">{{ campaign.name }}</div>
                 <div class="campaign-id">
@@ -113,11 +183,11 @@
               <div class="detail-value">{{ fmtCurrency(campaign.metrics.spend) }}</div>
             </div>
             <div class="detail-card">
-              <div class="detail-label">Conversoes</div>
+              <div class="detail-label">Conversões</div>
               <div class="detail-value">{{ campaign.metrics.conversions }}</div>
             </div>
             <div class="detail-card">
-              <div class="detail-label">Impressoes</div>
+              <div class="detail-label">Impressões</div>
               <div class="detail-value">{{ (campaign.metrics.impressions / 1000).toFixed(1) }}K</div>
             </div>
             <div class="detail-card">
@@ -137,21 +207,30 @@
           </div>
 
           <div class="detail-actions">
-            <button class="btn btn-primary" (click)="openReport(campaign, $event)">Ver relatorio</button>
-            <button class="btn btn-secondary" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Editar campanha' : 'Voce nao tem permissao'">Editar</button>
-            <button class="btn btn-danger" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Pausar campanha' : 'Voce nao tem permissao'">Pausar</button>
-            <button class="btn btn-success" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()" [title]="canManageOperations() ? 'Ativar campanha' : 'Voce nao tem permissao'">Ativar</button>
+            <button class="btn btn-primary" type="button" (click)="openReport(campaign, $event)">Ver relatório</button>
+            <button class="btn btn-secondary" type="button" [disabled]="!canManageOperations()">Editar</button>
+            <button class="btn btn-danger" type="button" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()">Pausar</button>
+            <button class="btn btn-success" type="button" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()">Ativar</button>
           </div>
         </div>
       </div>
     </div>
 
     <div class="pagination" *ngIf="totalPages() > 1">
-      <button class="pagination-btn" [disabled]="!hasPrev()" (click)="prevPage()">Anterior</button>
+      <button class="pagination-btn" type="button" [disabled]="!hasPrev()" (click)="prevPage()">Anterior</button>
       <div class="pagination-pages">
-        <button class="page-btn" *ngFor="let page of pageNumbers(); trackBy: trackByPage" [class.active]="page === currentPage()" (click)="goToPage(page)" [disabled]="page === currentPage()">{{ page }}</button>
+        <button
+          class="page-btn"
+          type="button"
+          *ngFor="let page of pageNumbers(); trackBy: trackByPage"
+          [class.active]="page === currentPage()"
+          (click)="goToPage(page)"
+          [disabled]="page === currentPage()"
+        >
+          {{ page }}
+        </button>
       </div>
-      <button class="pagination-btn" [disabled]="!hasNext()" (click)="nextPage()">Proximo</button>
+      <button class="pagination-btn" type="button" [disabled]="!hasNext()" (click)="nextPage()">Próximo</button>
     </div>
 
     <app-ui-state
@@ -159,7 +238,7 @@
       type="empty"
       icon="C"
       title="Nenhuma campanha encontrada"
-      message="Ajuste os filtros ou aguarde a integracao Meta para carregar campanhas reais."
+      message="Ajuste os filtros ou crie uma nova campanha para este escopo."
     />
   </div>
 
@@ -167,7 +246,7 @@
     <section class="campaign-report-modal" (click)="$event.stopPropagation()">
       <header class="report-header">
         <div>
-          <span class="report-eyebrow">Campaign report modal</span>
+          <span class="report-eyebrow">Relatório da campanha</span>
           <h3>{{ report.name }}</h3>
           <p>Status da campanha: {{ statusLabel(report.status) }}</p>
         </div>
@@ -180,11 +259,11 @@
         <article><span>CPA</span><strong>{{ fmtCurrency(metrics.cpa) }}</strong></article>
         <article><span>CTR</span><strong>{{ fmt(metrics.ctr) }}%</strong></article>
         <article><span>CPC</span><strong>{{ fmtCurrency(metrics.clicks ? metrics.spend / metrics.clicks : 0) }}</strong></article>
-        <article><span>Conversoes</span><strong>{{ metrics.conversions }}</strong></article>
+        <article><span>Conversões</span><strong>{{ metrics.conversions }}</strong></article>
       </div>
 
       <div class="report-chart">
-        <h4>Grafico de evolucao</h4>
+        <h4>Gráfico de evolução</h4>
         <app-chart chartType="line" [chartData]="campaignEvolutionChart(report)" />
       </div>
 
@@ -194,4 +273,10 @@
       </div>
     </section>
   </div>
+
+  <app-campaign-create-panel
+    *ngIf="createPanelOpen()"
+    (close)="closeCreatePanel()"
+    (created)="handleCampaignCreated($event)"
+  />
 </div>

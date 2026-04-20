@@ -338,6 +338,7 @@ async function seed() {
       name: 'Demo User',
       email: 'demo@metaiq.dev',
       password,
+      role: Role.ADMIN,
       managerId: manager.id,
       tenantId: tenant.id,
     });
@@ -351,6 +352,7 @@ async function seed() {
     }
     user.tenantId = user.tenantId ?? tenant.id;
     user.active = true;
+    user.role = Role.ADMIN; // Ensure demo user has admin role
     await userRepo.save(user);
     console.log('👤 Usuário demo atualizado com senha: Demo@1234');
   }

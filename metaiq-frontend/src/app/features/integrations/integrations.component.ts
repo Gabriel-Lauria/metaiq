@@ -10,7 +10,6 @@ import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 import {
   IntegrationStatus,
-  AdAccount,
   MetaAdAccount,
   MetaPage,
   Store,
@@ -42,23 +41,11 @@ export class IntegrationsComponent implements OnInit {
   loading = signal(false);
   loadingAccounts = signal(false);
   loadingPages = signal(false);
-  creatingCampaign = signal(false);
   savingPage = signal(false);
   savingStoreId = signal<string | null>(null);
   error = signal<string | null>(null);
   adAccounts = signal<MetaAdAccount[]>([]);
   pages = signal<MetaPage[]>([]);
-  internalAdAccounts = signal<AdAccount[]>([]);
-  campaignResult = signal<{ campaignId: string; adSetId: string; creativeId: string; adId: string } | null>(null);
-  campaignForm = {
-    name: '',
-    objective: 'OUTCOME_TRAFFIC',
-    dailyBudget: 10,
-    country: 'BR',
-    adAccountId: '',
-    message: '',
-    imageUrl: '',
-  };
   pageForm = {
     pageId: '',
   };
@@ -114,13 +101,9 @@ export class IntegrationsComponent implements OnInit {
     this.selectedStoreId.set(storeId);
     this.adAccounts.set([]);
     this.pages.set([]);
-    this.internalAdAccounts.set([]);
-    this.campaignResult.set(null);
-    this.campaignForm.adAccountId = '';
     this.pageForm.pageId = '';
     if (this.integrations()[storeId]?.status === IntegrationStatus.CONNECTED) {
       this.loadPagesIfNeeded(storeId);
-      this.loadInternalAdAccounts(storeId);
     }
   }
 
@@ -192,54 +175,12 @@ export class IntegrationsComponent implements OnInit {
           this.adAccounts.set(accounts);
           this.loadingAccounts.set(false);
           this.ui.showSuccess('Contas sincronizadas', `${accounts.length} conta(s) atualizada(s) no MetaIQ.`);
-          this.loadInternalAdAccounts(store.id);
           this.load();
         },
         error: (err) => {
           this.error.set(err.message);
           this.loadingAccounts.set(false);
           this.ui.showError('Não foi possível sincronizar contas', err.message);
-          this.load();
-        },
-      });
-  }
-
-  createCampaign(store: Store): void {
-    if (!this.selectedIntegration()?.pageId) {
-      this.ui.showError('Página Meta obrigatória', 'Selecione a página do Facebook antes de criar campanha.');
-      this.loadPagesIfNeeded(store.id, true);
-      return;
-    }
-
-    if (!this.campaignForm.name || !this.campaignForm.adAccountId || !this.campaignForm.message || !this.campaignForm.imageUrl) {
-      this.ui.showError('Campos obrigatórios', 'Preencha nome, conta, mensagem e URL da imagem.');
-      return;
-    }
-
-    this.creatingCampaign.set(true);
-    this.campaignResult.set(null);
-    this.api.createMetaCampaign(store.id, {
-      ...this.campaignForm,
-      country: this.campaignForm.country.trim().toUpperCase(),
-      dailyBudget: Number(this.campaignForm.dailyBudget),
-    })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (result) => {
-          this.campaignResult.set({
-            campaignId: result.campaignId,
-            adSetId: result.adSetId,
-            creativeId: result.creativeId,
-            adId: result.adId,
-          });
-          this.creatingCampaign.set(false);
-          this.ui.showSuccess('Campanha criada', 'A campanha foi criada na Meta com status pausado.');
-        },
-        error: (err) => {
-          const message = this.formatCampaignCreationError(err);
-          this.error.set(message);
-          this.creatingCampaign.set(false);
-          this.ui.showError('Não foi possível criar campanha', message);
           this.load();
         },
       });
@@ -285,10 +226,6 @@ export class IntegrationsComponent implements OnInit {
 
   hasConfiguredPage(): boolean {
     return !!this.selectedIntegration()?.pageId;
-  }
-
-  canCreateCampaign(): boolean {
-    return this.hasConfiguredPage() && !!this.internalAdAccounts().length && !this.creatingCampaign();
   }
 
   selectedPageName(): string {
@@ -389,21 +326,13 @@ export class IntegrationsComponent implements OnInit {
     this.loadPagesIfNeeded(store.id, true);
   }
 
-  private loadInternalAdAccounts(storeId: string): void {
-    this.api.getAdAccounts(storeId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (accounts) => {
-          const metaAccounts = accounts.filter((account) => account.provider === 'META' && account.active !== false);
-          this.internalAdAccounts.set(metaAccounts);
-          if (!this.campaignForm.adAccountId && metaAccounts.length) {
-            this.campaignForm.adAccountId = metaAccounts[0].id;
-          }
-        },
-        error: (err) => {
-          this.ui.showError('Não foi possível carregar contas internas', err.message);
-        },
-      });
+  goToCampaigns(store: Store): void {
+    this.router.navigate(['/campaigns'], {
+      queryParams: {
+        openCreate: 1,
+        storeId: store.id,
+      },
+    });
   }
 
   private loadPagesIfNeeded(storeId: string, force = false): void {
@@ -492,28 +421,6 @@ export class IntegrationsComponent implements OnInit {
     if (!storeId) return true;
     const stores = this.stores();
     return stores.length === 0 || stores.some((store) => store.id === storeId);
-  }
-
-  private formatCampaignCreationError(err: any): string {
-    const parts = [
-      err?.message || err?.details?.message || 'Não foi possível criar campanha. Verifique os dados e tente novamente.',
-    ];
-
-    const step = err?.step || err?.details?.step;
-    const executionId = err?.executionId || err?.details?.executionId;
-    const error = err?.error || err?.details?.error;
-
-    if (step) {
-      parts.push(`Etapa: ${step}.`);
-    }
-    if (executionId) {
-      parts.push(`Execução: ${executionId}.`);
-    }
-    if (error && error !== parts[0]) {
-      parts.push(`Detalhe: ${error}.`);
-    }
-
-    return parts.join(' ');
   }
 
   private clearOAuthQueryParams(): void {

@@ -177,7 +177,8 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.campaign-create-section {
+.page-configuration-section,
+.next-step-section {
   margin-top: 24px;
   padding-top: 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -276,80 +277,46 @@
   font: inherit;
 }
 
-.campaign-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+.next-step-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   margin-top: 18px;
-}
-
-.form-field {
-  display: grid;
-  gap: 8px;
-}
-
-.form-field-wide {
-  grid-column: 1 / -1;
-}
-
-.form-field span {
-  color: var(--text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-}
-
-.form-field input,
-.form-field select,
-.form-field textarea {
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 18px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.16);
+}
+
+.next-step-card strong,
+.next-step-card small {
+  display: block;
+}
+
+.next-step-card strong {
   color: var(--text);
-  padding: 10px 12px;
-  font: inherit;
 }
 
-.form-field textarea {
-  resize: vertical;
-}
-
-.campaign-form .btn {
-  justify-self: start;
-}
-
-.form-hint {
-  align-self: center;
+.next-step-card small {
+  margin-top: 6px;
   color: var(--text-muted);
-}
-
-.campaign-result {
-  display: grid;
-  gap: 8px;
-  margin-top: 18px;
-  padding: 16px;
-  border: 1px solid rgba(34, 197, 94, 0.2);
-  border-radius: 8px;
-  background: rgba(34, 197, 94, 0.08);
-  color: var(--text-soft);
-  overflow-wrap: anywhere;
-}
-
-.campaign-result strong {
-  color: var(--text);
 }
 
 @media (max-width: 900px) {
   .integration-layout,
   .card-details,
   .accounts-grid,
-  .account-card,
-  .campaign-form {
+  .account-card {
     grid-template-columns: 1fr;
   }
 
   .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .next-step-card {
     flex-direction: column;
     align-items: stretch;
   }

@@ -138,9 +138,22 @@ export class AuthService {
   }
 
   private normalizeRole(role: unknown): Role {
-    const normalized = typeof role === 'string' ? role.toUpperCase() : '';
-    return Object.values(Role).includes(normalized as Role)
-      ? (normalized as Role)
+    const normalized = typeof role === 'string' ? role.trim().toUpperCase() : '';
+    const aliases: Record<string, Role> = {
+      SUPER_ADMIN: Role.PLATFORM_ADMIN,
+      PLATFORMADMIN: Role.PLATFORM_ADMIN,
+      TENANT_ADMIN: Role.ADMIN,
+      COMPANY_ADMIN: Role.ADMIN,
+      ACCOUNT_ADMIN: Role.ADMIN,
+      SUPERVISOR: Role.MANAGER,
+      MEDIA_BUYER: Role.OPERATIONAL,
+      OPERATOR: Role.OPERATIONAL,
+      CUSTOMER: Role.CLIENT,
+    };
+
+    const resolvedRole = aliases[normalized] ?? normalized;
+    return Object.values(Role).includes(resolvedRole as Role)
+      ? (resolvedRole as Role)
       : Role.OPERATIONAL;
   }
 }
