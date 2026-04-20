@@ -17,6 +17,10 @@
     "paths": {
       "@/*": ["./*"]
     },
+    "strict": false,
+    "noImplicitAny": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },

@@ -155,4 +155,14 @@ export class AppComponent {
   roleLabel(role: Role | string | null | undefined): string {
     return roleLabel(role);
   }
+
+  userInitials(name: string | null | undefined): string {
+    return (name ?? '')
+      .split(' ')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('')
+      .slice(0, 2) || 'U';
+  }
 }

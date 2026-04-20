@@ -67,7 +67,8 @@ export class IntegrationsComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
 
-    const storeRequest = [Role.PLATFORM_ADMIN, Role.MANAGER].includes(this.authService.getCurrentRole())
+    const currentRole = this.authService.getCurrentRole();
+    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.MANAGER].includes(currentRole)
       ? this.api.getStores()
       : this.api.getAccessibleStores();
 

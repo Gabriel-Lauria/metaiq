@@ -7,8 +7,8 @@ import { forkJoin } from 'rxjs';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import {
   AdAccount,
+  CampaignAiSuggestResponse,
   CreateMetaCampaignRequest,
-  CreateMetaCampaignResponse,
   IntegrationProvider,
   IntegrationStatus,
   StoreIntegration,
@@ -16,159 +16,88 @@ import {
 import { ApiService } from '../../core/services/api.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { UiService } from '../../core/services/ui.service';
-
-type CampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
-type CampaignGender = 'ALL' | 'MALE' | 'FEMALE';
-type CampaignPlacement = 'feed' | 'stories' | 'reels' | 'explore' | 'messenger' | 'audience_network';
-type CampaignInitialStatus = 'PAUSED' | 'ACTIVE';
-type CampaignDestinationType = 'site' | 'messages' | 'form' | 'app' | 'catalog';
-type CampaignBudgetType = 'daily' | 'lifetime';
-
-interface CampaignBuilderState {
-  campaign: {
-    name: string;
-    objective: CampaignObjective;
-    initialStatus: CampaignInitialStatus;
-    specialCategory: string;
-    buyingType: string;
-    abTest: boolean;
-    campaignBudgetOptimization: boolean;
-    campaignSpendLimit: number | null;
-  };
-  identity: {
-    adAccountId: string;
-    facebookPageId: string;
-    instagramAccount: string;
-    displayName: string;
-    timezone: string;
-    currency: string;
-  };
-  audience: {
-    autoAudience: boolean;
-    country: string;
-    region: string;
-    city: string;
-    zipCode: string;
-    radiusKm: number;
-    presenceType: string;
-    ageMin: number;
-    ageMax: number;
-    gender: CampaignGender;
-    languagePrimary: string;
-    languagesAdditional: string;
-    interests: string;
-    behaviors: string;
-    demographics: string;
-    excludedInterests: string;
-    savedAudience: string;
-    customAudience: string;
-    lookalikeAudience: string;
-    excludedAudiences: string;
-  };
-  budget: {
-    budgetType: CampaignBudgetType;
-    value: number;
-    quickBudget: number | null;
-    adSetSpendLimit: number | null;
-    bidStrategy: string;
-    costControl: number | null;
-    minRoas: number | null;
-    costPerResultGoal: number | null;
-    manualBid: number | null;
-    billingEvent: string;
-    optimizationGoal: string;
-    conversionWindow: string;
-  };
-  schedule: {
-    startDate: string;
-    startTime: string;
-    endDate: string;
-    endTime: string;
-    weekDays: string[];
-    timeBlocks: string;
-    advancedScheduling: boolean;
-  };
-  placements: {
-    selected: CampaignPlacement[];
-    platforms: {
-      facebook: boolean;
-      instagram: boolean;
-      messenger: boolean;
-      audienceNetwork: boolean;
-    };
-  };
-  destination: {
-    type: CampaignDestinationType;
-    websiteUrl: string;
-    messagesDestination: string;
-    formName: string;
-    appLink: string;
-    catalogId: string;
-  };
-  creative: {
-    message: string;
-    headline: string;
-    description: string;
-    cta: string;
-    imageUrl: string;
-    carousel: boolean;
-  };
-  tracking: {
-    pixel: string;
-    mainEvent: string;
-    conversionTracking: string;
-    utmSource: string;
-    utmMedium: string;
-    utmCampaign: string;
-    goals: string;
-    notes: string;
-  };
-  ui: {
-    aiPrompt: string;
-    aiApplied: boolean;
-    aiDetectedFields: string[];
-    aiLastSummary: string;
-  };
-}
-
-interface CreationReadinessItem {
-  id: string;
-  label: string;
-  done: boolean;
-}
-
-interface SectionProgress {
-  id: string;
-  label: string;
-  done: boolean;
-}
-
-interface SummaryRow {
-  label: string;
-  value: string;
-}
-
-interface ReviewSignal {
-  id: string;
-  label: string;
-  tone: 'success' | 'warning' | 'danger' | 'neutral' | 'info';
-}
-
-interface SuccessOverlayState {
-  name: string;
-  response: CreateMetaCampaignResponse;
-}
-
-interface PromptExtractionResult {
-  detectedFields: string[];
-  summary: string;
-}
-
-export interface CampaignCreateSuccessEvent {
-  name: string;
-  storeName: string;
-  response: CreateMetaCampaignResponse;
-}
+import { CampaignAiService } from './campaign-ai.service';
+import {
+  buildAiDescriptionForObjective,
+  buildAiHeadlineForState,
+  buildAiMessageForState,
+  defaultEventForObjective,
+  detectBillingEventFromPrompt,
+  detectBudgetTypeFromPrompt,
+  detectCityFromPrompt,
+  detectConversionWindowFromPrompt,
+  detectCountryFromPrompt,
+  detectCtaFromPrompt,
+  detectDestinationTypeFromPrompt,
+  detectGenderFromPrompt,
+  detectInitialStatusFromPrompt,
+  detectInterestFallbackFromPrompt,
+  detectObjectiveFromPrompt,
+  detectOptimizationGoalFromPrompt,
+  detectPlacementsFromPrompt,
+  detectPrimaryLanguageFromPrompt,
+  detectRegionFromPrompt,
+  detectSpecialCategoryFromPrompt,
+  detectWeekDaysFromPrompt,
+  extractBudgetFromPrompt,
+  normalizeDetectedCity,
+  normalizePromptText,
+  parsePromptDecimal,
+  toPromptTitleCase,
+} from './campaign-builder-prompt.util';
+import { buildInitialCampaignBuilderState } from './campaign-builder.initial-state';
+import {
+  aiSectionComplete,
+  audienceSummary,
+  blockerMessage,
+  buildApiPayload,
+  buildReviewSignals,
+  buildSectionProgress,
+  buildSimulatedMetrics,
+  buildSummaryRows,
+  buildReadinessItems,
+  canSubmit,
+  cloneCampaignBuilderState,
+  creativeSectionComplete,
+  destinationSectionComplete,
+  destinationSummary,
+  fieldInvalid,
+  firstBlockingSectionId,
+  generalSectionComplete,
+  hasConfiguredPage,
+  hasSyncedAdAccounts,
+  identitySectionComplete,
+  isIntegrationConnected,
+  isValidCountry,
+  isValidHttpUrl,
+  isValidImageUrl,
+  placementSectionComplete,
+  realPayloadComplete,
+  scheduleSectionComplete,
+  selectedAdAccountName,
+  selectedObjectiveLabel,
+  selectedPageName,
+  trackingSectionComplete,
+  trackingSummary,
+  audienceSectionComplete,
+  budgetSectionComplete,
+} from './campaign-builder-review.util';
+import {
+  CampaignBudgetType,
+  CampaignBuilderState,
+  CampaignCreateSuccessEvent,
+  CampaignDestinationType,
+  CampaignGender,
+  CampaignInitialStatus,
+  CampaignObjective,
+  CampaignPlacement,
+  CreationReadinessItem,
+  PromptExtractionResult,
+  ReviewSignal,
+  SectionProgress,
+  SuccessOverlayState,
+  SummaryRow,
+} from './campaign-builder.types';
 
 @Component({
   selector: 'app-campaign-create-panel',
@@ -179,6 +108,7 @@ export interface CampaignCreateSuccessEvent {
 })
 export class CampaignCreatePanelComponent {
   private api = inject(ApiService);
+  private campaignAiService = inject(CampaignAiService);
   private router = inject(Router);
   private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
@@ -258,6 +188,7 @@ export class CampaignCreatePanelComponent {
   readonly internalAdAccounts = signal<AdAccount[]>([]);
   readonly revision = signal(0);
   readonly submitAttempted = signal(false);
+  readonly aiSuggesting = signal(false);
   readonly draftRestored = signal(false);
   readonly draftAvailable = signal(false);
   readonly autosaveState = signal<'idle' | 'saving' | 'saved'>('idle');
@@ -271,6 +202,7 @@ export class CampaignCreatePanelComponent {
   readonly successOverlay = signal<SuccessOverlayState | null>(null);
 
   state: CampaignBuilderState = this.buildInitialState();
+  private readonly initialState = this.buildInitialState();
 
   private contextRequestId = 0;
   private autosaveTimer: ReturnType<typeof window.setTimeout> | null = null;
@@ -279,19 +211,7 @@ export class CampaignCreatePanelComponent {
 
   readonly sectionProgress = computed<SectionProgress[]>(() => {
     this.revision();
-    return [
-      { id: 'builder-ai', label: 'IA por prompt', done: this.aiSectionComplete() },
-      { id: 'builder-general', label: 'Dados gerais', done: this.generalSectionComplete() },
-      { id: 'builder-identity', label: 'Conta e identidade', done: this.identitySectionComplete() },
-      { id: 'builder-audience', label: 'Público', done: this.audienceSectionComplete() },
-      { id: 'builder-budget', label: 'Orçamento e lance', done: this.budgetSectionComplete() },
-      { id: 'builder-schedule', label: 'Agenda', done: this.scheduleSectionComplete() },
-      { id: 'builder-placements', label: 'Posicionamentos', done: this.placementSectionComplete() },
-      { id: 'builder-destination', label: 'Destino', done: this.destinationSectionComplete() },
-      { id: 'builder-creative', label: 'Criativo', done: this.creativeSectionComplete() },
-      { id: 'builder-tracking', label: 'Rastreamento', done: this.trackingSectionComplete() },
-      { id: 'builder-review', label: 'Revisão', done: this.canSubmit() },
-    ];
+    return buildSectionProgress(this.reviewContext());
   });
 
   readonly progressPercent = computed(() => {
@@ -302,81 +222,22 @@ export class CampaignCreatePanelComponent {
 
   readonly readinessItems = computed<CreationReadinessItem[]>(() => {
     this.revision();
-    const hasStoreSelected = !!this.storeContext.selectedStoreId();
-    const hasValidStore = !!this.storeContext.getValidSelectedStoreId();
-    return [
-      { id: 'store-selected', label: 'Existe uma store selecionada', done: hasStoreSelected },
-      { id: 'store-valid', label: 'A store selecionada é válida para o usuário atual', done: hasValidStore },
-      { id: 'integration', label: 'A integração Meta da store está conectada', done: this.isIntegrationConnected() },
-      { id: 'page', label: 'A store possui página Meta configurada', done: this.hasConfiguredPage() },
-      { id: 'accounts', label: 'Existem contas de anúncio sincronizadas', done: this.hasSyncedAdAccounts() },
-      { id: 'fields', label: 'Os campos reais obrigatórios estão preenchidos', done: this.realPayloadComplete() },
-    ];
+    return buildReadinessItems(this.reviewContext());
   });
 
   readonly summaryRows = computed<SummaryRow[]>(() => {
     this.revision();
-    return [
-      { label: 'Store', value: this.selectedStoreName() },
-      { label: 'Campanha', value: this.state.campaign.name.trim() || 'Sem nome ainda' },
-      { label: 'Objetivo', value: this.selectedObjectiveLabel() },
-      { label: 'Conta', value: this.selectedAdAccountName() },
-      { label: 'Página', value: this.selectedPageName() },
-      { label: 'Orçamento', value: `${this.formatCurrency(this.state.budget.value)}/${this.state.budget.budgetType === 'daily' ? 'dia' : 'campanha'}` },
-      { label: 'Público', value: this.audienceSummary() },
-      { label: 'CTA / destino', value: `${this.state.creative.cta} · ${this.destinationSummary()}` },
-      { label: 'Rastreamento', value: this.trackingSummary() },
-    ];
+    return buildSummaryRows(this.reviewContext(), (value) => this.formatCurrency(value));
   });
 
   readonly simulatedMetrics = computed(() => {
     this.revision();
-    const baseBudget = Math.max(this.state.budget.value || 0, 1);
-    const objectiveFactor = this.state.campaign.objective === 'OUTCOME_LEADS' ? 1.2 : this.state.campaign.objective === 'REACH' ? 2.1 : 1.6;
-    const placementsFactor = Math.max(this.state.placements.selected.length, 1) / 3;
-    const qualityFactor = this.state.creative.headline.trim() && this.state.creative.description.trim() ? 1.15 : 0.94;
-    const reach = Math.round(baseBudget * 92 * objectiveFactor * placementsFactor);
-    const clicks = Math.round(baseBudget * 4.8 * qualityFactor);
-    const leads = Math.round(clicks * (this.state.campaign.objective === 'OUTCOME_LEADS' ? 0.18 : 0.07));
-    return {
-      reach,
-      clicks,
-      leads,
-      cpl: leads > 0 ? +(baseBudget / leads).toFixed(2) : 0,
-      ctr: reach > 0 ? +((clicks / reach) * 100).toFixed(2) : 0,
-    };
+    return buildSimulatedMetrics(this.state);
   });
 
   readonly reviewSignals = computed<ReviewSignal[]>(() => {
     this.revision();
-    const signals: ReviewSignal[] = [];
-    if (!this.realPayloadComplete()) {
-      signals.push({ id: 'required', label: 'Campos reais obrigatórios ainda não estão completos.', tone: 'warning' });
-    } else {
-      signals.push({ id: 'required-ok', label: 'Payload real pronto para o backend atual.', tone: 'success' });
-    }
-
-    if (!this.isValidImageUrl(this.state.creative.imageUrl)) {
-      signals.push({ id: 'image-url', label: 'URL da imagem inválida ou incompleta.', tone: 'danger' });
-    }
-
-    if (!this.isValidCountry(this.state.audience.country)) {
-      signals.push({ id: 'country', label: 'País deve usar código ISO de 2 letras.', tone: 'warning' });
-    }
-
-    if (this.state.budget.value < 20) {
-      signals.push({ id: 'budget-low', label: 'Orçamento baixo pode limitar entrega e aprendizado.', tone: 'info' });
-    }
-
-    if (!this.state.tracking.pixel.trim()) {
-      signals.push({ id: 'pixel', label: 'Pixel ainda não informado para mensuração.', tone: 'warning' });
-    }
-
-    if (this.state.destination.type === 'site' && !this.state.destination.websiteUrl.trim()) {
-      signals.push({ id: 'destination', label: 'Destino de site exige URL de destino.', tone: 'danger' });
-    }
-
-    return signals;
+    return buildReviewSignals(this.state);
   });
 
   readonly reviewJson = computed(() => {
@@ -553,57 +414,38 @@ export class CampaignCreatePanelComponent {
       this.ui.showWarning('Prompt vazio', 'Descreva rapidamente a campanha para gerar sugestões.');
       return;
     }
+    this.aiSuggesting.set(true);
 
-    const extraction = this.extractPromptIntoState(prompt);
-    if (!this.state.campaign.name.trim()) {
-      this.state.campaign.name = this.buildAiCampaignName();
-      extraction.detectedFields.push('Nome sugerido da campanha');
-    }
-
-    if (!this.state.creative.headline.trim()) {
-      this.state.creative.headline = this.buildAiHeadline();
-      extraction.detectedFields.push('Headline sugerida');
-    }
-
-    if (!this.state.creative.description.trim()) {
-      this.state.creative.description = this.buildAiDescription();
-      extraction.detectedFields.push('Descrição sugerida');
-    }
-
-    if (!this.state.creative.message.trim()) {
-      this.state.creative.message = this.buildAiMessage();
-      extraction.detectedFields.push('Mensagem principal sugerida');
-    }
-
-    if (!this.state.audience.interests.trim()) {
-      this.state.audience.interests = this.buildAiInterestFallback();
-      extraction.detectedFields.push('Interesses sugeridos');
-    }
-
-    if (!this.state.tracking.utmSource.trim()) {
-      this.state.tracking.utmSource = 'meta';
-      extraction.detectedFields.push('UTM source');
-    }
-
-    if (!this.state.tracking.utmMedium.trim()) {
-      this.state.tracking.utmMedium = 'paid-social';
-      extraction.detectedFields.push('UTM medium');
-    }
-
-    if (!this.state.tracking.utmCampaign.trim()) {
-      this.state.tracking.utmCampaign = this.slugify(this.state.campaign.name || 'campanha-ia');
-      extraction.detectedFields.push('UTM campaign');
-    }
-
-    this.state.ui.aiDetectedFields = Array.from(new Set(extraction.detectedFields));
-    this.state.ui.aiLastSummary = extraction.summary;
-    this.state.ui.aiApplied = true;
-    this.touchState();
-    this.ui.showSuccess(
-      'Sugestões aplicadas',
-      `${this.state.ui.aiDetectedFields.length} campos foram preenchidos ou refinados com base no prompt.`,
-    );
-    this.scrollToSection('builder-general');
+    this.campaignAiService.suggest(prompt)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          this.aiSuggesting.set(false);
+          const mergedResult = this.mergeAiResultWithFallback(prompt, result);
+          const appliedCount = this.applyAiResult(mergedResult);
+          this.touchState();
+          this.ui.showSuccess(
+            'Sugestões aplicadas',
+            appliedCount > 0
+              ? `${appliedCount} campos vazios foram preenchidos com sugestões da IA.`
+              : 'A IA analisou o briefing, mas não encontrou campos vazios para preencher.',
+          );
+          this.scrollToSection('builder-general');
+        },
+        error: (error) => {
+          this.aiSuggesting.set(false);
+          const fallback = this.buildFallbackAiResult(prompt);
+          const appliedCount = this.applyAiResult(fallback);
+          this.touchState();
+          this.ui.showWarning(
+            'IA indisponível no momento',
+            appliedCount > 0
+              ? 'Aplicamos um fallback local para sugerir campos sem sobrescrever o que você já preencheu.'
+              : error?.message || 'Não foi possível gerar sugestões agora.',
+          );
+          this.scrollToSection('builder-general');
+        },
+      });
   }
 
   saveDraft(): void {
@@ -650,7 +492,7 @@ export class CampaignCreatePanelComponent {
       const message = this.blockerMessage();
       this.submitError.set(message);
       this.ui.showWarning('Campanha ainda não pronta', message);
-      this.reviewNow();
+      this.scrollToSection(this.firstBlockingSectionId());
       return;
     }
 
@@ -696,19 +538,11 @@ export class CampaignCreatePanelComponent {
   }
 
   buildExpandedCampaignState(): CampaignBuilderState {
-    return JSON.parse(JSON.stringify(this.state)) as CampaignBuilderState;
+    return cloneCampaignBuilderState(this.state);
   }
 
   buildApiPayload(): CreateMetaCampaignRequest {
-    return {
-      name: this.state.campaign.name.trim(),
-      objective: this.state.campaign.objective,
-      dailyBudget: Number(this.state.budget.value),
-      country: this.state.audience.country.trim().toUpperCase(),
-      adAccountId: this.state.identity.adAccountId,
-      message: this.state.creative.message.trim(),
-      imageUrl: this.state.creative.imageUrl.trim(),
-    };
+    return buildApiPayload(this.state);
   }
 
   markFieldTouched(field: string): void {
@@ -722,36 +556,11 @@ export class CampaignCreatePanelComponent {
     const shouldValidate = this.submitAttempted() || !!this.touchedFields()[field];
     if (!shouldValidate) return false;
 
-    switch (field) {
-      case 'campaign.name':
-        return !this.state.campaign.name.trim();
-      case 'identity.adAccountId':
-        return !this.state.identity.adAccountId;
-      case 'audience.country':
-        return !this.isValidCountry(this.state.audience.country);
-      case 'budget.value':
-        return !(Number(this.state.budget.value) > 0);
-      case 'creative.message':
-        return !this.state.creative.message.trim();
-      case 'creative.imageUrl':
-        return !this.isValidImageUrl(this.state.creative.imageUrl);
-      case 'destination.websiteUrl':
-        return this.state.destination.type === 'site' && !this.state.destination.websiteUrl.trim();
-      default:
-        return false;
-    }
+    return fieldInvalid(this.state, field);
   }
 
   blockerMessage(): string {
-    if (this.contextError()) return this.contextError() as string;
-    if (this.loadingContext()) return 'Carregando contexto da store, integração Meta e contas disponíveis.';
-    if (!this.storeContext.selectedStoreId()) return 'Selecione uma store para iniciar a criação da campanha.';
-    if (!this.storeContext.getValidSelectedStoreId()) return 'A store escolhida não pertence ao usuário atual. Selecione uma store válida.';
-    if (!this.isIntegrationConnected()) return 'Esta store ainda não está pronta para criação de campanhas. Conecte a Meta e configure a página primeiro.';
-    if (!this.hasConfiguredPage()) return 'A store está conectada, mas ainda precisa de uma página Meta configurada antes do envio.';
-    if (!this.hasSyncedAdAccounts()) return 'Sincronize as contas da store em Integrações para liberar a criação de campanhas.';
-    if (!this.realPayloadComplete()) return 'Complete nome, objetivo, orçamento, país, conta, mensagem e imagem antes do envio.';
-    return 'Tudo pronto para revisar e enviar.';
+    return blockerMessage(this.reviewContext());
   }
 
   selectedStoreName(): string {
@@ -759,49 +568,27 @@ export class CampaignCreatePanelComponent {
   }
 
   selectedPageName(): string {
-    const integration = this.integration();
-    return integration?.pageName || integration?.pageId || 'Página não configurada';
+    return selectedPageName(this.integration());
   }
 
   selectedAdAccountName(): string {
-    const account = this.internalAdAccounts().find((item) => item.id === this.state.identity.adAccountId);
-    return account ? `${account.name} · ${account.externalId || account.metaId || account.id}` : 'Conta não selecionada';
+    return selectedAdAccountName(this.internalAdAccounts(), this.state.identity.adAccountId);
   }
 
   selectedObjectiveLabel(): string {
-    return this.objectiveOptions.find((option) => option.value === this.state.campaign.objective)?.label || 'Não definido';
+    return selectedObjectiveLabel(this.objectiveOptions, this.state.campaign.objective);
   }
 
   audienceSummary(): string {
-    const country = this.state.audience.country.trim().toUpperCase() || '--';
-    const ageRange = `${this.state.audience.ageMin}-${this.state.audience.ageMax}`;
-    const gender = this.genderOptions.find((option) => option.value === this.state.audience.gender)?.label || 'Todos';
-    const city = this.state.audience.city.trim() || 'cidade aberta';
-    return `${country} · ${city} · ${ageRange} anos · ${gender}`;
+    return audienceSummary(this.state, this.genderOptions);
   }
 
   destinationSummary(): string {
-    switch (this.state.destination.type) {
-      case 'site':
-        return this.state.destination.websiteUrl.trim() || 'site sem URL';
-      case 'messages':
-        return this.state.destination.messagesDestination.trim() || 'mensagens';
-      case 'form':
-        return this.state.destination.formName.trim() || 'formulário';
-      case 'app':
-        return this.state.destination.appLink.trim() || 'app';
-      default:
-        return this.state.destination.catalogId.trim() || 'catálogo';
-    }
+    return destinationSummary(this.state);
   }
 
   trackingSummary(): string {
-    const pieces = [
-      this.state.tracking.pixel.trim() || 'sem pixel',
-      this.state.tracking.mainEvent.trim() || 'sem evento',
-      this.state.tracking.utmCampaign.trim() || 'sem UTM',
-    ];
-    return pieces.join(' · ');
+    return trackingSummary(this.state);
   }
 
   previewHeadline(): string {
@@ -832,8 +619,8 @@ export class CampaignCreatePanelComponent {
 
   compatibilityNote(): string {
     return this.state.campaign.initialStatus === 'ACTIVE'
-      ? 'Compatibilidade atual: o backend real ainda cria a campanha pausada mesmo quando o status inicial estiver marcado como ativa.'
-      : 'Compatibilidade atual: a campanha é enviada com status pausado no fluxo real atual.';
+      ? 'Compatibilidade atual: o fluxo real agora tenta respeitar o status inicial ativo, mas a entrega final ainda depende das validações e permissões da Meta.'
+      : 'Compatibilidade atual: a campanha é enviada pausada quando o status inicial estiver definido como pausada.';
   }
 
   statusLabel(status?: IntegrationStatus): string {
@@ -855,11 +642,11 @@ export class CampaignCreatePanelComponent {
   }
 
   canSubmit(): boolean {
-    return !this.loadingContext()
-      && !this.submitting()
-      && this.readinessItems().every((item) => item.done)
-      && !this.fieldInvalid('creative.imageUrl')
-      && !this.fieldInvalid('destination.websiteUrl');
+    return canSubmit(this.reviewContext());
+  }
+
+  firstBlockingSectionId(): string {
+    return firstBlockingSectionId(this.reviewContext());
   }
 
   sectionTone(sectionId: string): 'success' | 'warning' | 'neutral' {
@@ -879,7 +666,7 @@ export class CampaignCreatePanelComponent {
   }
 
   aiSectionComplete(): boolean {
-    return this.state.ui.aiApplied || !!this.state.ui.aiPrompt.trim();
+    return aiSectionComplete(this.state);
   }
 
   finishSuccessFlow(): void {
@@ -894,6 +681,235 @@ export class CampaignCreatePanelComponent {
 
   trackByValue(_: number, item: { value?: string; id?: string; label?: string }): string {
     return item.value || item.id || item.label || '';
+  }
+
+  private reviewContext() {
+    return {
+      state: this.state,
+      integration: this.integration(),
+      adAccounts: this.internalAdAccounts(),
+      selectedStoreId: this.storeContext.selectedStoreId(),
+      validStoreId: this.storeContext.getValidSelectedStoreId(),
+      selectedStoreName: this.selectedStoreName(),
+      loadingContext: this.loadingContext(),
+      submitting: this.submitting(),
+      contextError: this.contextError(),
+      objectiveOptions: this.objectiveOptions,
+      genderOptions: this.genderOptions,
+    };
+  }
+
+  private applyAiResult(result: CampaignAiSuggestResponse): number {
+    const suggestions = result?.suggestions;
+    if (!suggestions) {
+      this.state.ui.aiDetectedFields = [];
+      this.state.ui.aiLastSummary = '';
+      this.state.ui.aiApplied = false;
+      return 0;
+    }
+
+    let appliedCount = 0;
+
+    if (this.shouldApplySuggestion('campaign.name', this.state.campaign.name, '') && suggestions.campaignName) {
+      this.state.campaign.name = suggestions.campaignName;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('creative.headline', this.state.creative.headline, '') && suggestions.headline) {
+      this.state.creative.headline = suggestions.headline;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('creative.description', this.state.creative.description, '') && suggestions.description) {
+      this.state.creative.description = suggestions.description;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('creative.message', this.state.creative.message, '') && suggestions.message) {
+      this.state.creative.message = suggestions.message;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('creative.cta', this.state.creative.cta, 'Saiba mais') && suggestions.cta) {
+      this.state.creative.cta = this.normalizeAiCta(
+        suggestions.cta,
+        this.isDestinationType(suggestions.destinationType) ? suggestions.destinationType : this.state.destination.type,
+      );
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('campaign.objective', this.state.campaign.objective, this.initialState.campaign.objective) && this.isObjective(suggestions.objective)) {
+      this.state.campaign.objective = suggestions.objective;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('budget.value', this.state.budget.value, this.initialState.budget.value) && (suggestions.budget || 0) > 0) {
+      this.state.budget.value = Number(suggestions.budget);
+      this.state.budget.quickBudget = Number(suggestions.budget);
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.country', this.state.audience.country, this.initialState.audience.country) && this.isValidCountry(suggestions.country || '')) {
+      this.state.audience.country = suggestions.country as string;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.region', this.state.audience.region, this.initialState.audience.region) && suggestions.region) {
+      this.state.audience.region = suggestions.region;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.city', this.state.audience.city, this.initialState.audience.city) && suggestions.city) {
+      this.state.audience.city = suggestions.city;
+      appliedCount += 1;
+    }
+
+    if (!this.state.identity.adAccountId && this.internalAdAccounts().length === 1) {
+      this.state.identity.adAccountId = this.internalAdAccounts()[0].id;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.ageMin', this.state.audience.ageMin, this.initialState.audience.ageMin) && typeof suggestions.ageMin === 'number') {
+      this.state.audience.ageMin = suggestions.ageMin;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.ageMax', this.state.audience.ageMax, this.initialState.audience.ageMax) && typeof suggestions.ageMax === 'number') {
+      this.state.audience.ageMax = suggestions.ageMax;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('audience.gender', this.state.audience.gender, 'ALL') && this.isGender(suggestions.gender) && suggestions.gender !== 'ALL') {
+      this.state.audience.gender = suggestions.gender;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('destination.websiteUrl', this.state.destination.websiteUrl, '') && suggestions.websiteUrl && this.isValidHttpUrl(suggestions.websiteUrl)) {
+      this.state.destination.websiteUrl = suggestions.websiteUrl;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('destination.type', this.state.destination.type, 'site') && this.isDestinationType(suggestions.destinationType) && suggestions.destinationType !== 'site') {
+      this.state.destination.type = suggestions.destinationType;
+      appliedCount += 1;
+    }
+
+    if (!this.state.audience.interests.trim() && suggestions.interests) {
+      this.state.audience.interests = suggestions.interests;
+      appliedCount += 1;
+    }
+
+    if (!this.state.tracking.utmSource.trim() && suggestions.utmSource) {
+      this.state.tracking.utmSource = suggestions.utmSource;
+      appliedCount += 1;
+    }
+
+    if (!this.state.tracking.utmMedium.trim() && suggestions.utmMedium) {
+      this.state.tracking.utmMedium = suggestions.utmMedium;
+      appliedCount += 1;
+    }
+
+    if (!this.state.tracking.utmCampaign.trim() && suggestions.utmCampaign) {
+      this.state.tracking.utmCampaign = suggestions.utmCampaign;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('budget.budgetType', this.state.budget.budgetType, this.initialState.budget.budgetType) && suggestions.budgetType) {
+      this.state.budget.budgetType = suggestions.budgetType;
+      appliedCount += 1;
+    }
+
+    if (this.shouldApplySuggestion('tracking.mainEvent', this.state.tracking.mainEvent, this.initialState.tracking.mainEvent)) {
+      const objective = this.isObjective(suggestions.objective) ? suggestions.objective : this.state.campaign.objective;
+      const nextEvent = defaultEventForObjective(objective);
+      if (nextEvent && this.state.tracking.mainEvent !== nextEvent) {
+        this.state.tracking.mainEvent = nextEvent;
+        appliedCount += 1;
+      }
+    }
+
+    if (this.shouldApplySuggestion('tracking.utmMedium', this.state.tracking.utmMedium, this.initialState.tracking.utmMedium)) {
+      const nextMedium = this.state.destination.type === 'messages' ? 'click-to-message' : 'cpc';
+      if (nextMedium && this.state.tracking.utmMedium !== nextMedium) {
+        this.state.tracking.utmMedium = nextMedium;
+        appliedCount += 1;
+      }
+    }
+
+    this.state.ui.aiLastSummary = result.summary || 'Sugestões geradas pela IA.';
+    this.state.ui.aiDetectedFields = Array.isArray(result.detectedFields) ? result.detectedFields : [];
+    this.state.ui.aiApplied = appliedCount > 0 || this.state.ui.aiDetectedFields.length > 0;
+
+    return appliedCount;
+  }
+
+  private buildFallbackAiResult(prompt: string): CampaignAiSuggestResponse {
+    const previousState = this.buildExpandedCampaignState();
+    const clonedState = this.buildExpandedCampaignState();
+    this.state = clonedState;
+    const extraction = this.extractPromptIntoState(prompt);
+    const nextState = this.buildExpandedCampaignState();
+    this.state = previousState;
+
+    return {
+      summary: extraction.summary,
+      detectedFields: extraction.detectedFields,
+      suggestions: {
+        campaignName: nextState.campaign.name !== previousState.campaign.name ? nextState.campaign.name : null,
+        objective: nextState.campaign.objective !== previousState.campaign.objective ? nextState.campaign.objective : null,
+        budget: nextState.budget.value !== previousState.budget.value ? nextState.budget.value : null,
+        budgetType: nextState.budget.budgetType !== previousState.budget.budgetType ? nextState.budget.budgetType : null,
+        country: nextState.audience.country !== previousState.audience.country ? nextState.audience.country : null,
+        region: nextState.audience.region !== previousState.audience.region ? nextState.audience.region : null,
+        city: nextState.audience.city !== previousState.audience.city ? nextState.audience.city : null,
+        ageMin: nextState.audience.ageMin !== previousState.audience.ageMin ? nextState.audience.ageMin : null,
+        ageMax: nextState.audience.ageMax !== previousState.audience.ageMax ? nextState.audience.ageMax : null,
+        gender: nextState.audience.gender !== previousState.audience.gender ? nextState.audience.gender : null,
+        destinationType: nextState.destination.type !== previousState.destination.type ? nextState.destination.type : null,
+        websiteUrl: nextState.destination.websiteUrl !== previousState.destination.websiteUrl ? nextState.destination.websiteUrl : null,
+        message: nextState.creative.message !== previousState.creative.message ? nextState.creative.message : null,
+        headline: nextState.creative.headline !== previousState.creative.headline ? nextState.creative.headline : null,
+        description: nextState.creative.description !== previousState.creative.description ? nextState.creative.description : null,
+        cta: nextState.creative.cta !== previousState.creative.cta ? nextState.creative.cta : null,
+        interests: nextState.audience.interests !== previousState.audience.interests ? nextState.audience.interests : null,
+        utmSource: nextState.tracking.utmSource !== previousState.tracking.utmSource ? nextState.tracking.utmSource : null,
+        utmMedium: nextState.tracking.utmMedium !== previousState.tracking.utmMedium ? nextState.tracking.utmMedium : null,
+        utmCampaign: nextState.tracking.utmCampaign !== previousState.tracking.utmCampaign ? nextState.tracking.utmCampaign : null,
+      },
+    };
+  }
+
+  private mergeAiResultWithFallback(prompt: string, result: CampaignAiSuggestResponse): CampaignAiSuggestResponse {
+    const fallback = this.buildFallbackAiResult(prompt);
+    const aiSuggestions = result?.suggestions ?? {} as CampaignAiSuggestResponse['suggestions'];
+    const fallbackSuggestions = fallback.suggestions;
+
+    return {
+      summary: result?.summary?.trim() || fallback.summary,
+      detectedFields: Array.from(new Set([...(result?.detectedFields || []), ...fallback.detectedFields])),
+      suggestions: {
+        campaignName: aiSuggestions.campaignName ?? fallbackSuggestions.campaignName,
+        objective: aiSuggestions.objective ?? fallbackSuggestions.objective,
+        budget: aiSuggestions.budget ?? fallbackSuggestions.budget,
+        budgetType: aiSuggestions.budgetType ?? fallbackSuggestions.budgetType,
+        country: aiSuggestions.country ?? fallbackSuggestions.country,
+        region: aiSuggestions.region ?? fallbackSuggestions.region,
+        city: aiSuggestions.city ?? fallbackSuggestions.city,
+        ageMin: aiSuggestions.ageMin ?? fallbackSuggestions.ageMin,
+        ageMax: aiSuggestions.ageMax ?? fallbackSuggestions.ageMax,
+        gender: aiSuggestions.gender ?? fallbackSuggestions.gender,
+        destinationType: aiSuggestions.destinationType ?? fallbackSuggestions.destinationType,
+        websiteUrl: aiSuggestions.websiteUrl ?? fallbackSuggestions.websiteUrl,
+        message: aiSuggestions.message ?? fallbackSuggestions.message,
+        headline: aiSuggestions.headline ?? fallbackSuggestions.headline,
+        description: aiSuggestions.description ?? fallbackSuggestions.description,
+        cta: aiSuggestions.cta ?? fallbackSuggestions.cta,
+        interests: aiSuggestions.interests ?? fallbackSuggestions.interests,
+        utmSource: aiSuggestions.utmSource ?? fallbackSuggestions.utmSource,
+        utmMedium: aiSuggestions.utmMedium ?? fallbackSuggestions.utmMedium,
+        utmCampaign: aiSuggestions.utmCampaign ?? fallbackSuggestions.utmCampaign,
+      },
+    };
   }
 
   private loadCreationContext(storeId: string): void {
@@ -934,7 +950,7 @@ export class CampaignCreatePanelComponent {
 
   private extractPromptIntoState(prompt: string): PromptExtractionResult {
     const detectedFields: string[] = [];
-    const normalized = this.normalizeText(prompt);
+    const normalized = normalizePromptText(prompt);
     const urls = Array.from(prompt.matchAll(/https?:\/\/[^\s]+/gi)).map((item) => item[0]);
     const socialHandle = prompt.match(/@\w[\w.]+/);
     const ageRange = normalized.match(/(\d{2})\s*(?:a|-|ate|até)\s*(\d{2})\s*anos?/i);
@@ -948,22 +964,24 @@ export class CampaignCreatePanelComponent {
     const cplGoalMatch = normalized.match(/(?:cpl|custo por lead|meta de custo)\s*(?:de|em|ate|até)?\s*r?\$?\s*(\d+(?:[.,]\d+)?)/i);
     const pixelMatch = prompt.match(/pixel\s*:?\s*([A-Z0-9 _.-]{3,60})/i);
     const eventMatch = prompt.match(/evento\s*(?:principal)?\s*:?\s*([A-ZÀ-ÿ][\wÀ-ÿ _-]{2,40})/i);
-    const objective = this.detectObjective(normalized);
-    const budget = this.extractBudget(prompt, normalized);
-    const budgetType = this.detectBudgetType(normalized);
-    const initialStatus = this.detectInitialStatus(normalized);
-    const destinationType = this.detectDestinationType(normalized);
-    const cta = this.detectCta(normalized);
-    const country = this.detectCountry(normalized);
-    const gender = this.detectGender(normalized);
-    const category = this.detectSpecialCategory(normalized);
-    const placements = this.detectPlacements(normalized);
-    const weekDays = this.detectWeekDays(normalized);
-    const optimizationGoal = this.detectOptimizationGoal(normalized);
-    const billingEvent = this.detectBillingEvent(normalized);
-    const conversionWindow = this.detectConversionWindow(normalized);
-    const language = this.detectPrimaryLanguage(normalized);
-    const interests = this.extractListField(prompt, normalized, ['interesses', 'segmentos', 'afinidades']) || this.detectInterestFallback(normalized);
+    const objective = detectObjectiveFromPrompt(normalized);
+    const budget = extractBudgetFromPrompt(prompt, normalized);
+    const budgetType = detectBudgetTypeFromPrompt(normalized);
+    const initialStatus = detectInitialStatusFromPrompt(normalized);
+    const destinationType = detectDestinationTypeFromPrompt(normalized);
+    const cta = detectCtaFromPrompt(normalized);
+    const country = detectCountryFromPrompt(normalized, this.state.audience.country);
+    const gender = detectGenderFromPrompt(normalized);
+    const category = detectSpecialCategoryFromPrompt(normalized);
+    const placements = detectPlacementsFromPrompt(normalized, this.state.placements.selected);
+    const weekDays = detectWeekDaysFromPrompt(normalized);
+    const optimizationGoal = detectOptimizationGoalFromPrompt(normalized);
+    const billingEvent = detectBillingEventFromPrompt(normalized);
+    const conversionWindow = detectConversionWindowFromPrompt(normalized);
+    const language = detectPrimaryLanguageFromPrompt(normalized);
+    const detectedCity = detectCityFromPrompt(prompt, normalized);
+    const detectedRegion = detectRegionFromPrompt(prompt, normalized);
+    const interests = this.extractListField(prompt, normalized, ['interesses', 'segmentos', 'afinidades']) || detectInterestFallbackFromPrompt(normalized);
     const behaviors = this.extractListField(prompt, normalized, ['comportamentos']);
     const demographics = this.extractListField(prompt, normalized, ['demograficos', 'demográficos']);
     const excludedInterests = this.extractListField(prompt, normalized, ['excluir interesses', 'interesses excluidos', 'interesses excluídos']);
@@ -1018,13 +1036,16 @@ export class CampaignCreatePanelComponent {
       detectedFields.push('Idioma principal');
     }
 
-    if (cityMatch?.[1]) {
-      this.state.audience.city = this.toTitleCase(cityMatch[1]);
+    const rawCity = cityMatch?.[1] ? normalizeDetectedCity(cityMatch[1]) : null;
+    const nextCity = rawCity || detectedCity;
+    if (nextCity) {
+      this.state.audience.city = nextCity;
       detectedFields.push('Cidade');
     }
 
-    if (regionMatch?.[1]) {
-      this.state.audience.region = this.toTitleCase(regionMatch[1]);
+    const nextRegion = regionMatch?.[1] ? toPromptTitleCase(regionMatch[1]) : detectedRegion;
+    if (nextRegion) {
+      this.state.audience.region = nextRegion;
       detectedFields.push('Região');
     }
 
@@ -1096,22 +1117,22 @@ export class CampaignCreatePanelComponent {
     }
 
     if (manualBidMatch?.[1]) {
-      this.state.budget.manualBid = this.parseDecimal(manualBidMatch[1]);
+      this.state.budget.manualBid = parsePromptDecimal(manualBidMatch[1]);
       detectedFields.push('Lance manual');
     }
 
     if (costControlMatch?.[1]) {
-      this.state.budget.costControl = this.parseDecimal(costControlMatch[1]);
+      this.state.budget.costControl = parsePromptDecimal(costControlMatch[1]);
       detectedFields.push('Controle de custo');
     }
 
     if (roasMatch?.[1]) {
-      this.state.budget.minRoas = this.parseDecimal(roasMatch[1]);
+      this.state.budget.minRoas = parsePromptDecimal(roasMatch[1]);
       detectedFields.push('ROAS mínimo');
     }
 
     if (cplGoalMatch?.[1]) {
-      this.state.budget.costPerResultGoal = this.parseDecimal(cplGoalMatch[1]);
+      this.state.budget.costPerResultGoal = parsePromptDecimal(cplGoalMatch[1]);
       detectedFields.push('Meta de custo');
     }
 
@@ -1155,16 +1176,25 @@ export class CampaignCreatePanelComponent {
     if (mainMessage) {
       this.state.creative.message = mainMessage;
       detectedFields.push('Mensagem principal');
+    } else if (!this.state.creative.message.trim()) {
+      this.state.creative.message = this.buildAiMessage();
+      detectedFields.push('Mensagem principal sugerida');
     }
 
     if (headline) {
       this.state.creative.headline = headline;
       detectedFields.push('Headline');
+    } else if (!this.state.creative.headline.trim()) {
+      this.state.creative.headline = this.buildAiHeadline();
+      detectedFields.push('Headline sugerida');
     }
 
     if (description) {
       this.state.creative.description = description;
       detectedFields.push('Descrição');
+    } else if (!this.state.creative.description.trim()) {
+      this.state.creative.description = this.buildAiDescription();
+      detectedFields.push('Descrição sugerida');
     }
 
     if (pixelMatch?.[1]) {
@@ -1176,13 +1206,22 @@ export class CampaignCreatePanelComponent {
       this.state.tracking.mainEvent = eventMatch[1].trim();
       detectedFields.push('Evento principal');
     } else if (!this.state.tracking.mainEvent.trim()) {
-      this.state.tracking.mainEvent = this.defaultEventForObjective(objective);
+      this.state.tracking.mainEvent = defaultEventForObjective(objective);
       detectedFields.push('Evento principal sugerido');
     }
 
     if (goals) {
       this.state.tracking.goals = goals;
       detectedFields.push('Metas');
+    }
+
+    if (!this.state.tracking.utmCampaign.trim()) {
+      const parts = [
+        this.slugify(this.state.campaign.name || this.selectedObjectiveLabel()),
+        this.state.destination.type === 'messages' ? 'msg' : this.slugify(this.state.destination.type),
+      ].filter(Boolean);
+      this.state.tracking.utmCampaign = parts.join('-');
+      detectedFields.push('UTM campaign sugerida');
     }
 
     if (notes) {
@@ -1205,305 +1244,36 @@ export class CampaignCreatePanelComponent {
   }
 
   private buildInitialState(): CampaignBuilderState {
-    const today = new Date();
-    const inSevenDays = new Date();
-    inSevenDays.setDate(inSevenDays.getDate() + 7);
-
-    return {
-      campaign: {
-        name: '',
-        objective: 'OUTCOME_TRAFFIC',
-        initialStatus: 'PAUSED',
-        specialCategory: 'Nenhuma',
-        buyingType: 'Auction',
-        abTest: false,
-        campaignBudgetOptimization: true,
-        campaignSpendLimit: null,
-      },
-      identity: {
-        adAccountId: '',
-        facebookPageId: '',
-        instagramAccount: '',
-        displayName: '',
-        timezone: 'America/Sao_Paulo',
-        currency: 'BRL',
-      },
-      audience: {
-        autoAudience: true,
-        country: 'BR',
-        region: '',
-        city: '',
-        zipCode: '',
-        radiusKm: 10,
-        presenceType: 'Pessoas que moram nesta região',
-        ageMin: 21,
-        ageMax: 55,
-        gender: 'ALL',
-        languagePrimary: 'Português',
-        languagesAdditional: '',
-        interests: '',
-        behaviors: '',
-        demographics: '',
-        excludedInterests: '',
-        savedAudience: '',
-        customAudience: '',
-        lookalikeAudience: '',
-        excludedAudiences: '',
-      },
-      budget: {
-        budgetType: 'daily',
-        value: 50,
-        quickBudget: 50,
-        adSetSpendLimit: null,
-        bidStrategy: 'Highest volume',
-        costControl: null,
-        minRoas: null,
-        costPerResultGoal: null,
-        manualBid: null,
-        billingEvent: 'Impressions',
-        optimizationGoal: 'Link clicks',
-        conversionWindow: '7-day click',
-      },
-      schedule: {
-        startDate: today.toISOString().slice(0, 10),
-        startTime: '09:00',
-        endDate: inSevenDays.toISOString().slice(0, 10),
-        endTime: '22:00',
-        weekDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
-        timeBlocks: '09:00-12:00, 14:00-18:00',
-        advancedScheduling: false,
-      },
-      placements: {
-        selected: ['feed', 'stories', 'reels'],
-        platforms: {
-          facebook: true,
-          instagram: true,
-          messenger: false,
-          audienceNetwork: false,
-        },
-      },
-      destination: {
-        type: 'site',
-        websiteUrl: '',
-        messagesDestination: '',
-        formName: '',
-        appLink: '',
-        catalogId: '',
-      },
-      creative: {
-        message: '',
-        headline: '',
-        description: '',
-        cta: 'Saiba mais',
-        imageUrl: '',
-        carousel: false,
-      },
-      tracking: {
-        pixel: '',
-        mainEvent: 'Purchase',
-        conversionTracking: 'Conversão padrão',
-        utmSource: 'meta',
-        utmMedium: 'paid-social',
-        utmCampaign: '',
-        goals: '',
-        notes: '',
-      },
-      ui: {
-        aiPrompt: '',
-        aiApplied: false,
-        aiDetectedFields: [],
-        aiLastSummary: '',
-      },
-    };
-  }
-
-  private detectObjective(normalized: string): CampaignObjective {
-    if (/(lead|leads|cadastro|captacao|captação|whatsapp|formulario|formulário)/i.test(normalized)) return 'OUTCOME_LEADS';
-    if (/(alcance|awareness|reconhecimento|visibilidade)/i.test(normalized)) return 'REACH';
-    return 'OUTCOME_TRAFFIC';
-  }
-
-  private extractBudget(prompt: string, normalized: string): number {
-    const currencyMatch = normalized.match(/r\$\s*(\d{2,5}(?:[.,]\d{1,2})?)/i);
-    if (currencyMatch?.[1]) return Math.round(this.parseDecimal(currencyMatch[1]));
-
-    const phrasedMatch = normalized.match(/(?:orcamento|orçamento|budget|investimento)\s*(?:de|em)?\s*(\d{2,5}(?:[.,]\d{1,2})?)/i);
-    if (phrasedMatch?.[1]) return Math.round(this.parseDecimal(phrasedMatch[1]));
-
-    const dailyMatch = normalized.match(/(\d{2,5}(?:[.,]\d{1,2})?)\s*(?:por dia|\/dia|ao dia)/i);
-    if (dailyMatch?.[1]) return Math.round(this.parseDecimal(dailyMatch[1]));
-
-    const generic = prompt.match(/\b(\d{2,5})\b/);
-    return generic ? Number(generic[1]) : 0;
-  }
-
-  private detectBudgetType(normalized: string): CampaignBudgetType {
-    if (/(vitalicio|vitalício|total da campanha|campanha inteira|lifetime)/i.test(normalized)) return 'lifetime';
-    return 'daily';
-  }
-
-  private detectInitialStatus(normalized: string): CampaignInitialStatus {
-    if (/(ativar agora|iniciar ativa|publicar ativa|subir ativa)/i.test(normalized)) return 'ACTIVE';
-    return 'PAUSED';
-  }
-
-  private detectDestinationType(normalized: string): CampaignDestinationType {
-    if (/(whatsapp|messenger|direct|mensagens)/i.test(normalized)) return 'messages';
-    if (/(formulario|formulário|lead ads|cadastro)/i.test(normalized)) return 'form';
-    if (/\bapp\b|play store|app store|deep link/i.test(normalized)) return 'app';
-    if (/(catalogo|catálogo|produtos)/i.test(normalized)) return 'catalog';
-    return 'site';
-  }
-
-  private detectCta(normalized: string): string {
-    if (/(whatsapp|falar|conversar|mensagens)/i.test(normalized)) return 'Fale conosco';
-    if (/(comprar|oferta|promo|promocao|promoção)/i.test(normalized)) return 'Comprar agora';
-    if (/(cadastro|lead|inscricao|inscrição)/i.test(normalized)) return 'Quero oferta';
-    return 'Saiba mais';
-  }
-
-  private detectCountry(normalized: string): string {
-    const countries: Array<{ pattern: RegExp; code: string }> = [
-      { pattern: /\bbrasil\b|\bbr\b/, code: 'BR' },
-      { pattern: /\bportugal\b|\bpt\b/, code: 'PT' },
-      { pattern: /\bargentina\b|\bar\b/, code: 'AR' },
-      { pattern: /\bmexico\b|\bm[eé]xico\b|\bmx\b/, code: 'MX' },
-      { pattern: /\bchile\b|\bcl\b/, code: 'CL' },
-      { pattern: /\bcolombia\b|\bco\b/, code: 'CO' },
-      { pattern: /\bperu\b|\bperú\b|\bpe\b/, code: 'PE' },
-      { pattern: /\beua\b|\bestados unidos\b|\busa\b|\bus\b/, code: 'US' },
-    ];
-    return countries.find((item) => item.pattern.test(normalized))?.code || this.state.audience.country;
-  }
-
-  private detectGender(normalized: string): CampaignGender | null {
-    if (/(feminino|mulher|mulheres)/i.test(normalized)) return 'FEMALE';
-    if (/(masculino|homem|homens)/i.test(normalized)) return 'MALE';
-    return null;
-  }
-
-  private detectSpecialCategory(normalized: string): string | null {
-    if (/(imovel|imovel|casa|apartamento|housing|moradia)/i.test(normalized)) return 'Habitação';
-    if (/(credito|crédito|financiamento|emprestimo|empréstimo)/i.test(normalized)) return 'Crédito';
-    if (/(vaga|emprego|recrutamento)/i.test(normalized)) return 'Emprego';
-    return null;
-  }
-
-  private detectPlacements(normalized: string): CampaignPlacement[] {
-    const placements: CampaignPlacement[] = [];
-    if (/(feed)/i.test(normalized)) placements.push('feed');
-    if (/(stories|story)/i.test(normalized)) placements.push('stories');
-    if (/(reels|reel)/i.test(normalized)) placements.push('reels');
-    if (/(explore|explorar)/i.test(normalized)) placements.push('explore');
-    if (/(messenger)/i.test(normalized)) placements.push('messenger');
-    if (/(audience network|rede de audiencia|rede de audiência)/i.test(normalized)) placements.push('audience_network');
-    return placements.length ? placements : this.state.placements.selected;
-  }
-
-  private detectWeekDays(normalized: string): string[] {
-    const mapping: Array<{ pattern: RegExp; code: string }> = [
-      { pattern: /segunda/, code: 'Mon' },
-      { pattern: /terca|terça/, code: 'Tue' },
-      { pattern: /quarta/, code: 'Wed' },
-      { pattern: /quinta/, code: 'Thu' },
-      { pattern: /sexta/, code: 'Fri' },
-      { pattern: /sabado|sábado/, code: 'Sat' },
-      { pattern: /domingo/, code: 'Sun' },
-    ];
-    const detected = mapping.filter((item) => item.pattern.test(normalized)).map((item) => item.code);
-    if (/segunda a sexta/i.test(normalized)) return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    return detected;
-  }
-
-  private detectOptimizationGoal(normalized: string): string | null {
-    if (/(lead|cadastro)/i.test(normalized)) return 'Leads';
-    if (/(compra|purchase|venda)/i.test(normalized)) return 'Conversions';
-    if (/(alcance|impress)/i.test(normalized)) return 'Reach';
-    if (/(clique|trafego|tráfego|visita)/i.test(normalized)) return 'Link clicks';
-    return null;
-  }
-
-  private detectBillingEvent(normalized: string): string | null {
-    if (/(clique|click)/i.test(normalized)) return 'Clicks';
-    if (/(impress)/i.test(normalized)) return 'Impressions';
-    return null;
-  }
-
-  private detectConversionWindow(normalized: string): string | null {
-    if (/1 dia|1-day/i.test(normalized)) return '1-day click';
-    if (/7 dias|7-day/i.test(normalized)) return '7-day click';
-    if (/view/i.test(normalized)) return '1-day view';
-    return null;
-  }
-
-  private detectPrimaryLanguage(normalized: string): string | null {
-    if (/(ingles|inglês|english)/i.test(normalized)) return 'Inglês';
-    if (/(espanhol|spanish)/i.test(normalized)) return 'Espanhol';
-    if (/(portugues|português)/i.test(normalized)) return 'Português';
-    return null;
-  }
-
-  private detectInterestFallback(normalized: string): string {
-    if (/(moda|roupa|vestuario|vestuário|beleza)/i.test(normalized)) return 'moda feminina, compras online, beleza, lookalike de compradores';
-    if (/(imovel|casa|apartamento|moradia)/i.test(normalized)) return 'imóveis, financiamento, intenção de compra de imóvel';
-    if (/(clinica|clínica|saude|saúde|estetica|estética)/i.test(normalized)) return 'saúde, estética, bem-estar, agendamento';
-    if (/(curso|educacao|educação|mentoria)/i.test(normalized)) return 'educação online, cursos, desenvolvimento profissional';
-    return 'compras online, intenção de compra, remarketing';
+    return buildInitialCampaignBuilderState();
   }
 
   private buildAiCampaignName(): string {
     const objective = this.selectedObjectiveLabel();
-    const city = this.state.audience.city.trim();
-    const focus = city ? `${objective} ${city}` : objective;
+    const place = this.state.audience.city.trim() || this.state.audience.region.trim();
+    const focus = place ? `${objective} ${place}` : objective;
     return `IA | ${this.selectedStoreName()} | ${focus}`;
   }
 
   private buildAiHeadline(): string {
-    if (this.state.destination.type === 'messages') return 'Fale com a nossa equipe e avance agora';
-    if (this.state.campaign.objective === 'OUTCOME_LEADS') return 'Peça sua proposta e receba atendimento rápido';
-    if (this.state.campaign.objective === 'REACH') return 'Descubra a marca certa para o seu momento';
-    return 'Conheça a oferta certa para seguir adiante';
+    return buildAiHeadlineForState(this.state.destination.type, this.state.campaign.objective);
   }
 
   private buildAiDescription(): string {
-    return `${this.selectedObjectiveLabel()} com leitura clara de público, oferta e próximo passo.`;
+    return buildAiDescriptionForObjective(this.selectedObjectiveLabel());
   }
 
   private buildAiMessage(): string {
-    const place = this.state.audience.city.trim() || this.state.audience.country.trim().toUpperCase();
-    if (this.state.destination.type === 'messages') {
-      return `Campanha criada para gerar conversas qualificadas em ${place}, com mensagem direta, CTA forte e foco em resposta rápida.`;
-    }
-    return `Campanha criada para ${this.selectedObjectiveLabel().toLowerCase()} em ${place}, com foco em clareza de oferta, público aderente e avanço até o destino final.`;
+    return buildAiMessageForState({
+      city: this.state.audience.city,
+      region: this.state.audience.region,
+      country: this.state.audience.country,
+      destinationType: this.state.destination.type,
+      selectedObjectiveLabel: this.selectedObjectiveLabel(),
+    });
   }
 
   private buildAiInterestFallback(): string {
-    return this.detectInterestFallback(this.normalizeText(this.state.ui.aiPrompt));
-  }
-
-  private defaultEventForObjective(objective: CampaignObjective): string {
-    if (objective === 'OUTCOME_LEADS') return 'Lead';
-    if (objective === 'REACH') return 'ViewContent';
-    return 'PageView';
-  }
-
-  private normalizeText(value: string): string {
-    return value
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-  }
-
-  private parseDecimal(value: string): number {
-    return Number(value.replace(/\./g, '').replace(',', '.'));
-  }
-
-  private toTitleCase(value: string): string {
-    return value
-      .trim()
-      .split(/\s+/)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(' ');
+    return detectInterestFallbackFromPrompt(normalizePromptText(this.state.ui.aiPrompt));
   }
 
   private extractSentenceAfterKeyword(prompt: string, keywords: string[]): string {
@@ -1517,9 +1287,9 @@ export class CampaignCreatePanelComponent {
 
   private extractListField(prompt: string, normalized: string, keywords: string[]): string {
     for (const keyword of keywords) {
-      const safeKeyword = this.normalizeText(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeKeyword = normalizePromptText(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const pattern = new RegExp(`${safeKeyword}\\s*[:|-]\\s*([^\\n.]{3,220})`, 'i');
-      const match = this.normalizeText(prompt).match(pattern);
+      const match = normalizePromptText(prompt).match(pattern);
       if (match?.[1]) {
         return match[1]
           .split(/,|;| e /)
@@ -1533,10 +1303,10 @@ export class CampaignCreatePanelComponent {
   }
 
   private pickAdAccountFromPrompt(prompt: string): AdAccount | null {
-    const normalized = this.normalizeText(prompt);
+    const normalized = normalizePromptText(prompt);
     return this.internalAdAccounts().find((account) =>
-      normalized.includes(this.normalizeText(account.name)) ||
-      normalized.includes(this.normalizeText(account.externalId || account.metaId || account.id)),
+      normalized.includes(normalizePromptText(account.name)) ||
+      normalized.includes(normalizePromptText(account.externalId || account.metaId || account.id)),
     ) || (this.internalAdAccounts().length === 1 ? this.internalAdAccounts()[0] : null);
   }
 
@@ -1563,83 +1333,107 @@ export class CampaignCreatePanelComponent {
   }
 
   private hasConfiguredPage(): boolean {
-    return !!this.integration()?.pageId;
+    return hasConfiguredPage(this.integration());
   }
 
   private hasSyncedAdAccounts(): boolean {
-    return this.internalAdAccounts().length > 0;
+    return hasSyncedAdAccounts(this.internalAdAccounts());
   }
 
   private realPayloadComplete(): boolean {
-    return !!this.state.campaign.name.trim()
-      && !!this.state.campaign.objective.trim()
-      && Number(this.state.budget.value) > 0
-      && this.isValidCountry(this.state.audience.country)
-      && !!this.state.identity.adAccountId
-      && !!this.state.creative.message.trim()
-      && this.isValidImageUrl(this.state.creative.imageUrl);
+    return realPayloadComplete(this.state);
   }
 
   private generalSectionComplete(): boolean {
-    return !!this.state.campaign.name.trim() && !!this.state.campaign.objective.trim();
+    return generalSectionComplete(this.state);
   }
 
   private identitySectionComplete(): boolean {
-    return !!this.storeContext.getValidSelectedStoreId()
-      && this.isIntegrationConnected()
-      && this.hasConfiguredPage()
-      && !!this.state.identity.adAccountId;
+    return identitySectionComplete(this.reviewContext());
   }
 
   private audienceSectionComplete(): boolean {
-    return this.isValidCountry(this.state.audience.country)
-      && Number(this.state.audience.ageMin) > 0
-      && Number(this.state.audience.ageMax) >= Number(this.state.audience.ageMin);
+    return audienceSectionComplete(this.state);
   }
 
   private budgetSectionComplete(): boolean {
-    return Number(this.state.budget.value) > 0;
+    return budgetSectionComplete(this.state);
   }
 
   private scheduleSectionComplete(): boolean {
-    return !!this.state.schedule.startDate && !!this.state.schedule.startTime;
+    return scheduleSectionComplete(this.state);
   }
 
   private placementSectionComplete(): boolean {
-    return this.state.placements.selected.length > 0;
+    return placementSectionComplete(this.state);
   }
 
   private destinationSectionComplete(): boolean {
-    if (this.state.destination.type === 'site') {
-      return !!this.state.destination.websiteUrl.trim();
-    }
-    return true;
+    return destinationSectionComplete(this.state);
   }
 
   private creativeSectionComplete(): boolean {
-    return !!this.state.creative.message.trim() && this.isValidImageUrl(this.state.creative.imageUrl);
+    return creativeSectionComplete(this.state);
   }
 
   private trackingSectionComplete(): boolean {
-    return !!this.state.tracking.mainEvent.trim();
+    return trackingSectionComplete(this.state);
+  }
+
+  private isObjective(value: unknown): value is CampaignObjective {
+    return ['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH'].includes(String(value));
+  }
+
+  private isGender(value: unknown): value is CampaignGender {
+    return ['ALL', 'MALE', 'FEMALE'].includes(String(value));
+  }
+
+  private isDestinationType(value: unknown): value is CampaignDestinationType {
+    return ['site', 'messages', 'form', 'app', 'catalog'].includes(String(value));
   }
 
   private isValidCountry(value: string): boolean {
-    return /^[A-Z]{2}$/i.test((value || '').trim());
+    return isValidCountry(value);
   }
 
   private isValidImageUrl(value: string): boolean {
-    const trimmed = (value || '').trim();
-    if (!trimmed) return false;
-    try {
-      const parsed = new URL(trimmed);
-      return ['http:', 'https:'].includes(parsed.protocol);
-    } catch {
-      return false;
-    }
+    return isValidImageUrl(value);
   }
 
-  private formatCurrency(value: number): string {
+  private isValidHttpUrl(value: string): boolean {
+    return isValidHttpUrl(value);
+  }
+
+  private shouldApplySuggestion(field: string, currentValue: unknown, defaultValue: unknown): boolean {
+    if (this.touchedFields()[field]) {
+      return false;
+    }
+
+    const current = typeof currentValue === 'string' ? currentValue.trim() : currentValue;
+    const fallback = typeof defaultValue === 'string' ? defaultValue.trim() : defaultValue;
+    return current === fallback || current === '' || current === null || current === undefined || current === 0;
+  }
+
+  private normalizeAiCta(value: string, destinationType?: CampaignDestinationType): string {
+    const normalized = normalizePromptText(value);
+    const prefersMessages = destinationType === 'messages';
+
+    if (/(whatsapp|falar|conversar|contato|contact)/i.test(normalized)) return 'Fale conosco';
+    if (/(mensagem|message|messenger|direct|dm)/i.test(normalized)) return 'Enviar mensagem';
+    if (/(comprar|buy|shop|oferta|promo)/i.test(normalized)) return 'Comprar agora';
+    if (/(cadastro|lead|inscricao|inscrição|proposta)/i.test(normalized)) return 'Quero oferta';
+    if (/(saiba|learn|more|detalhe|conheca|conheça)/i.test(normalized)) {
+      return prefersMessages ? 'Fale conosco' : 'Saiba mais';
+    }
+
+    if (prefersMessages && value === 'Saiba mais') {
+      return 'Fale conosco';
+    }
+
+    return this.ctaOptions.includes(value) ? value : prefersMessages ? 'Fale conosco' : 'Saiba mais';
+  }
+
+  formatCurrency(value: number): string {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
   }
 
@@ -1773,3 +1567,5 @@ export class CampaignCreatePanelComponent {
     return parts.join(' ');
   }
 }
+
+export type { CampaignCreateSuccessEvent } from './campaign-builder.types';

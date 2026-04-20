@@ -191,4 +191,72 @@ describe('MetaSyncService', () => {
     await expect(service.syncAdAccounts('store-1', clientUser)).rejects.toBeInstanceOf(ForbiddenException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
+
+  it('sincroniza campanhas com campos reais da Meta sem inventar defaults', async () => {
+    integrationRepo.createQueryBuilder = jest.fn(() => queryBuilderMock(integration()));
+    const adAccount = {
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+    };
+    adAccountRepo.findOne.mockResolvedValue(adAccount);
+    metaService.fetchCampaignsRaw.mockResolvedValueOnce([
+      {
+        externalId: 'campaign-1',
+        name: 'Campanha Real',
+        status: 'ACTIVE',
+        objective: 'LEADS',
+        dailyBudget: 180,
+        startTime: new Date('2026-04-20T09:00:00Z'),
+        endTime: new Date('2026-04-27T22:00:00Z'),
+      },
+      {
+        externalId: 'campaign-2',
+        name: 'Campanha Parcial',
+        status: 'PAUSED',
+        objective: null,
+        dailyBudget: null,
+        startTime: null,
+        endTime: null,
+      },
+    ]);
+    metaService.normalizeCampaigns.mockImplementation((raw) => raw);
+    const existingCampaign = {
+      id: 'campaign-local-2',
+      storeId: 'store-1',
+      externalId: 'campaign-2',
+      name: 'Antiga',
+      status: 'ACTIVE',
+      objective: 'TRAFFIC',
+      dailyBudget: 90,
+      startTime: new Date('2026-04-01T00:00:00Z'),
+      endTime: null,
+      adAccountId: 'old-ad-account',
+      lastSeenAt: null,
+    };
+    campaignRepo.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingCampaign);
+
+    const result = await service.syncCampaigns('store-1', 'ad-account-1', user);
+
+    expect(result).toHaveLength(2);
+    expect(campaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      metaId: 'campaign-1',
+      externalId: 'campaign-1',
+      objective: 'LEADS',
+      dailyBudget: 180,
+      startTime: new Date('2026-04-20T09:00:00Z'),
+      endTime: new Date('2026-04-27T22:00:00Z'),
+    }));
+    expect(existingCampaign).toEqual(expect.objectContaining({
+      name: 'Campanha Parcial',
+      status: 'PAUSED',
+      objective: 'TRAFFIC',
+      dailyBudget: 90,
+      startTime: new Date('2026-04-01T00:00:00Z'),
+    }));
+  });
 });

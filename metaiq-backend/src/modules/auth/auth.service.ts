@@ -4,7 +4,8 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
@@ -98,6 +99,19 @@ export class AuthService {
     return this.buildAuthResponse(user, tokens);
   }
 
+  async logoutByRefreshToken(refreshToken?: string): Promise<void> {
+    if (!refreshToken) {
+      return;
+    }
+
+    try {
+      const payload = await this.validateRefreshToken(refreshToken);
+      await this.updateRefreshToken(payload.sub, null);
+    } catch {
+      // Logout should still succeed from the client perspective even if the token is stale.
+    }
+  }
+
   private async validateRefreshToken(refreshToken: string): Promise<JwtPayload> {
     const refreshSecret =
       this.configService.get<string>('jwt.refreshSecret') ||
@@ -131,7 +145,7 @@ export class AuthService {
     return payload;
   }
 
-  private async generateTokens(user: User) {
+  private async generateTokens(user: User): Promise<{ accessToken: string; refreshToken: string }> {
     const payload = this.buildPayload(user);
     const accessTokenExpiresIn =
       this.configService.get<string>('jwt.expiresIn') || '15m';
@@ -141,15 +155,18 @@ export class AuthService {
       this.configService.get<string>('jwt.refreshSecret') ||
       this.configService.get<string>('jwt.secret');
 
-    const accessToken = this.jwtService.sign({ ...payload, jti: randomUUID() }, {
+    const accessTokenOptions: JwtSignOptions = {
       secret: this.configService.get<string>('jwt.secret'),
-      expiresIn: accessTokenExpiresIn as any,
-    });
+      expiresIn: accessTokenExpiresIn as StringValue,
+    };
 
-    const refreshToken = this.jwtService.sign({ ...payload, jti: randomUUID() }, {
+    const refreshTokenOptions: JwtSignOptions = {
       secret: refreshSecret,
-      expiresIn: refreshTokenExpiresIn as any,
-    });
+      expiresIn: refreshTokenExpiresIn as StringValue,
+    };
+
+    const accessToken = this.jwtService.sign({ ...payload, jti: randomUUID() }, accessTokenOptions);
+    const refreshToken = this.jwtService.sign({ ...payload, jti: randomUUID() }, refreshTokenOptions);
 
     return { accessToken, refreshToken };
   }

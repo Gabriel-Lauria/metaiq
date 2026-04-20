@@ -51,7 +51,8 @@ export class StoresComponent implements OnInit {
   load(): void {
     this.loading.set(true);
     this.error.set(null);
-    const storeRequest = [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(this.auth.getCurrentRole())
+    const currentRole = this.auth.getCurrentRole();
+    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(currentRole)
       ? this.api.getStores()
       : this.api.getAccessibleStores();
 

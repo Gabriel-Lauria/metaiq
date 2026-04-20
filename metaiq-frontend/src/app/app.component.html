@@ -115,7 +115,7 @@
     </nav>
 
     <div class="sidebar-profile" *ngIf="currentUser$ | async as user">
-      <div class="profile-avatar">{{ user.name?.split(' ').map(n => n[0]).join('') }}</div>
+      <div class="profile-avatar">{{ userInitials(user.name) }}</div>
       <div class="profile-meta">
         <span class="profile-name">{{ user.name }}</span>
         <span class="profile-email">{{ user.email || 'Usuário' }}</span>

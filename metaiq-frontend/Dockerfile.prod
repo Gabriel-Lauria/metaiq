@@ -1,0 +1,51 @@
+# Build stage - Build Angular app
+FROM node:18-alpine as builder
+
+WORKDIR /app
+
+# Instalar dependências do sistema
+RUN apk add --no-cache python3
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+COPY angular.json tsconfig*.json ./
+COPY src ./src
+
+# Instalar dependências
+RUN npm ci
+
+# Build para produção
+RUN npm run build -- --configuration production
+
+# Production stage - Servir com Nginx
+FROM nginx:alpine
+
+# Remover configuração padrão do Nginx
+RUN rm -rf /etc/nginx/conf.d/*
+
+# Copiar arquivos buildados para Nginx
+COPY --from=builder /app/dist/metaiq-frontend /usr/share/nginx/html
+
+# Copiar configuração customizada do Nginx
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY mime.types /etc/nginx/mime.types
+
+# Criar usuário para Nginx
+RUN addgroup -g 101 -S nginx && \
+    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx
+
+# Permissões
+RUN chown -R nginx:nginx /usr/share/nginx/html
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
+
+# Expor porta
+EXPOSE 80
+
+# Executar como não-root
+USER nginx
+
+# Iniciar Nginx
+CMD ["nginx", "-g", "daemon off;"]

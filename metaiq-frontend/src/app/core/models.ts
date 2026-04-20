@@ -79,11 +79,11 @@ export interface Campaign {
   metaId: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
-  objective: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS';
-  dailyBudget: number;
+  objective: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null;
+  dailyBudget: number | null;
   score: number;
-  startTime: Date;
-  endTime?: Date;
+  startTime: Date | null;
+  endTime?: Date | null;
   userId: string;
   storeId?: string | null;
   store?: Store | null;
@@ -164,6 +164,11 @@ export interface CreateMetaCampaignRequest {
   adAccountId: string;
   message: string;
   imageUrl: string;
+  destinationUrl?: string;
+  headline?: string;
+  description?: string;
+  cta?: string;
+  initialStatus?: 'PAUSED' | 'ACTIVE';
 }
 
 export interface CreateMetaCampaignResponse {
@@ -175,6 +180,35 @@ export interface CreateMetaCampaignResponse {
   storeId: string;
   adAccountId: string;
   platform: 'META';
+}
+
+export interface CampaignAiSuggestions {
+  campaignName: string | null;
+  objective: 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH' | null;
+  budget: number | null;
+  budgetType: 'daily' | 'lifetime' | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  ageMin: number | null;
+  ageMax: number | null;
+  gender: 'ALL' | 'MALE' | 'FEMALE' | null;
+  destinationType: 'site' | 'messages' | 'form' | 'app' | 'catalog' | null;
+  websiteUrl: string | null;
+  message: string | null;
+  headline: string | null;
+  description: string | null;
+  cta: string | null;
+  interests: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+}
+
+export interface CampaignAiSuggestResponse {
+  summary: string;
+  detectedFields: string[];
+  suggestions: CampaignAiSuggestions;
 }
 
 export interface ConnectMetaIntegrationRequest {
@@ -252,7 +286,7 @@ export interface DashboardSummary {
 
 export interface AuthResponse {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   user: User;
 }
 

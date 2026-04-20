@@ -11,6 +11,7 @@ import { Observable, throwError } from 'rxjs';
 import { catchError, switchMap, map, finalize, shareReplay } from 'rxjs/operators';
 import { AuthService } from './services/auth.service';
 import { UiService } from './services/ui.service';
+import { AuthResponse } from './models';
 
 let isRefreshing = false;
 let refreshTokenRequest: Observable<string> | null = null;
@@ -69,7 +70,7 @@ function handle401Error(
   if (!isRefreshing) {
     isRefreshing = true;
     refreshTokenRequest = authService.refreshToken().pipe(
-      map((response: any) => response.accessToken),
+      map((response: AuthResponse) => response.accessToken),
       shareReplay(1),
       finalize(() => {
         isRefreshing = false;
@@ -79,7 +80,7 @@ function handle401Error(
   }
 
   return (refreshTokenRequest ?? authService.refreshToken().pipe(
-    map((response: any) => response.accessToken)
+    map((response: AuthResponse) => response.accessToken)
   )).pipe(
     switchMap((accessToken: string) => {
       if (!accessToken) {

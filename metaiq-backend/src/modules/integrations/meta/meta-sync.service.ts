@@ -156,27 +156,32 @@ export class MetaSyncService {
           },
         });
 
-        if (existing) {
-          existing.name = campaign.name;
-          existing.status = campaign.status;
-          existing.adAccountId = adAccount.id;
-          existing.lastSeenAt = now;
-          await this.campaignRepository.save(existing);
-          continue;
-        }
+      if (existing) {
+        existing.name = campaign.name;
+        existing.status = campaign.status;
+        existing.objective = campaign.objective ?? existing.objective ?? null;
+        existing.dailyBudget = campaign.dailyBudget ?? existing.dailyBudget ?? null;
+        existing.startTime = campaign.startTime ?? existing.startTime ?? null;
+        existing.endTime = campaign.endTime ?? existing.endTime ?? null;
+        existing.adAccountId = adAccount.id;
+        existing.lastSeenAt = now;
+        await this.campaignRepository.save(existing);
+        continue;
+      }
 
         await this.campaignRepository.save(
           this.campaignRepository.create({
-            metaId: campaign.externalId,
-            externalId: campaign.externalId,
-            name: campaign.name,
-            status: campaign.status,
-            objective: 'CONVERSIONS',
-            dailyBudget: 0,
-            startTime: now,
-            userId: requester.id,
-            createdByUserId: requester.id,
-            storeId,
+          metaId: campaign.externalId,
+          externalId: campaign.externalId,
+          name: campaign.name,
+          status: campaign.status,
+          objective: campaign.objective ?? null,
+          dailyBudget: campaign.dailyBudget ?? null,
+          startTime: campaign.startTime ?? null,
+          endTime: campaign.endTime ?? null,
+          userId: requester.id,
+          createdByUserId: requester.id,
+          storeId,
             adAccountId: adAccount.id,
             lastSeenAt: now,
           }),

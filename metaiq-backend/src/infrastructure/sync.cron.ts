@@ -63,8 +63,9 @@ export class SyncCron {
 
       operation.end(errors === 0, { success, errors, total: campaigns.length });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error('Erro geral no cron de insights', err);
-      operation.end(false, { error: err.message });
+      operation.end(false, { error: errorMessage });
     }
   }
 
@@ -77,8 +78,9 @@ export class SyncCron {
       this.logger.info('Limpeza de insights antigos concluída');
       operation.end(true);
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error('Erro ao limpar insights antigos', err);
-      operation.end(false, { error: err.message });
+      operation.end(false, { error: errorMessage });
     }
   }
 

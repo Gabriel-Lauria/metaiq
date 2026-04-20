@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { timeout, retry, catchError } from 'rxjs/operators';
 import {
@@ -68,31 +68,45 @@ function dateRange(days = 30): { from: string; to: string } {
 export class ApiService {
   private http = inject(HttpClient);
 
-  private handleError(error: any) {
-    const message = error?.error?.message || error?.message || 'Erro ao conectar ao servidor';
-    return throwError(() => new Error(message));
+  private handleError(error: HttpErrorResponse | unknown) {
+    const message =
+      error instanceof HttpErrorResponse
+        ? error.error?.message || error.message || 'Erro ao conectar ao servidor'
+        : error instanceof Error
+        ? error.message
+        : 'Erro ao conectar ao servidor';
+
+    const apiError = new Error(message) as Error & { status?: number };
+    if (error instanceof HttpErrorResponse) {
+      apiError.status = error.status;
+    }
+
+    return throwError(() => apiError);
   }
 
-  private request<T>(observable: Observable<T>): Observable<T> {
-    return observable.pipe(
-      timeout(HTTP_TIMEOUT),
-      retry({
-        count: RETRY_ATTEMPTS,
-        delay: (error, retryCount) => {
-          if (error?.status && error.status < 500) {
-            return throwError(() => error);
-          }
+  private request<T>(observable: Observable<T>, shouldRetry = false): Observable<T> {
+    const withTimeout = observable.pipe(timeout(HTTP_TIMEOUT));
+    const withRetry = shouldRetry
+      ? withTimeout.pipe(
+          retry({
+            count: RETRY_ATTEMPTS,
+            delay: (error, retryCount) => {
+              if (error?.status && error.status < 500) {
+                return throwError(() => error);
+              }
 
-          return timer(RETRY_DELAY * retryCount);
-        }
-      }),
-      catchError(err => this.handleError(err)),
-    );
+              return timer(RETRY_DELAY * retryCount);
+            }
+          }),
+        )
+      : withTimeout;
+
+    return withRetry.pipe(catchError(err => this.handleError(err)));
   }
 
   // Generic GET
   get<T>(endpoint: string, params?: HttpParams): Observable<T> {
-    return this.request(this.http.get<T>(`${API}${endpoint}`, { params }));
+    return this.request(this.http.get<T>(`${API}${endpoint}`, { params }), true);
   }
 
   // Generic POST

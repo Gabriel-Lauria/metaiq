@@ -312,7 +312,7 @@ export class MetricsService {
     };
   }
 
-  private async applyStoreFilter<T>(
+  private async applyStoreFilter(
     query: any,
     user: AuthenticatedUser,
     storeId?: string,

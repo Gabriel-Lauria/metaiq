@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -11,6 +12,7 @@ import { ManagersModule } from './modules/managers/managers.module';
 import { StoresModule } from './modules/stores/stores.module';
 import { AdAccountsModule } from './modules/ad-accounts/ad-accounts.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
+import { CampaignAiModule } from './modules/ai/campaign-ai.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
@@ -99,13 +101,20 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     StoresModule,
     AdAccountsModule,
     CampaignsModule,
+    CampaignAiModule,
     MetricsModule,
     InsightsModule,
     DashboardModule,
     MetaIntegrationModule,
   ],
   controllers: [AppController],
-  providers: [GlobalExceptionFilter, SyncCron],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
+    },
+    SyncCron,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

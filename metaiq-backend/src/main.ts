@@ -3,18 +3,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from './config/app.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
-  const appConfig = configService.get<AppConfig>('app');
-
-  // Global exception filter
-  const globalExceptionFilter = app.get(GlobalExceptionFilter);
-  app.useGlobalFilters(globalExceptionFilter);
+  const appConfig = configService.get<AppConfig>('app') as AppConfig;
+  if (!appConfig) {
+    throw new Error('Missing app configuration');
+  }
 
   // Security headers
   app.use(helmet({
@@ -46,7 +44,7 @@ async function bootstrap() {
   ].filter(Boolean);
 
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;

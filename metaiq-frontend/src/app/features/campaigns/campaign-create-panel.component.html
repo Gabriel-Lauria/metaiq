@@ -24,19 +24,45 @@
       </div>
     </header>
 
-    <div class="top-actions">
-      <button class="btn btn-secondary" type="button" (click)="focusAiSection()">Criar com IA</button>
-      <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
-      <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
-      <button class="btn btn-secondary" type="button" (click)="goToNextPendingSection()">Próxima pendência</button>
-      <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar agora</button>
-      <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Ir para Integrações</button>
-      <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-        {{ submitting() ? 'Criando campanha...' : 'Criar campanha' }}
-      </button>
-    </div>
+    <div class="builder-toolbar">
+      <div class="builder-status-strip">
+        <div class="status-strip-copy">
+          <span class="section-kicker">Leitura operacional</span>
+          <strong>{{ blockerMessage() }}</strong>
+          <p>
+            Se preferir, siga direto para
+            <button type="button" class="link-btn inline-link" (click)="scrollToSection(firstBlockingSectionId())">
+              {{ nextPendingSection().label }}
+            </button>
+            e continue a partir do ponto mais crítico.
+          </p>
+        </div>
 
-    <nav class="builder-nav">
+        <div class="status-strip-actions">
+          <span class="hero-chip">{{ progressPercent() }}% concluído</span>
+          <button class="btn btn-secondary" type="button" (click)="scrollToSection(firstBlockingSectionId())">Ir para bloqueio</button>
+          <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
+            {{ submitting() ? 'Criando campanha...' : 'Enviar agora' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button class="btn btn-secondary" type="button" (click)="focusAiSection()">Criar com IA</button>
+        <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+        <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
+          {{ submitting() ? 'Criando campanha...' : 'Criar campanha' }}
+        </button>
+      </div>
+
+      <div class="toolbar-secondary">
+        <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
+        <button class="btn btn-secondary" type="button" (click)="goToNextPendingSection()">Próxima pendência</button>
+        <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar agora</button>
+        <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Ir para Integrações</button>
+      </div>
+
+      <nav class="builder-nav">
       <button
         type="button"
         class="nav-pill"
@@ -47,9 +73,29 @@
         {{ section.label }}
       </button>
     </nav>
+  </div>
 
     <div class="panel-grid">
       <div class="panel-main">
+        <section class="section-block context-banner" *ngIf="loadingContext() || contextError()">
+          <div class="context-banner-card is-loading" *ngIf="loadingContext()">
+            <div class="banner-spinner" aria-hidden="true"></div>
+            <div>
+              <strong>Preparando contexto da store</strong>
+              <p>Carregando integração Meta, página configurada e contas disponíveis para reduzir atrito no envio.</p>
+            </div>
+          </div>
+
+          <div class="context-banner-card is-error" *ngIf="contextError()">
+            <div class="banner-icon" aria-hidden="true">!</div>
+            <div>
+              <strong>O contexto de criação precisa de atenção</strong>
+              <p>{{ contextError() }}</p>
+            </div>
+            <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Resolver em Integrações</button>
+          </div>
+        </section>
+
         <section class="section-block status-block">
           <div class="section-heading">
             <div>
@@ -62,14 +108,19 @@
             />
           </div>
 
-          <div class="editing-name-card">
-            <strong>{{ state.campaign.name || 'Sem nome definido ainda' }}</strong>
-            <p>{{ blockerMessage() }}</p>
-            <div class="inline-next-step">
-              <span>Próximo foco:</span>
-              <button type="button" class="link-btn" (click)="goToNextPendingSection()">{{ nextPendingSection().label }}</button>
+            <div class="editing-name-card">
+              <strong>{{ state.campaign.name || 'Sem nome definido ainda' }}</strong>
+              <p>{{ blockerMessage() }}</p>
+              <div class="summary-chip-row">
+                <span class="summary-chip">{{ selectedObjectiveLabel() }}</span>
+                <span class="summary-chip">{{ destinationSummary() }}</span>
+                <span class="summary-chip">{{ formatCurrency(state.budget.value) }}</span>
+              </div>
+              <div class="inline-next-step">
+                <span>Próximo foco:</span>
+                <button type="button" class="link-btn" (click)="goToNextPendingSection()">{{ nextPendingSection().label }}</button>
+              </div>
             </div>
-          </div>
 
           <div class="review-checklist compact">
             <div class="review-item" *ngFor="let item of readinessItems(); trackBy: trackByValue" [class.done]="item.done">
@@ -112,15 +163,15 @@
             </label>
 
             <div class="ai-sidecards">
-              <article class="ai-tip-card">
+              <article class="ai-tip-card" [class.is-busy]="aiSuggesting()">
                 <span>Preenche melhor quando você cita</span>
                 <strong>objetivo, público, orçamento, destino e CTA</strong>
               </article>
-              <article class="ai-tip-card">
+              <article class="ai-tip-card" [class.is-busy]="aiSuggesting()">
                 <span>Melhora a revisão final</span>
                 <strong>nome da campanha, criativo e UTMs já saem mais coerentes</strong>
               </article>
-              <article class="ai-tip-card ai-summary-card" *ngIf="state.ui.aiLastSummary">
+              <article class="ai-tip-card ai-summary-card" *ngIf="state.ui.aiLastSummary" [class.is-busy]="aiSuggesting()">
                 <span>Leitura do briefing</span>
                 <strong>{{ state.ui.aiLastSummary }}</strong>
               </article>
@@ -139,7 +190,17 @@
 
           <div class="ai-actions">
             <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar prompt</button>
-            <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()">Gerar sugestões</button>
+            <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
+              {{ aiSuggesting() ? 'Gerando sugestões...' : 'Gerar sugestões' }}
+            </button>
+          </div>
+
+          <div class="ai-processing-card" *ngIf="aiSuggesting()">
+            <div class="banner-spinner" aria-hidden="true"></div>
+            <div>
+              <strong>Estruturando briefing e sugerindo campanha</strong>
+              <p>A IA está traduzindo seu texto em objetivo, público, criativo e rastreamento sem sobrescrever campos que você já ajustou manualmente.</p>
+            </div>
           </div>
         </section>
 
@@ -825,6 +886,30 @@
       <aside class="summary-sidebar">
         <section class="sidebar-block">
           <div class="sidebar-heading">
+            <span class="section-kicker">Mapa do fluxo</span>
+            <strong>Seções e progresso</strong>
+          </div>
+
+          <div class="section-rail">
+            <button
+              type="button"
+              class="section-rail-item"
+              *ngFor="let section of sectionProgress(); trackBy: trackByValue"
+              [class.is-done]="section.done"
+              [class.is-active]="activeSection() === section.id"
+              (click)="scrollToSection(section.id)"
+            >
+              <span class="section-rail-marker"></span>
+              <span class="section-rail-copy">
+                <strong>{{ section.label }}</strong>
+                <small>{{ section.done ? 'Concluído' : 'Pendente' }}</small>
+              </span>
+            </button>
+          </div>
+        </section>
+
+        <section class="sidebar-block">
+          <div class="sidebar-heading">
             <span class="section-kicker">Resumo em tempo real</span>
             <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
           </div>
@@ -907,6 +992,17 @@
           </div>
         </section>
       </aside>
+    </div>
+
+    <div class="mobile-submit-bar">
+      <div class="mobile-submit-copy">
+        <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
+        <span>{{ canSubmit() ? 'Pronta para envio' : nextPendingSection().label + ' pendente' }}</span>
+      </div>
+      <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar</button>
+      <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
+        {{ submitting() ? 'Criando...' : 'Enviar' }}
+      </button>
     </div>
   </section>
 

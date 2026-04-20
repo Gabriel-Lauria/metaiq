@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, MaxLength, Min } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
 
 export class ConnectMetaIntegrationDto {
@@ -66,6 +66,10 @@ export interface MetaCampaignDto {
   externalId: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  objective?: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null;
+  dailyBudget?: number | null;
+  startTime?: Date | null;
+  endTime?: Date | null;
 }
 
 export interface MetaPageDto {
@@ -121,6 +125,31 @@ export class CreateMetaCampaignDto {
   @IsNotEmpty()
   @MaxLength(1000)
   imageUrl: string;
+
+  @IsOptional()
+  @IsUrl({ require_protocol: true })
+  @MaxLength(1000)
+  destinationUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  headline?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  cta?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['PAUSED', 'ACTIVE'])
+  initialStatus?: 'PAUSED' | 'ACTIVE';
 
   @IsOptional()
   @IsString()

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, throwError, BehaviorSubject } from 'rxjs';
+import { Observable, BehaviorSubject } from 'rxjs';
 import { tap, map } from 'rxjs/operators';
 import { AuthResponse, LoginRequest, RegisterRequest, Role, User } from '../models';
 import { environment } from '../environment';
@@ -12,7 +12,6 @@ export class AuthService {
   private http = inject(HttpClient);
   private readonly sessionKeys = [
     'accessToken',
-    'refreshToken',
     'user',
     'selectedStoreId',
   ];
@@ -67,17 +66,15 @@ export class AuthService {
   }
 
   refreshToken(): Observable<AuthResponse> {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (!refreshToken) {
-      return throwError(() => new Error('Refresh token não encontrado'));
-    }
-
-    return this.http.post<AuthResponse>(`${API}/auth/refresh`, { refreshToken }).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/refresh`, {}).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
 
   logout(): void {
+    this.http.post(`${API}/auth/logout`, {}, { withCredentials: true }).subscribe({
+      error: () => undefined,
+    });
     this.clearSessionState();
   }
 
@@ -104,7 +101,6 @@ export class AuthService {
 
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.setItem('accessToken', response.accessToken);
-    localStorage.setItem('refreshToken', response.refreshToken);
     const role = this.normalizeRole(response.user.role);
     const userWithRole = { ...response.user, role };
     localStorage.setItem('user', JSON.stringify(userWithRole));

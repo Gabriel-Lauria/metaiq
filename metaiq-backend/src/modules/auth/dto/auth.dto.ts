@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @IsEmail({}, { message: 'Email deve ser válido' })
@@ -12,9 +12,10 @@ export class LoginDto {
 }
 
 export class RefreshTokenDto {
+  @IsOptional()
   @IsString({ message: 'Refresh token deve ser uma string' })
   @IsNotEmpty({ message: 'Refresh token é obrigatório' })
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class RegisterDto {

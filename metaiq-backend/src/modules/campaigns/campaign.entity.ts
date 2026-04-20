@@ -25,17 +25,17 @@ export class Campaign {
   @Column({ default: 'ACTIVE' })
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
 
-  @Column({ default: 'CONVERSIONS' })
-  objective: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS';
+  @Column({ nullable: true, default: null })
+  objective: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
-  dailyBudget: number;
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  dailyBudget: number | null;
 
   @Column({ type: 'decimal', precision: 6, scale: 2, default: 0 })
   score: number;
 
-  @Column()
-  startTime: Date;
+  @Column({ nullable: true })
+  startTime: Date | null;
 
   @Column({ nullable: true })
   endTime?: Date;

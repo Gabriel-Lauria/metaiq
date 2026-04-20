@@ -21,7 +21,7 @@
     *ngIf="!loading() && error()"
     type="error"
     title="Ops, algo deu errado"
-    [message]="error()"
+    [message]="error() ?? ''"
     actionLabel="Tentar novamente"
     (action)="load()"
   />

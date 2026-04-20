@@ -16,7 +16,7 @@ import {
   MetaCampaignCreationStatus,
   MetaCampaignCreationStep,
 } from './meta-campaign-creation.entity';
-import { MetaCampaignOrchestrator, MetaCampaignResourceIds } from './meta-campaign.orchestrator';
+import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaGraphApiClient } from './meta-graph-api.client';
 import {
   ConnectMetaIntegrationDto,
@@ -419,6 +419,10 @@ export class MetaIntegrationService {
       if (existing) {
         existing.name = campaign.name;
         existing.status = campaign.status;
+        existing.objective = campaign.objective ?? existing.objective ?? null;
+        existing.dailyBudget = campaign.dailyBudget ?? existing.dailyBudget ?? null;
+        existing.startTime = campaign.startTime ?? existing.startTime ?? null;
+        existing.endTime = campaign.endTime ?? existing.endTime ?? null;
         existing.adAccountId = adAccount.id;
         existing.lastSeenAt = now;
         await this.campaignRepository.save(existing);
@@ -431,9 +435,10 @@ export class MetaIntegrationService {
           externalId: campaign.externalId,
           name: campaign.name,
           status: campaign.status,
-          objective: 'CONVERSIONS',
-          dailyBudget: 0,
-          startTime: now,
+          objective: campaign.objective ?? null,
+          dailyBudget: campaign.dailyBudget ?? null,
+          startTime: campaign.startTime ?? null,
+          endTime: campaign.endTime ?? null,
           userId: requester.id,
           createdByUserId: requester.id,
           storeId,
@@ -480,7 +485,9 @@ export class MetaIntegrationService {
     const objective = this.normalizeCreateObjective(dto.objective);
     this.assertValidCampaignPayload(dto, objective);
     const destinationUrl =
-      this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl']) || dto.imageUrl;
+      dto.destinationUrl?.trim()
+      || this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl'])
+      || dto.imageUrl;
     const execution = await this.createCampaignCreationExecution(storeId, requester, adAccount, dto, idempotencyKey);
     const createdIds: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>> = {};
     const startedAt = Date.now();
@@ -714,6 +721,14 @@ export class MetaIntegrationService {
     if (!dto.message.trim()) {
       throw new BadRequestException('message é obrigatório');
     }
+
+    if (!this.isValidHttpUrl(dto.imageUrl)) {
+      throw new BadRequestException('imageUrl deve ser uma URL http(s) válida');
+    }
+
+    if (dto.destinationUrl && !this.isValidHttpUrl(dto.destinationUrl)) {
+      throw new BadRequestException('destinationUrl deve ser uma URL http(s) válida');
+    }
   }
 
   private async getMetaAdAccountInStore(adAccountId: string, storeId: string): Promise<AdAccount> {
@@ -873,6 +888,10 @@ export class MetaIntegrationService {
         externalId: campaign.id,
         name: campaign.name || campaign.id,
         status: this.normalizeCampaignStatus(campaign.status),
+        objective: this.normalizeImportedCampaignObjective(campaign.objective),
+        dailyBudget: this.normalizeImportedCampaignBudget(campaign.daily_budget, campaign.lifetime_budget),
+        startTime: this.normalizeImportedCampaignDate(campaign.start_time),
+        endTime: this.normalizeImportedCampaignDate(campaign.stop_time),
       }));
   }
 
@@ -890,7 +909,7 @@ export class MetaIntegrationService {
         },
         params: isFirstPage
           ? {
-              fields: 'id,name,status',
+              fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time',
             }
           : undefined,
         timeout: 15000,
@@ -958,7 +977,7 @@ export class MetaIntegrationService {
     const now = new Date();
     if (existingCampaign) {
       existingCampaign.name = dto.name;
-      existingCampaign.status = 'PAUSED';
+      existingCampaign.status = dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
       existingCampaign.objective = this.normalizeLocalObjective(dto.objective);
       existingCampaign.dailyBudget = dto.dailyBudget;
       existingCampaign.adAccountId = adAccount.id;
@@ -972,7 +991,7 @@ export class MetaIntegrationService {
         metaId: campaignId,
         externalId: campaignId,
         name: dto.name,
-        status: 'PAUSED',
+        status: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         objective: this.normalizeLocalObjective(dto.objective),
         dailyBudget: dto.dailyBudget,
         startTime: now,
@@ -1002,6 +1021,11 @@ export class MetaIntegrationService {
         adAccountId: dto.adAccountId,
         message: dto.message.trim(),
         imageUrl: dto.imageUrl.trim(),
+        destinationUrl: dto.destinationUrl?.trim() || null,
+        headline: dto.headline?.trim() || null,
+        description: dto.description?.trim() || null,
+        cta: dto.cta?.trim() || null,
+        initialStatus: dto.initialStatus || 'PAUSED',
       }))
       .digest('hex');
   }
@@ -1327,6 +1351,48 @@ export class MetaIntegrationService {
     return 'TRAFFIC';
   }
 
+  private normalizeImportedCampaignObjective(
+    objective: unknown,
+  ): 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null {
+    if (typeof objective !== 'string' || !objective.trim()) {
+      return null;
+    }
+
+    const normalized = objective.trim().toUpperCase();
+    if (normalized.includes('LEAD')) return 'LEADS';
+    if (normalized.includes('REACH') || normalized.includes('AWARENESS')) return 'REACH';
+    if (normalized.includes('TRAFFIC') || normalized.includes('CLICK')) return 'TRAFFIC';
+    if (
+      normalized.includes('CONVERSION')
+      || normalized.includes('SALE')
+      || normalized.includes('APP_INSTALL')
+      || normalized.includes('ENGAGEMENT')
+      || normalized.includes('MESSAGES')
+    ) {
+      return 'CONVERSIONS';
+    }
+
+    return null;
+  }
+
+  private normalizeImportedCampaignBudget(
+    dailyBudget: unknown,
+    lifetimeBudget: unknown,
+  ): number | null {
+    const rawValue = dailyBudget ?? lifetimeBudget;
+    const numeric = Number(rawValue);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  }
+
+  private normalizeImportedCampaignDate(value: unknown): Date | null {
+    if (typeof value !== 'string' || !value.trim()) {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
   private getMetadataString(metadata: Record<string, unknown> | null, keys: string[]): string | null {
     if (!metadata) {
       return null;
@@ -1351,6 +1417,20 @@ export class MetaIntegrationService {
       return 'ARCHIVED';
     }
     return 'PAUSED';
+  }
+
+  private isValidHttpUrl(value?: string | null): boolean {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return false;
+    }
+
+    try {
+      const parsed = new URL(normalized);
+      return ['http:', 'https:'].includes(parsed.protocol);
+    } catch {
+      return false;
+    }
   }
 
   private normalizeAdAccountStatus(status: unknown): 'ACTIVE' | 'DISABLED' | 'UNSETTLED' | 'UNKNOWN' {

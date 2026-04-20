@@ -536,12 +536,28 @@ describe('MetaIntegrationService OAuth', () => {
       'https://graph.facebook.com/v19.0/act_123/campaigns',
       expect.objectContaining({
         headers: { Authorization: 'Bearer meta-token' },
-        params: { fields: 'id,name,status' },
+        params: { fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time' },
       }),
     );
     expect(result).toEqual([
-      { externalId: 'campaign-1', name: 'Campanha Ativa', status: 'ACTIVE' },
-      { externalId: 'campaign-2', name: 'Campanha Removida', status: 'ARCHIVED' },
+      {
+        externalId: 'campaign-1',
+        name: 'Campanha Ativa',
+        status: 'ACTIVE',
+        objective: null,
+        dailyBudget: null,
+        startTime: null,
+        endTime: null,
+      },
+      {
+        externalId: 'campaign-2',
+        name: 'Campanha Removida',
+        status: 'ARCHIVED',
+        objective: null,
+        dailyBudget: null,
+        startTime: null,
+        endTime: null,
+      },
     ]);
   });
 
@@ -555,8 +571,24 @@ describe('MetaIntegrationService OAuth', () => {
     };
     adAccountRepo.findOne.mockResolvedValue(adAccount);
     jest.spyOn(service, 'fetchCampaignsForAdAccount').mockResolvedValue([
-      { externalId: 'campaign-1', name: 'Campanha Nova', status: 'ACTIVE' },
-      { externalId: 'campaign-2', name: 'Campanha Atualizada', status: 'PAUSED' },
+      {
+        externalId: 'campaign-1',
+        name: 'Campanha Nova',
+        status: 'ACTIVE',
+        objective: 'LEADS',
+        dailyBudget: 120,
+        startTime: new Date('2026-04-20T09:00:00Z'),
+        endTime: new Date('2026-04-27T22:00:00Z'),
+      },
+      {
+        externalId: 'campaign-2',
+        name: 'Campanha Atualizada',
+        status: 'PAUSED',
+        objective: null,
+        dailyBudget: null,
+        startTime: null,
+        endTime: null,
+      },
     ]);
     const existing = {
       id: 'campaign-local-2',
@@ -565,6 +597,10 @@ describe('MetaIntegrationService OAuth', () => {
       adAccountId: 'old-ad-account',
       name: 'Campanha Antiga',
       status: 'ACTIVE',
+      objective: 'TRAFFIC',
+      dailyBudget: 75,
+      startTime: new Date('2026-04-01T10:00:00Z'),
+      endTime: null,
       lastSeenAt: null,
     };
     campaignRepo.findOne
@@ -584,16 +620,21 @@ describe('MetaIntegrationService OAuth', () => {
       externalId: 'campaign-1',
       name: 'Campanha Nova',
       status: 'ACTIVE',
+      objective: 'LEADS',
+      dailyBudget: 120,
+      startTime: new Date('2026-04-20T09:00:00Z'),
+      endTime: new Date('2026-04-27T22:00:00Z'),
       storeId: 'store-1',
       adAccountId: 'ad-account-1',
       userId: 'user-1',
       createdByUserId: 'user-1',
-      dailyBudget: 0,
-      objective: 'CONVERSIONS',
     }));
     expect(campaignRepo.create).toHaveBeenCalledTimes(1);
     expect(existing.name).toBe('Campanha Atualizada');
     expect(existing.status).toBe('PAUSED');
+    expect(existing.objective).toBe('TRAFFIC');
+    expect(existing.dailyBudget).toBe(75);
+    expect(existing.startTime).toEqual(new Date('2026-04-01T10:00:00Z'));
     expect(existing.adAccountId).toBe('ad-account-1');
     expect(existing.lastSeenAt).toBeInstanceOf(Date);
   });

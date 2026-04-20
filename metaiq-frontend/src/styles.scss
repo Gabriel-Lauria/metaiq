@@ -32,6 +32,47 @@
   --accent-soft: rgba(37, 99, 235, 0.14);
 }
 
+/* Light Theme - Default */
+body.light-theme {
+  --color-primary: #3366FF;
+  --color-secondary: #FFB84D;
+  --color-background: #FFFFFF;
+  --color-surface: #F5F7FA;
+  --color-text: #1A1A1A;
+  --color-textSecondary: #666666;
+  --color-border: #E0E0E0;
+  --color-error: #FF4444;
+  --color-success: #44AA44;
+  --color-warning: #FFAA00;
+  --color-info: #3366FF;
+}
+
+/* Dark Theme */
+body.dark-theme {
+  color-scheme: dark;
+  --color-primary: #4477FF;
+  --color-secondary: #FFB84D;
+  --color-background: #0F0F0F;
+  --color-surface: #1A1A1A;
+  --color-text: #FFFFFF;
+  --color-textSecondary: #AAAAAA;
+  --color-border: #333333;
+  --color-error: #FF6666;
+  --color-success: #66DD66;
+  --color-warning: #FFBB33;
+  --color-info: #4477FF;
+
+  --bg-page: #0F0F0F;
+  --bg-surface: #1A1A1A;
+  --bg-surface-soft: #222222;
+  --bg-surface-muted: #1a2f3f;
+  --text: #FFFFFF;
+  --text-muted: #999999;
+  --text-soft: #BBBBBB;
+  --border: #333333;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -52,6 +93,7 @@ body {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 body,
@@ -68,6 +110,7 @@ input,
 select,
 textarea {
   font: inherit;
+  color: inherit;
 }
 
 button {

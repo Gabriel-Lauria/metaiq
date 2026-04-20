@@ -57,6 +57,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ip: request.ip,
         userAgent: request.get('User-Agent'),
         error: exception instanceof Error ? exception.stack : String(exception),
+        details: extra,
       },
     );
 
@@ -69,7 +70,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error,
       timestamp: new Date().toISOString(),
       path: request.url,
-      ...extra,
+      ...(this.isProduction ? {} : extra),
     };
 
     response.status(status).json(errorResponse);

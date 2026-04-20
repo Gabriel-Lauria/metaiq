@@ -28,11 +28,12 @@ export class MetaCampaignOrchestrator {
   }): Promise<Required<MetaCampaignResourceIds>> {
     const ids: MetaCampaignResourceIds = {};
     const accountPath = input.adAccountExternalId.trim();
+    const desiredStatus = input.dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
 
     const campaignPayload = {
       name: input.dto.name.trim(),
       objective: input.objective.trim().toUpperCase(),
-      status: 'PAUSED',
+      status: desiredStatus,
       special_ad_categories: '[]',
       is_adset_budget_sharing_enabled: 'false',
     };
@@ -66,7 +67,7 @@ export class MetaCampaignOrchestrator {
           countries: [input.dto.country.trim().toUpperCase()],
         },
       }),
-      status: 'PAUSED',
+      status: desiredStatus,
     };
 
     this.logger.log(
@@ -93,8 +94,10 @@ export class MetaCampaignOrchestrator {
         link_data: {
           link: input.destinationUrl.trim(),
           message: input.dto.message.trim(),
+          name: input.dto.headline?.trim() || input.dto.name.trim(),
+          description: input.dto.description?.trim() || undefined,
           call_to_action: {
-            type: 'LEARN_MORE',
+            type: this.normalizeCtaType(input.dto.cta),
             value: {
               link: input.destinationUrl.trim(),
             },
@@ -124,7 +127,7 @@ export class MetaCampaignOrchestrator {
       name: `${input.dto.name.trim()} - Ad`,
       adset_id: ids.adSetId,
       creative: JSON.stringify({ creative_id: ids.creativeId }),
-      status: 'PAUSED',
+      status: desiredStatus,
     };
 
     this.logger.log(
@@ -153,5 +156,18 @@ export class MetaCampaignOrchestrator {
     }
 
     return response.id;
+  }
+
+  private normalizeCtaType(cta?: string): string {
+    const normalized = String(cta || '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    if (normalized.includes('COMPRAR')) return 'SHOP_NOW';
+    if (normalized.includes('MENSAGEM') || normalized.includes('FALE')) return 'MESSAGE_PAGE';
+    if (normalized.includes('OFERTA')) return 'GET_OFFER';
+    return 'LEARN_MORE';
   }
 }
