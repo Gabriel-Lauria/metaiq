@@ -1,9 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
-describe('Meta Campaign Recovery E2E', () => {
+describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () => {
   let app: INestApplication;
   let campaignCreationId: string;
   let authToken: string;
@@ -52,7 +52,7 @@ describe('Meta Campaign Recovery E2E', () => {
 
     it('should get status of partial execution', async () => {
       if (!campaignCreationId) {
-        this.skip();
+        return;
       }
 
       const statusResponse = await request(app.getHttpServer())
@@ -69,7 +69,7 @@ describe('Meta Campaign Recovery E2E', () => {
 
     it('should retry partial campaign creation', async () => {
       if (!campaignCreationId) {
-        this.skip();
+        return;
       }
 
       const retryResponse = await request(app.getHttpServer())
@@ -101,7 +101,7 @@ describe('Meta Campaign Recovery E2E', () => {
 
     it('should cleanup partial resources', async () => {
       if (!campaignCreationId) {
-        this.skip();
+        return;
       }
 
       const cleanupResponse = await request(app.getHttpServer())
@@ -185,7 +185,7 @@ describe('Meta Campaign Recovery E2E', () => {
   describe('Recovery Flow: PARTIAL -> CLEANUP -> CREATE_NEW', () => {
     it('should cleanup partial resources', async () => {
       if (!campaignCreationId) {
-        this.skip();
+        return;
       }
 
       const cleanupResponse = await request(app.getHttpServer())

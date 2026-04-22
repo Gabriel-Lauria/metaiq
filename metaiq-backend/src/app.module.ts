@@ -1,8 +1,8 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { CommonModule } from './common/common.module';
@@ -48,8 +48,8 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     ThrottlerModule.forRoot({
       throttlers: [
         {
-          limit: 100,
-          ttl: 60,
+          limit: 5000,
+          ttl: 60_000,
         },
       ],
     }),
@@ -112,6 +112,10 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
     SyncCron,
   ],
