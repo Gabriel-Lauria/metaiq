@@ -487,7 +487,10 @@ export class MetaIntegrationService {
     const destinationUrl =
       dto.destinationUrl?.trim()
       || this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl'])
-      || dto.imageUrl;
+      || '';
+    if (!this.isValidHttpUrl(destinationUrl)) {
+      throw new BadRequestException('destinationUrl é obrigatório para criar campanha Meta com destino de site');
+    }
     const execution = await this.createCampaignCreationExecution(storeId, requester, adAccount, dto, idempotencyKey);
     const createdIds: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>> = {};
     const startedAt = Date.now();
@@ -567,6 +570,7 @@ export class MetaIntegrationService {
         adId: createdIds.adId as string,
         status: 'CREATED',
         executionStatus: 'ACTIVE',
+        initialStatus: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         storeId,
         adAccountId: adAccount.id,
         platform: 'META',
@@ -1062,6 +1066,7 @@ export class MetaIntegrationService {
         adId: execution.metaAdId,
         status: 'CREATED',
         executionStatus: 'ACTIVE',
+        initialStatus: execution.requestPayload?.['initialStatus'] === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         storeId: execution.storeId,
         adAccountId: execution.adAccountId,
         platform: 'META',
@@ -1111,6 +1116,11 @@ export class MetaIntegrationService {
             adAccountId: dto.adAccountId,
             message: dto.message,
             imageUrl: dto.imageUrl,
+            destinationUrl: dto.destinationUrl,
+            headline: dto.headline,
+            description: dto.description,
+            cta: dto.cta,
+            initialStatus: dto.initialStatus || 'PAUSED',
           },
         }),
       );

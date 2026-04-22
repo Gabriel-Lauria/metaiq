@@ -72,11 +72,7 @@ export function resolveDestinationUrl(state: CampaignBuilderState): string {
     return state.destination.websiteUrl.trim();
   }
 
-  if (state.destination.type === 'app' && isValidHttpUrl(state.destination.appLink)) {
-    return state.destination.appLink.trim();
-  }
-
-  return state.creative.imageUrl.trim();
+  return '';
 }
 
 export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaignRequest {
@@ -107,6 +103,8 @@ export function realPayloadComplete(state: CampaignBuilderState): boolean {
     && Number(state.budget.value) > 0
     && isValidCountry(state.audience.country)
     && !!state.identity.adAccountId
+    && state.destination.type === 'site'
+    && isValidHttpUrl(state.destination.websiteUrl)
     && !!state.creative.message.trim()
     && isValidImageUrl(state.creative.imageUrl);
 }
@@ -142,9 +140,9 @@ export function placementSectionComplete(state: CampaignBuilderState): boolean {
 
 export function destinationSectionComplete(state: CampaignBuilderState): boolean {
   if (state.destination.type === 'site') {
-    return !!state.destination.websiteUrl.trim();
+    return isValidHttpUrl(state.destination.websiteUrl);
   }
-  return true;
+  return false;
 }
 
 export function creativeSectionComplete(state: CampaignBuilderState): boolean {
@@ -294,6 +292,10 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
 
   if (state.destination.type === 'site' && !state.destination.websiteUrl.trim()) {
     signals.push({ id: 'destination', label: 'Destino de site exige URL de destino.', tone: 'danger' });
+  }
+
+  if (state.destination.type !== 'site') {
+    signals.push({ id: 'destination-type', label: 'O backend atual só cria campanhas com destino de site.', tone: 'danger' });
   }
 
   return signals;

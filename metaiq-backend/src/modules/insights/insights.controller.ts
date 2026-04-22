@@ -31,7 +31,7 @@ export class InsightsController {
    * VALIDAÇÃO: apenas insights de campanhas do usuário autenticado
    */
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   async findAll(
     @CurrentUser() user: AuthenticatedUser,
     @Query('campaignId') campaignId?: string,
@@ -55,8 +55,8 @@ export class InsightsController {
    * VALIDAÇÃO: apenas se a campanha pertence ao usuário
    */
   @Get(':id')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
-  @CheckOwnership('insight')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @CheckOwnership('insight', 'id')
   @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
@@ -71,8 +71,8 @@ export class InsightsController {
    * VALIDAÇÃO: apenas se a campanha pertence ao usuário
    */
   @Patch(':id/resolve')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
-  @CheckOwnership('insight')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @CheckOwnership('insight', 'id')
   @UseGuards(OwnershipGuard)
   async resolve(
     @Param('id') id: string,

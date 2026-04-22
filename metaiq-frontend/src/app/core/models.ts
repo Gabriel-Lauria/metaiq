@@ -172,14 +172,28 @@ export interface CreateMetaCampaignRequest {
 }
 
 export interface CreateMetaCampaignResponse {
+  executionId?: string;
+  idempotencyKey?: string;
   campaignId: string;
   adSetId: string;
   creativeId: string;
   adId: string;
   status: 'CREATED';
+  executionStatus?: 'ACTIVE';
+  initialStatus?: 'PAUSED' | 'ACTIVE';
   storeId: string;
   adAccountId: string;
   platform: 'META';
+}
+
+export interface UpdateCampaignRequest {
+  name?: string;
+  status?: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  objective?: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS';
+  dailyBudget?: number;
+  endTime?: string;
+  storeId?: string;
+  adAccountId?: string;
 }
 
 export interface CampaignAiSuggestions {

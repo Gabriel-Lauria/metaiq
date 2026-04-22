@@ -137,8 +137,10 @@ export class DashboardService {
   }
 
   private async countUsers(user: AuthenticatedUser): Promise<number> {
-    if (this.accessScope.isAdmin(user)) {
-      return this.userRepository.count({ where: { active: true } });
+    if (this.accessScope.isPlatformAdmin(user)) {
+      return this.userRepository.count({
+        where: { active: true, deletedAt: IsNull() },
+      });
     }
 
     if (!user.tenantId) {
@@ -146,7 +148,11 @@ export class DashboardService {
     }
 
     return this.userRepository.count({
-      where: { tenantId: user.tenantId, active: true },
+      where: {
+        tenantId: user.tenantId,
+        active: true,
+        deletedAt: IsNull(),
+      },
     });
   }
 

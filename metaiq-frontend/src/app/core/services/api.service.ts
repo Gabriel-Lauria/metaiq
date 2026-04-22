@@ -26,6 +26,7 @@ import {
   ConnectMetaIntegrationRequest,
   CreateMetaCampaignRequest,
   CreateMetaCampaignResponse,
+  UpdateCampaignRequest,
   UpdateMetaPageRequest,
   UpdateMetaIntegrationStatusRequest,
 } from '../models';
@@ -141,6 +142,10 @@ export class ApiService {
 
   getCampaign(id: string): Observable<Campaign> {
     return this.get<Campaign>(`/campaigns/${id}`);
+  }
+
+  updateCampaign(id: string, body: UpdateCampaignRequest): Observable<Campaign> {
+    return this.patch<Campaign>(`/campaigns/${id}`, body);
   }
 
   // ── Metrics ──────────────────────────────────────────────────

@@ -58,7 +58,7 @@ export class MetaCampaignOrchestrator {
     const adSetPayload = {
       name: `${input.dto.name.trim()} - AdSet`,
       campaign_id: ids.campaignId,
-      daily_budget: Math.round(Number(input.dto.dailyBudget)),
+      daily_budget: this.toMetaMoneyAmount(input.dto.dailyBudget),
       billing_event: 'IMPRESSIONS',
       optimization_goal: 'LINK_CLICKS',
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
@@ -96,6 +96,7 @@ export class MetaCampaignOrchestrator {
           message: input.dto.message.trim(),
           name: input.dto.headline?.trim() || input.dto.name.trim(),
           description: input.dto.description?.trim() || undefined,
+          picture: input.dto.imageUrl.trim(),
           call_to_action: {
             type: this.normalizeCtaType(input.dto.cta),
             value: {
@@ -186,7 +187,7 @@ export class MetaCampaignOrchestrator {
       const adSetPayload = {
         name: `${input.dto.name.trim()} - AdSet`,
         campaign_id: ids.campaignId,
-        daily_budget: Math.round(Number(input.dto.dailyBudget)),
+        daily_budget: this.toMetaMoneyAmount(input.dto.dailyBudget),
         billing_event: 'IMPRESSIONS',
         optimization_goal: 'LINK_CLICKS',
         bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
@@ -228,6 +229,7 @@ export class MetaCampaignOrchestrator {
             message: input.dto.message.trim(),
             name: input.dto.headline?.trim() || input.dto.name.trim(),
             description: input.dto.description?.trim() || undefined,
+            picture: input.dto.imageUrl.trim(),
             call_to_action: {
               type: this.normalizeCtaType(input.dto.cta),
               value: {
@@ -300,5 +302,9 @@ export class MetaCampaignOrchestrator {
     if (normalized.includes('MENSAGEM') || normalized.includes('FALE')) return 'MESSAGE_PAGE';
     if (normalized.includes('OFERTA')) return 'GET_OFFER';
     return 'LEARN_MORE';
+  }
+
+  private toMetaMoneyAmount(value: number): number {
+    return Math.round(Number(value) * 100);
   }
 }

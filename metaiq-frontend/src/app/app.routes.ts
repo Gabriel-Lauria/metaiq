@@ -38,7 +38,7 @@ export const routes: Routes = [
     path: 'admin/managers',
     loadComponent: () => import('./features/managers/managers.component').then((m) => m.ManagersComponent),
     canActivate: [authGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN] },
+    data: { roles: [Role.PLATFORM_ADMIN] },
   },
   {
     path: 'manager/stores',

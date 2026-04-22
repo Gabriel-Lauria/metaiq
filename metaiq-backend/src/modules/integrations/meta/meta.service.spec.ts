@@ -682,6 +682,8 @@ describe('MetaIntegrationService OAuth', () => {
     expect(String((mockedAxios.post as jest.Mock).mock.calls[0][1])).toContain('status=PAUSED');
     expect(String((mockedAxios.post as jest.Mock).mock.calls[1][1])).toContain('optimization_goal=LINK_CLICKS');
     expect(String((mockedAxios.post as jest.Mock).mock.calls[1][1])).toContain('billing_event=IMPRESSIONS');
+    expect(String((mockedAxios.post as jest.Mock).mock.calls[1][1])).toContain('daily_budget=2500');
+    expect(String((mockedAxios.post as jest.Mock).mock.calls[2][1])).toContain('picture%22%3A%22https%3A%2F%2Fmetaiq.dev%2Fimage.jpg');
     expect(campaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({
       metaId: 'campaign-meta-1',
       externalId: 'campaign-meta-1',
@@ -703,6 +705,7 @@ describe('MetaIntegrationService OAuth', () => {
       adId: 'ad-meta-1',
       status: 'CREATED',
       executionStatus: 'ACTIVE',
+      initialStatus: 'PAUSED',
       storeId: 'store-1',
       adAccountId: 'ad-account-1',
       platform: 'META',

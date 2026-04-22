@@ -70,8 +70,8 @@ export class ManagersService {
   }
 
   async findAllForUser(requester: AuthenticatedUser): Promise<Manager[]> {
-    if (![Role.PLATFORM_ADMIN, Role.ADMIN].includes(requester.role)) {
-      throw new ForbiddenException('Apenas ADMIN pode listar managers');
+    if (requester.role !== Role.PLATFORM_ADMIN) {
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN pode listar managers');
     }
 
     return this.findAllUnsafeInternal();

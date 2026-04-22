@@ -1,11 +1,16 @@
-import { Injectable, Logger, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MetaCampaignCreation, MetaCampaignCreationStatus } from './meta-campaign-creation.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaGraphApiClient } from './meta-graph-api.client';
-import { CreateMetaCampaignDto } from './dto/meta-integration.dto';
+import { CreateMetaCampaignDto, RetryPartialCampaignDto } from './dto/meta-integration.dto';
 import { AuthenticatedUser } from '../../../common/interfaces';
+import { AccessScopeService } from '../../../common/services/access-scope.service';
+import { IntegrationProvider, IntegrationStatus } from '../../../common/enums';
+import { StoreIntegration } from '../store-integration.entity';
+import { AdAccount } from '../../ad-accounts/ad-account.entity';
+import { Campaign } from '../../campaigns/campaign.entity';
 
 /**
  * Serviço de recuperação para campanhas criadas parcialmente na Meta
@@ -23,8 +28,15 @@ export class MetaCampaignRecoveryService {
   constructor(
     @InjectRepository(MetaCampaignCreation)
     private readonly campaignCreationRepository: Repository<MetaCampaignCreation>,
+    @InjectRepository(StoreIntegration)
+    private readonly integrationRepository: Repository<StoreIntegration>,
+    @InjectRepository(AdAccount)
+    private readonly adAccountRepository: Repository<AdAccount>,
+    @InjectRepository(Campaign)
+    private readonly campaignRepository: Repository<Campaign>,
     private readonly campaignOrchestrator: MetaCampaignOrchestrator,
     private readonly graphApi: MetaGraphApiClient,
+    private readonly accessScope: AccessScopeService,
   ) {}
 
   /**
@@ -37,18 +49,11 @@ export class MetaCampaignRecoveryService {
    */
   async retryPartialCampaignCreation(
     executionId: string,
-    accessToken: string,
-    adAccountExternalId: string,
-    dto: CreateMetaCampaignDto,
-    pageId: string,
-    destinationUrl: string,
-    objective: string,
+    dto: RetryPartialCampaignDto,
+    storeId: string,
+    user: AuthenticatedUser,
   ): Promise<{ success: boolean; message: string; ids?: Record<string, string> }> {
-    const execution = await this.campaignCreationRepository.findOneBy({ id: executionId });
-
-    if (!execution) {
-      throw new BadRequestException(`Execução ${executionId} não encontrada`);
-    }
+    const execution = await this.getScopedExecution(executionId, storeId, user);
 
     if (execution.status === MetaCampaignCreationStatus.ACTIVE) {
       return {
@@ -83,7 +88,8 @@ export class MetaCampaignRecoveryService {
     }
 
     // Status = PARTIAL - vamos tentar recuperar
-    return this.resumeFromPartialFailure(execution, accessToken, adAccountExternalId, dto, pageId, destinationUrl, objective);
+    const context = await this.getRecoveryContext(execution, dto);
+    return this.resumeFromPartialFailure(execution, context.accessToken, context.adAccountExternalId, context.dto, context.pageId, context.destinationUrl, context.objective);
   }
 
   /**
@@ -96,14 +102,10 @@ export class MetaCampaignRecoveryService {
    */
   async cleanupPartialResources(
     executionId: string,
-    accessToken: string,
-    adAccountExternalId: string,
+    storeId: string,
+    user: AuthenticatedUser,
   ): Promise<{ success: boolean; message: string; cleaned: Record<string, boolean> }> {
-    const execution = await this.campaignCreationRepository.findOneBy({ id: executionId });
-
-    if (!execution) {
-      throw new BadRequestException(`Execução ${executionId} não encontrada`);
-    }
+    const execution = await this.getScopedExecution(executionId, storeId, user);
 
     if (execution.status !== MetaCampaignCreationStatus.PARTIAL && execution.status !== MetaCampaignCreationStatus.FAILED) {
       throw new BadRequestException({
@@ -119,13 +121,14 @@ export class MetaCampaignRecoveryService {
       campaign: false,
     };
 
-    const accountPath = adAccountExternalId.trim();
+    const context = await this.getCleanupContext(execution);
+    const accessToken = context.accessToken;
 
     try {
       // Remover em ordem inversa de dependência
       if (execution.metaAdId) {
         try {
-          await this.deleteMetaResource(`${accountPath}/ads/${execution.metaAdId}`, accessToken);
+          await this.deleteMetaResource(execution.metaAdId, accessToken);
           cleaned.ad = true;
           this.logger.log(`Removido Ad ${execution.metaAdId}`);
         } catch (e) {
@@ -135,7 +138,7 @@ export class MetaCampaignRecoveryService {
 
       if (execution.metaCreativeId) {
         try {
-          await this.deleteMetaResource(`${accountPath}/adcreatives/${execution.metaCreativeId}`, accessToken);
+          await this.deleteMetaResource(execution.metaCreativeId, accessToken);
           cleaned.creative = true;
           this.logger.log(`Removido Creative ${execution.metaCreativeId}`);
         } catch (e) {
@@ -145,7 +148,7 @@ export class MetaCampaignRecoveryService {
 
       if (execution.metaAdSetId) {
         try {
-          await this.deleteMetaResource(`${accountPath}/adsets/${execution.metaAdSetId}`, accessToken);
+          await this.deleteMetaResource(execution.metaAdSetId, accessToken);
           cleaned.adset = true;
           this.logger.log(`Removido AdSet ${execution.metaAdSetId}`);
         } catch (e) {
@@ -155,7 +158,7 @@ export class MetaCampaignRecoveryService {
 
       if (execution.metaCampaignId) {
         try {
-          await this.deleteMetaResource(`${accountPath}/campaigns/${execution.metaCampaignId}`, accessToken);
+          await this.deleteMetaResource(execution.metaCampaignId, accessToken);
           cleaned.campaign = true;
           this.logger.log(`Removido Campaign ${execution.metaCampaignId}`);
         } catch (e) {
@@ -189,9 +192,10 @@ export class MetaCampaignRecoveryService {
   /**
    * Retorna informações sobre uma execução de criação de campanha
    */
-  async getExecutionStatus(executionId: string) {
+  async getExecutionStatus(executionId: string, storeId: string, user: AuthenticatedUser) {
+    await this.accessScope.validateStoreAccess(user, storeId);
     const execution = await this.campaignCreationRepository.findOne({
-      where: { id: executionId },
+      where: { id: executionId, storeId },
       relations: ['store', 'adAccount', 'campaign'],
     });
 
@@ -264,6 +268,8 @@ export class MetaCampaignRecoveryService {
         startingIds: createdIds as any,
         onStepCreated: async (step, ids) => {
           Object.assign(createdIds, ids);
+          this.applyCreatedIdsToExecution(execution, createdIds);
+          await this.campaignCreationRepository.save(execution);
           this.logger.log(`Step ${step} completado ao resumir`);
         },
       });
@@ -271,10 +277,9 @@ export class MetaCampaignRecoveryService {
       Object.assign(createdIds, resumedIds);
 
       execution.status = MetaCampaignCreationStatus.ACTIVE;
-      execution.metaCampaignId = createdIds.campaignId;
-      execution.metaAdSetId = createdIds.adSetId;
-      execution.metaCreativeId = createdIds.creativeId;
-      execution.metaAdId = createdIds.adId;
+      this.applyCreatedIdsToExecution(execution, createdIds);
+      const localCampaign = await this.recordRecoveredCampaign(execution, dto);
+      execution.campaignId = localCampaign.id;
       await this.campaignCreationRepository.save(execution);
 
       return {
@@ -286,6 +291,7 @@ export class MetaCampaignRecoveryService {
       execution.status = MetaCampaignCreationStatus.PARTIAL;
       execution.errorStep = this.resolveFailedStep(createdIds);
       execution.errorMessage = (error as Error).message;
+      this.applyCreatedIdsToExecution(execution, createdIds);
       await this.campaignCreationRepository.save(execution);
 
       throw new HttpException(
@@ -315,6 +321,218 @@ export class MetaCampaignRecoveryService {
     } catch (error) {
       this.logger.error(`Erro ao deletar ${path}: ${(error as Error).message}`);
       throw error;
+    }
+  }
+
+  private applyCreatedIdsToExecution(
+    execution: MetaCampaignCreation,
+    ids: Record<string, string | undefined>,
+  ): void {
+    execution.metaCampaignId = ids.campaignId ?? execution.metaCampaignId;
+    execution.metaAdSetId = ids.adSetId ?? execution.metaAdSetId;
+    execution.metaCreativeId = ids.creativeId ?? execution.metaCreativeId;
+    execution.metaAdId = ids.adId ?? execution.metaAdId;
+    execution.campaignCreated = Boolean(execution.metaCampaignId);
+    execution.adSetCreated = Boolean(execution.metaAdSetId);
+    execution.creativeCreated = Boolean(execution.metaCreativeId);
+    execution.adCreated = Boolean(execution.metaAdId);
+  }
+
+  private async getScopedExecution(
+    executionId: string,
+    storeId: string,
+    user: AuthenticatedUser,
+  ): Promise<MetaCampaignCreation> {
+    await this.accessScope.validateStoreAccess(user, storeId);
+    const execution = await this.campaignCreationRepository.findOne({
+      where: { id: executionId, storeId },
+      relations: ['adAccount'],
+    });
+
+    if (!execution) {
+      throw new BadRequestException(`Execução ${executionId} não encontrada`);
+    }
+
+    return execution;
+  }
+
+  private async getRecoveryContext(execution: MetaCampaignCreation, dto?: RetryPartialCampaignDto) {
+    const baseContext = await this.getBaseMetaContext(execution);
+    const { integration, adAccount } = baseContext;
+
+    const pageId = this.getMetadataString(integration.metadata, ['pageId', 'metaPageId', 'facebookPageId']);
+    if (!pageId) {
+      throw new BadRequestException('Meta pageId é obrigatório para recuperar a criação da campanha');
+    }
+
+    const requestPayload = (execution.requestPayload || {}) as Record<string, unknown>;
+    const imageUrl = this.stringValue(dto?.imageUrl) || this.stringValue(requestPayload.imageUrl);
+    const destinationUrl = this.stringValue(dto?.destinationUrl)
+      || this.stringValue(requestPayload.destinationUrl)
+      || this.stringValue(integration.metadata?.['destinationUrl'])
+      || this.stringValue(integration.metadata?.['websiteUrl']);
+
+    if (!imageUrl) {
+      throw new BadRequestException('imageUrl é obrigatório para recuperar a criação da campanha');
+    }
+
+    if (!this.isValidHttpUrl(destinationUrl)) {
+      throw new BadRequestException('destinationUrl http(s) é obrigatório para recuperar a criação da campanha');
+    }
+
+    const initialStatus = this.stringValue(dto?.initialStatus)
+      || this.stringValue(requestPayload.initialStatus)
+      || 'PAUSED';
+
+    const createDto: CreateMetaCampaignDto = {
+      name: this.stringValue(dto?.name) || this.stringValue(requestPayload.name),
+      objective: this.stringValue(dto?.objective) || this.stringValue(requestPayload.objective) || 'OUTCOME_TRAFFIC',
+      dailyBudget: Number(dto?.dailyBudget ?? requestPayload.dailyBudget),
+      country: this.stringValue(dto?.country) || this.stringValue(requestPayload.country) || 'BR',
+      adAccountId: adAccount.id,
+      message: this.stringValue(dto?.message) || this.stringValue(requestPayload.message),
+      imageUrl,
+      destinationUrl,
+      headline: this.stringValue(dto?.headline) || this.stringValue(requestPayload.headline) || undefined,
+      description: this.stringValue(dto?.description) || this.stringValue(requestPayload.description) || undefined,
+      cta: this.stringValue(dto?.cta) || this.stringValue(requestPayload.cta) || undefined,
+      initialStatus: initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+    };
+
+    if (!createDto.name || !createDto.message || !Number.isFinite(createDto.dailyBudget) || createDto.dailyBudget <= 0) {
+      throw new BadRequestException('Payload de recuperação incompleto para retomar a campanha');
+    }
+
+    return {
+      ...baseContext,
+      pageId,
+      destinationUrl,
+      objective: this.normalizeCreateObjective(createDto.objective),
+      dto: createDto,
+    };
+  }
+
+  private async getCleanupContext(execution: MetaCampaignCreation) {
+    const context = await this.getBaseMetaContext(execution);
+    return {
+      accessToken: context.accessToken,
+      adAccountExternalId: context.adAccountExternalId,
+    };
+  }
+
+  private async getBaseMetaContext(execution: MetaCampaignCreation) {
+    const integration = await this.integrationRepository
+      .createQueryBuilder('integration')
+      .addSelect(['integration.accessToken'])
+      .where('integration.storeId = :storeId', { storeId: execution.storeId })
+      .andWhere('integration.provider = :provider', { provider: IntegrationProvider.META })
+      .getOne();
+
+    if (!integration || integration.status !== IntegrationStatus.CONNECTED || !integration.accessToken) {
+      throw new BadRequestException('Store não está conectada à Meta ou token ausente');
+    }
+
+    if (integration.tokenExpiresAt && integration.tokenExpiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Token Meta expirado. Reconecte a store.');
+    }
+
+    const adAccount = execution.adAccount || await this.adAccountRepository.findOne({
+      where: { id: execution.adAccountId, storeId: execution.storeId, provider: IntegrationProvider.META },
+    });
+
+    if (!adAccount) {
+      throw new BadRequestException('AdAccount Meta da execução não encontrada');
+    }
+
+    if (adAccount.storeId !== execution.storeId) {
+      throw new ForbiddenException('AdAccount fora da store da execução');
+    }
+
+    return {
+      accessToken: integration.accessToken,
+      adAccountExternalId: this.normalizeAdAccountExternalId(adAccount.externalId || adAccount.metaId),
+      integration,
+      adAccount,
+    };
+  }
+
+  private async recordRecoveredCampaign(execution: MetaCampaignCreation, dto: CreateMetaCampaignDto): Promise<Campaign> {
+    const now = new Date();
+    const existing = await this.campaignRepository.findOne({
+      where: { storeId: execution.storeId, externalId: execution.metaCampaignId },
+    });
+
+    if (existing) {
+      existing.name = dto.name;
+      existing.status = dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
+      existing.objective = this.normalizeLocalObjective(dto.objective);
+      existing.dailyBudget = dto.dailyBudget;
+      existing.adAccountId = execution.adAccountId;
+      existing.lastSeenAt = now;
+      return this.campaignRepository.save(existing);
+    }
+
+    return this.campaignRepository.save(
+      this.campaignRepository.create({
+        metaId: execution.metaCampaignId as string,
+        externalId: execution.metaCampaignId as string,
+        name: dto.name,
+        status: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+        objective: this.normalizeLocalObjective(dto.objective),
+        dailyBudget: dto.dailyBudget,
+        startTime: now,
+        userId: execution.requesterUserId,
+        createdByUserId: execution.requesterUserId,
+        storeId: execution.storeId,
+        adAccountId: execution.adAccountId,
+        lastSeenAt: now,
+      }),
+    );
+  }
+
+  private getMetadataString(metadata: Record<string, unknown> | null | undefined, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = metadata?.[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  private stringValue(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private normalizeAdAccountExternalId(adAccountId: string): string {
+    const normalized = adAccountId.trim();
+    return normalized.startsWith('act_') ? normalized : `act_${normalized}`;
+  }
+
+  private normalizeCreateObjective(objective: string): string {
+    const normalized = objective.trim().toUpperCase();
+    if (normalized === 'TRAFFIC') return 'OUTCOME_TRAFFIC';
+    return normalized || 'OUTCOME_TRAFFIC';
+  }
+
+  private normalizeLocalObjective(objective: string): 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' {
+    const normalized = objective.trim().toUpperCase();
+    if (normalized === 'REACH') return 'REACH';
+    if (normalized === 'LEADS' || normalized === 'OUTCOME_LEADS') return 'LEADS';
+    if (normalized === 'CONVERSIONS' || normalized === 'OUTCOME_SALES') return 'CONVERSIONS';
+    return 'TRAFFIC';
+  }
+
+  private isValidHttpUrl(value?: string | null): boolean {
+    if (!value) {
+      return false;
+    }
+
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
     }
   }
 }

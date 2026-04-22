@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
-import { tap, map } from 'rxjs/operators';
+import { catchError, finalize, map, shareReplay, tap } from 'rxjs/operators';
+import { of } from 'rxjs';
 import { AuthResponse, LoginRequest, RegisterRequest, Role, User } from '../models';
 import { environment } from '../environment';
 
@@ -15,6 +16,7 @@ export class AuthService {
     'user',
     'selectedStoreId',
   ];
+  private refreshSessionRequest: Observable<boolean> | null = null;
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
@@ -24,15 +26,14 @@ export class AuthService {
   );
   public currentRole$ = this.currentRoleSubject.asObservable();
 
-  private accessTokenSubject = new BehaviorSubject<string | null>(
-    localStorage.getItem('accessToken')
-  );
+  private accessTokenSubject = new BehaviorSubject<string | null>(null);
   public accessToken$ = this.accessTokenSubject.asObservable();
 
   public isAuthenticated$ = this.accessTokenSubject.asObservable()
     .pipe(map(token => !!token));
 
   constructor() {
+    localStorage.removeItem('accessToken');
     this.loadUserFromStorage();
   }
 
@@ -53,20 +54,20 @@ export class AuthService {
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
     this.clearSessionState();
-    return this.http.post<AuthResponse>(`${API}/auth/login`, credentials).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/login`, credentials, { withCredentials: true }).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
 
   register(data: RegisterRequest): Observable<AuthResponse> {
     this.clearSessionState();
-    return this.http.post<AuthResponse>(`${API}/auth/register`, data).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/register`, data, { withCredentials: true }).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
 
   refreshToken(): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${API}/auth/refresh`, {}).pipe(
+    return this.http.post<AuthResponse>(`${API}/auth/refresh`, {}, { withCredentials: true }).pipe(
       tap((response) => this.handleAuthResponse(response))
     );
   }
@@ -94,13 +95,35 @@ export class AuthService {
     return !!this.getAccessToken();
   }
 
+  ensureAuthenticated(): Observable<boolean> {
+    if (this.isAuthenticated()) {
+      return of(true);
+    }
+
+    if (!this.refreshSessionRequest) {
+      this.refreshSessionRequest = this.refreshToken().pipe(
+        map(() => true),
+        catchError(() => {
+          this.clearSessionState();
+          return of(false);
+        }),
+        finalize(() => {
+          this.refreshSessionRequest = null;
+        }),
+        shareReplay(1),
+      );
+    }
+
+    return this.refreshSessionRequest;
+  }
+
   hasAnyRole(roles: Role[]): boolean {
     const currentRole = this.getCurrentRole();
     return !!currentRole && roles.includes(currentRole);
   }
 
   private handleAuthResponse(response: AuthResponse): void {
-    localStorage.setItem('accessToken', response.accessToken);
+    localStorage.removeItem('accessToken');
     const role = this.normalizeRole(response.user.role);
     const userWithRole = { ...response.user, role };
     localStorage.setItem('user', JSON.stringify(userWithRole));

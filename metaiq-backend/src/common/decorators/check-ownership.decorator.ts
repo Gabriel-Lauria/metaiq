@@ -1,6 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 
-export type OwnershipResource = 'campaign' | 'adAccount' | 'insight';
+export type OwnershipResource = 'campaign' | 'adAccount' | 'insight' | 'metricCampaign';
 
 export interface OwnershipMetadata {
   resource: OwnershipResource;

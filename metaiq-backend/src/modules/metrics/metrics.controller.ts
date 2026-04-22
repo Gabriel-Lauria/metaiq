@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { BadRequestException, Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { IsDateString, IsOptional, IsUUID } from 'class-validator';
 import { MetricsService } from './metrics.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OwnershipGuard } from '../../common/guards/ownership.guard';
@@ -14,7 +14,7 @@ import { AuthenticatedUser } from '../../common/interfaces';
 
 class MetricsQueryDto extends PaginationDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   campaignId?: string;
 
   @IsOptional()
@@ -22,9 +22,25 @@ class MetricsQueryDto extends PaginationDto {
   storeId?: string;
 }
 
+class DateRangeQueryDto {
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+}
+
+class MetricsSummaryQueryDto extends DateRangeQueryDto {
+  @IsOptional()
+  @IsUUID()
+  storeId?: string;
+}
+
 @Controller('metrics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
@@ -42,40 +58,51 @@ export class MetricsController {
   @Get('summary')
   async getSummary(
     @CurrentUser() user: AuthenticatedUser,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('storeId') storeId?: string,
+    @Query() query: MetricsSummaryQueryDto,
   ) {
-    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const toDate = to ? new Date(to) : new Date();
-    return this.metricsService.getSummary(user, fromDate, toDate, storeId);
+    const { fromDate, toDate } = this.resolveDateRange(query);
+    return this.metricsService.getSummary(user, fromDate, toDate, query.storeId);
   }
 
   @Get('campaigns/:campaignId')
-  @CheckOwnership('campaign', 'campaignId')
+  @CheckOwnership('metricCampaign', 'campaignId')
   @UseGuards(OwnershipGuard)
   async findByCampaign(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('campaignId') campaignId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Query() query: DateRangeQueryDto,
   ): Promise<MetricDaily[]> {
-    const fromDate = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const toDate = to || new Date().toISOString().split('T')[0];
-    return this.metricsService.findByCampaignForUser(user, campaignId, fromDate, toDate);
+    const { from, to } = this.resolveDateRange(query);
+    return this.metricsService.findByCampaignForUser(user, campaignId, from, to);
   }
 
   @Get('campaigns/:campaignId/aggregate')
-  @CheckOwnership('campaign', 'campaignId')
+  @CheckOwnership('metricCampaign', 'campaignId')
   @UseGuards(OwnershipGuard)
   async getCampaignAggregate(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('campaignId') campaignId: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
+    @Param('campaignId', ParseUUIDPipe) campaignId: string,
+    @Query() query: DateRangeQueryDto,
   ) {
-    const fromDate = from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const toDate = to || new Date().toISOString().split('T')[0];
-    return this.metricsService.getCampaignSummaryForUser(user, campaignId, fromDate, toDate);
+    const { from, to } = this.resolveDateRange(query);
+    return this.metricsService.getCampaignSummaryForUser(user, campaignId, from, to);
+  }
+
+  private resolveDateRange(query: DateRangeQueryDto): {
+    from: string;
+    to: string;
+    fromDate: Date;
+    toDate: Date;
+  } {
+    const from = query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const to = query.to || new Date().toISOString().split('T')[0];
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    if (fromDate > toDate) {
+      throw new BadRequestException('from não pode ser posterior a to');
+    }
+
+    return { from, to, fromDate, toDate };
   }
 }

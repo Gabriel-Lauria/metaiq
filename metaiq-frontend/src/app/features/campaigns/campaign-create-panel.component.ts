@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, EventEmitter, Output, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, EventEmitter, HostListener, Output, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -28,7 +28,6 @@ import {
   detectConversionWindowFromPrompt,
   detectCountryFromPrompt,
   detectCtaFromPrompt,
-  detectDestinationTypeFromPrompt,
   detectGenderFromPrompt,
   detectInitialStatusFromPrompt,
   detectInterestFallbackFromPrompt,
@@ -142,10 +141,6 @@ export class CampaignCreatePanelComponent {
   ];
   readonly destinationOptions: Array<{ value: CampaignDestinationType; label: string }> = [
     { value: 'site', label: 'Site' },
-    { value: 'messages', label: 'Mensagens' },
-    { value: 'form', label: 'Formulário' },
-    { value: 'app', label: 'App' },
-    { value: 'catalog', label: 'Catálogo' },
   ];
   readonly budgetTypeOptions: Array<{ value: CampaignBudgetType; label: string }> = [
     { value: 'daily', label: 'Diário' },
@@ -200,13 +195,16 @@ export class CampaignCreatePanelComponent {
   readonly placementAdvancedOpen = signal(false);
   readonly touchedFields = signal<Record<string, boolean>>({});
   readonly successOverlay = signal<SuccessOverlayState | null>(null);
+  readonly previewImageFailed = signal(false);
+  readonly closeConfirmOpen = signal(false);
+  readonly technicalReviewOpen = signal(false);
 
   state: CampaignBuilderState = this.buildInitialState();
   private readonly initialState = this.buildInitialState();
 
   private contextRequestId = 0;
-  private autosaveTimer: ReturnType<typeof window.setTimeout> | null = null;
-  private saveIndicatorTimer: ReturnType<typeof window.setTimeout> | null = null;
+  private autosaveTimer: number | null = null;
+  private saveIndicatorTimer: number | null = null;
   private pendingCreatedEvent: CampaignCreateSuccessEvent | null = null;
 
   readonly sectionProgress = computed<SectionProgress[]>(() => {
@@ -310,6 +308,40 @@ export class CampaignCreatePanelComponent {
     );
   }
 
+  @HostListener('document:keydown.escape')
+  handleEscape(): void {
+    if (this.successOverlay()) return;
+    if (this.closeConfirmOpen()) {
+      this.closeConfirmOpen.set(false);
+      return;
+    }
+    this.requestClosePanel();
+  }
+
+  requestClosePanel(): void {
+    if (this.hasMeaningfulInput()) {
+      this.closeConfirmOpen.set(true);
+      return;
+    }
+
+    this.closePanel();
+  }
+
+  keepEditing(): void {
+    this.closeConfirmOpen.set(false);
+  }
+
+  saveDraftAndClose(): void {
+    this.persistDraft(false);
+    this.closeConfirmOpen.set(false);
+    this.closePanel();
+  }
+
+  discardAndClose(): void {
+    this.closeConfirmOpen.set(false);
+    this.closePanel();
+  }
+
   closePanel(): void {
     this.close.emit();
   }
@@ -347,7 +379,7 @@ export class CampaignCreatePanelComponent {
   }
 
   setDestinationType(value: CampaignDestinationType): void {
-    this.state.destination.type = value;
+    this.state.destination.type = value === 'site' ? 'site' : 'site';
     this.touchState();
   }
 
@@ -517,11 +549,17 @@ export class CampaignCreatePanelComponent {
           this.pendingCreatedEvent = {
             name: this.state.campaign.name.trim(),
             storeName: store.name,
-            response,
+            response: {
+              ...response,
+              initialStatus: this.state.campaign.initialStatus,
+            },
           };
           this.successOverlay.set({
             name: this.state.campaign.name.trim(),
-            response,
+            response: {
+              ...response,
+              initialStatus: this.state.campaign.initialStatus,
+            },
           });
           localStorage.removeItem(this.draftStorageKey());
           this.draftAvailable.set(false);
@@ -617,10 +655,41 @@ export class CampaignCreatePanelComponent {
     return this.parsedList(this.state.audience.interests);
   }
 
+  onPreviewImageError(): void {
+    this.previewImageFailed.set(true);
+  }
+
+  previewPlaceholderMessage(): string {
+    return this.state.creative.imageUrl.trim()
+      ? 'Não conseguimos carregar esta imagem'
+      : 'Adicione uma URL de imagem para ver o preview';
+  }
+
   compatibilityNote(): string {
+    const expandedFields = [
+      this.state.campaign.specialCategory,
+      this.state.campaign.buyingType,
+      this.state.campaign.campaignSpendLimit,
+      this.state.campaign.abTest,
+      this.state.campaign.campaignBudgetOptimization,
+      this.state.audience.city,
+      this.state.audience.interests,
+      this.state.placements.selected.length,
+      this.state.schedule.weekDays.length,
+      this.state.tracking.pixel,
+      this.state.tracking.utmCampaign,
+    ].some(Boolean);
+    const base = this.state.campaign.initialStatus === 'ACTIVE'
+      ? 'Payload real: a campanha será enviada tentando respeitar o status inicial ativo, sujeito às validações da Meta.'
+      : 'Payload real: a campanha será enviada pausada quando o status inicial estiver definido como pausada.';
+
+    if (expandedFields) {
+      return `${base} Campos avançados de público, agenda, posicionamento e rastreamento ficam registrados na revisão expandida, mas ainda não são aplicados pela API Meta atual.`;
+    }
+
     return this.state.campaign.initialStatus === 'ACTIVE'
-      ? 'Compatibilidade atual: o fluxo real agora tenta respeitar o status inicial ativo, mas a entrega final ainda depende das validações e permissões da Meta.'
-      : 'Compatibilidade atual: a campanha é enviada pausada quando o status inicial estiver definido como pausada.';
+      ? base
+      : base;
   }
 
   statusLabel(status?: IntegrationStatus): string {
@@ -657,12 +726,12 @@ export class CampaignCreatePanelComponent {
 
   sectionModeLabel(sectionId: string): string {
     if (sectionId === 'builder-ai') {
-      return 'Acelera preenchimento';
+      return 'Assistente';
     }
-    if (sectionId === 'builder-general' || sectionId === 'builder-identity' || sectionId === 'builder-audience' || sectionId === 'builder-budget' || sectionId === 'builder-creative') {
-      return 'Impacta envio atual';
+    if (['builder-general', 'builder-identity', 'builder-budget', 'builder-destination', 'builder-creative'].includes(sectionId)) {
+      return 'Envio Meta atual';
     }
-    return 'Estrutura expandida';
+    return 'Planejamento interno';
   }
 
   aiSectionComplete(): boolean {
@@ -786,11 +855,6 @@ export class CampaignCreatePanelComponent {
 
     if (this.shouldApplySuggestion('destination.websiteUrl', this.state.destination.websiteUrl, '') && suggestions.websiteUrl && this.isValidHttpUrl(suggestions.websiteUrl)) {
       this.state.destination.websiteUrl = suggestions.websiteUrl;
-      appliedCount += 1;
-    }
-
-    if (this.shouldApplySuggestion('destination.type', this.state.destination.type, 'site') && this.isDestinationType(suggestions.destinationType) && suggestions.destinationType !== 'site') {
-      this.state.destination.type = suggestions.destinationType;
       appliedCount += 1;
     }
 
@@ -968,7 +1032,6 @@ export class CampaignCreatePanelComponent {
     const budget = extractBudgetFromPrompt(prompt, normalized);
     const budgetType = detectBudgetTypeFromPrompt(normalized);
     const initialStatus = detectInitialStatusFromPrompt(normalized);
-    const destinationType = detectDestinationTypeFromPrompt(normalized);
     const cta = detectCtaFromPrompt(normalized);
     const country = detectCountryFromPrompt(normalized, this.state.audience.country);
     const gender = detectGenderFromPrompt(normalized);
@@ -1013,7 +1076,7 @@ export class CampaignCreatePanelComponent {
       detectedFields.push('Categoria especial');
     }
 
-    this.state.destination.type = destinationType;
+    this.state.destination.type = 'site';
     detectedFields.push('Destino');
 
     if (cta) {
@@ -1159,18 +1222,10 @@ export class CampaignCreatePanelComponent {
         this.state.creative.imageUrl = imageUrl;
         detectedFields.push('URL da imagem');
       }
-      if (destinationType === 'site' && destinationUrl) {
+      if (destinationUrl) {
         this.state.destination.websiteUrl = destinationUrl;
         detectedFields.push('URL de destino');
       }
-      if (destinationType === 'app' && destinationUrl) {
-        this.state.destination.appLink = destinationUrl;
-        detectedFields.push('Link do app');
-      }
-    }
-
-    if (destinationType === 'messages') {
-      this.state.destination.messagesDestination = this.state.destination.messagesDestination || 'WhatsApp';
     }
 
     if (mainMessage) {
@@ -1218,7 +1273,7 @@ export class CampaignCreatePanelComponent {
     if (!this.state.tracking.utmCampaign.trim()) {
       const parts = [
         this.slugify(this.state.campaign.name || this.selectedObjectiveLabel()),
-        this.state.destination.type === 'messages' ? 'msg' : this.slugify(this.state.destination.type),
+        this.slugify(this.state.destination.type),
       ].filter(Boolean);
       this.state.tracking.utmCampaign = parts.join('-');
       detectedFields.push('UTM campaign sugerida');

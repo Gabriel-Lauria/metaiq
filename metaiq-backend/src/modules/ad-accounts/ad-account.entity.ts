@@ -48,16 +48,16 @@ export class AdAccount {
   @Column()
   userId: string;
 
-  @Column({ nullable: true })
-  storeId: string | null;
+  @Column()
+  storeId: string;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @ManyToOne(() => Store, (store) => store.adAccounts, { nullable: true })
+  @ManyToOne(() => Store, (store) => store.adAccounts, { nullable: false })
   @JoinColumn({ name: 'storeId' })
-  store: Store | null;
+  store: Store;
 
   @CreateDateColumn()
   createdAt: Date;

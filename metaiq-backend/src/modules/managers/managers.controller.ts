@@ -9,7 +9,7 @@ import { CreateManagerDto, UpdateManagerDto } from './dto/manager.dto';
 
 @Controller('managers')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.PLATFORM_ADMIN, Role.ADMIN)
+@Roles(Role.PLATFORM_ADMIN)
 export class ManagersController {
   constructor(private readonly managersService: ManagersService) {}
 

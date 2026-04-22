@@ -46,8 +46,8 @@ export class Campaign {
   @Column()
   userId: string;
 
-  @Column({ nullable: true })
-  storeId: string | null;
+  @Column()
+  storeId: string;
 
   @Column({ nullable: true })
   createdByUserId: string | null;
@@ -59,9 +59,9 @@ export class Campaign {
   @JoinColumn({ name: 'userId' })
   user: User;
 
-  @ManyToOne(() => Store, (store) => store.campaigns, { nullable: true })
+  @ManyToOne(() => Store, (store) => store.campaigns, { nullable: false })
   @JoinColumn({ name: 'storeId' })
-  store: Store | null;
+  store: Store;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'createdByUserId' })

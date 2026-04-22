@@ -9,7 +9,8 @@ import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaCampaignCreation } from './meta-campaign-creation.entity';
 import { MetaGraphApiClient } from './meta-graph-api.client';
 import { MetaCampaignRecoveryService } from './meta-campaign-recovery.service';
-import { MetaCampaignCreationAuditController, MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignRecoveryController } from './meta.controller';
+import { MetaCampaignCreationAuditController, MetaIntegrationController, MetaOAuthCallbackController } from './meta.controller';
+import { MetaCampaignRecoveryController } from './meta-campaign-recovery.controller';
 import { MetaIntegrationService } from './meta.service';
 import { MetaSyncService } from './meta-sync.service';
 

@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   Length,
+  Min,
 } from 'class-validator';
 
 export class CreateCampaignDto {
@@ -27,6 +28,7 @@ export class CreateCampaignDto {
   objective?: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS';
 
   @IsNumber()
+  @Min(1)
   dailyBudget: number;
 
   @IsDateString()
@@ -61,6 +63,7 @@ export class UpdateCampaignDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(1)
   dailyBudget?: number;
 
   @IsOptional()

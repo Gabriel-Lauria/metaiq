@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MetricDaily } from './metric-daily.entity';
@@ -201,6 +201,8 @@ export class MetricsService {
     from: string,
     to: string,
   ): Promise<any> {
+    await this.ensureCampaignInScope(user, campaignId);
+
     const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
@@ -253,6 +255,8 @@ export class MetricsService {
     from: string,
     to: string,
   ): Promise<MetricDaily[]> {
+    await this.ensureCampaignInScope(user, campaignId);
+
     const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoin('m.campaign', 'campaign')
@@ -264,9 +268,9 @@ export class MetricsService {
   }
 
   async upsertDailyMetric(data: Partial<MetricDaily>): Promise<MetricDaily> {
-    const existing = await this.metricRepository.findOne({
-      where: { campaign: { id: data.campaignId }, date: data.date },
-    });
+    if (!data.campaignId || !data.date) {
+      throw new BadRequestException('campaignId e date são obrigatórios para upsert de métricas');
+    }
 
     const enriched = {
       ...data,
@@ -275,15 +279,22 @@ export class MetricsService {
       roas: calcROAS(data.revenue ?? 0, data.spend ?? 0),
     } as Partial<MetricDaily>;
 
-    if (existing) {
-      Object.assign(existing, enriched);
-      return this.metricRepository.save(existing);
+    await this.metricRepository.upsert(enriched, ['campaignId', 'date']);
+
+    const metric = await this.metricRepository.findOne({
+      where: { campaignId: data.campaignId, date: data.date },
+    });
+
+    if (!metric) {
+      throw new InternalServerErrorException('Falha ao carregar métrica após upsert');
     }
 
-    return this.metricRepository.save(this.metricRepository.create(enriched));
+    return metric;
   }
 
   async findByCampaignPaginated(user: AuthenticatedUser, campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
+    await this.ensureCampaignInScope(user, campaignId);
+
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
 
@@ -323,5 +334,11 @@ export class MetricsService {
 
     await this.accessScope.validateStoreAccess(user, storeId);
     query.andWhere('campaign.storeId = :filterStoreId', { filterStoreId: storeId });
+  }
+
+  private async ensureCampaignInScope(user: AuthenticatedUser, campaignId: string): Promise<void> {
+    if (!(await this.accessScope.canAccessMetricCampaign(user, campaignId))) {
+      throw new NotFoundException('Recurso não encontrado');
+    }
   }
 }

@@ -1,30 +1,14 @@
-<div class="create-panel-backdrop" (click)="closePanel()">
-  <section class="create-panel" (click)="$event.stopPropagation()" (scroll)="onMainScroll($event)">
-    <header class="builder-hero">
-      <div class="hero-copy">
-        <span class="panel-eyebrow">Builder avançado</span>
-        <h2>Crie campanhas com mais clareza, menos ruído e revisão real</h2>
-        <p>O fluxo continua conectado ao backend atual da Meta, mas agora com preenchimento mais guiado, IA por prompt e revisão contínua.</p>
-
-        <div class="hero-mini-meta">
-          <span class="hero-chip">{{ selectedStoreName() }}</span>
-          <span class="hero-chip" *ngIf="state.ui.aiApplied">Preenchido com sugestões da IA</span>
-          <span class="hero-chip" *ngIf="draftRestored()">Rascunho restaurado</span>
-          <span class="hero-chip autosave-chip" [class.is-saving]="autosaveState() === 'saving'">{{ autosaveLabel() }}</span>
+<div class="create-panel-backdrop" (click)="requestClosePanel()">
+  <section class="create-panel" role="dialog" aria-modal="true" aria-labelledby="campaign-builder-title" (click)="$event.stopPropagation()" (scroll)="onMainScroll($event)">
+    <header class="builder-header">
+      <div class="builder-hero">
+        <div class="hero-copy">
+          <span class="panel-eyebrow">Builder avançado</span>
+          <h2 id="campaign-builder-title">Crie campanhas com mais clareza, menos ruído e revisão real</h2>
+          <p>O fluxo continua conectado ao backend atual da Meta, mas agora com preenchimento mais guiado, IA por prompt e revisão contínua.</p>
         </div>
       </div>
 
-      <div class="hero-progress-card">
-        <span class="section-kicker">Progresso de preenchimento</span>
-        <strong>{{ progressPercent() }}%</strong>
-        <p>{{ state.campaign.name || 'Campanha em edição' }}</p>
-        <div class="progress-bar" aria-hidden="true">
-          <span [style.width.%]="progressPercent()"></span>
-        </div>
-      </div>
-    </header>
-
-    <div class="builder-toolbar">
       <div class="builder-status-strip">
         <div class="status-strip-copy">
           <span class="section-kicker">Leitura operacional</span>
@@ -42,20 +26,14 @@
           <span class="hero-chip">{{ progressPercent() }}% concluído</span>
           <button class="btn btn-secondary" type="button" (click)="scrollToSection(firstBlockingSectionId())">Ir para bloqueio</button>
           <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-            {{ submitting() ? 'Criando campanha...' : 'Enviar agora' }}
+            {{ submitting() ? 'Criando na Meta...' : 'Criar na Meta' }}
           </button>
         </div>
       </div>
 
-      <div class="top-actions">
+      <div class="toolbar-secondary">
         <button class="btn btn-secondary" type="button" (click)="focusAiSection()">Criar com IA</button>
         <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
-        <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-          {{ submitting() ? 'Criando campanha...' : 'Criar campanha' }}
-        </button>
-      </div>
-
-      <div class="toolbar-secondary">
         <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
         <button class="btn btn-secondary" type="button" (click)="goToNextPendingSection()">Próxima pendência</button>
         <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar agora</button>
@@ -63,17 +41,17 @@
       </div>
 
       <nav class="builder-nav">
-      <button
-        type="button"
-        class="nav-pill"
-        *ngFor="let section of sectionAnchors; trackBy: trackByValue"
-        [class.active]="activeSection() === section.id"
-        (click)="scrollToSection(section.id)"
-      >
-        {{ section.label }}
-      </button>
-    </nav>
-  </div>
+        <button
+          type="button"
+          class="nav-pill"
+          *ngFor="let section of sectionAnchors; trackBy: trackByValue"
+          [class.active]="activeSection() === section.id"
+          (click)="scrollToSection(section.id)"
+        >
+          {{ section.label }}
+        </button>
+      </nav>
+    </header>
 
     <div class="panel-grid">
       <div class="panel-main">
@@ -243,16 +221,19 @@
             <label class="form-field">
               <span>Categoria especial</span>
               <input type="text" [(ngModel)]="state.campaign.specialCategory" (ngModelChange)="touchState()" placeholder="Nenhuma" />
+              <small>Campo de planejamento: aparece na revisão expandida, mas não altera o envio Meta atual.</small>
             </label>
 
             <label class="form-field">
               <span>Tipo de compra</span>
               <input type="text" [(ngModel)]="state.campaign.buyingType" (ngModelChange)="touchState()" placeholder="Auction" />
+              <small>Campo de planejamento: aparece na revisão expandida, mas não altera o envio Meta atual.</small>
             </label>
 
             <label class="form-field">
               <span>Limite de gasto da campanha</span>
               <input type="number" [(ngModel)]="state.campaign.campaignSpendLimit" (ngModelChange)="touchState()" min="0" step="10" />
+              <small>Campo de planejamento: aparece na revisão expandida, mas não altera o envio Meta atual.</small>
             </label>
           </div>
 
@@ -695,39 +676,13 @@
             </button>
           </div>
 
+          <p class="compatibility-note">Criação real atual: o backend envia campanhas Meta com destino de site. Outros destinos ficam bloqueados até existir suporte real no orquestrador.</p>
+
           <div class="field-grid" *ngIf="state.destination.type === 'site'">
             <label class="form-field field-span-2" [class.invalid]="fieldInvalid('destination.websiteUrl')">
               <span>URL do site</span>
               <input type="url" [(ngModel)]="state.destination.websiteUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('destination.websiteUrl')" placeholder="https://..." />
               <small *ngIf="fieldInvalid('destination.websiteUrl')">O destino do tipo site precisa de uma URL válida.</small>
-            </label>
-          </div>
-
-          <div class="field-grid" *ngIf="state.destination.type === 'messages'">
-            <label class="form-field field-span-2">
-              <span>Destino de mensagens</span>
-              <input type="text" [(ngModel)]="state.destination.messagesDestination" (ngModelChange)="touchState()" placeholder="WhatsApp / Instagram Direct / Messenger" />
-            </label>
-          </div>
-
-          <div class="field-grid" *ngIf="state.destination.type === 'form'">
-            <label class="form-field field-span-2">
-              <span>Formulário</span>
-              <input type="text" [(ngModel)]="state.destination.formName" (ngModelChange)="touchState()" placeholder="Nome interno do formulário" />
-            </label>
-          </div>
-
-          <div class="field-grid" *ngIf="state.destination.type === 'app'">
-            <label class="form-field field-span-2">
-              <span>Link do app</span>
-              <input type="text" [(ngModel)]="state.destination.appLink" (ngModelChange)="touchState()" placeholder="App Store / Play Store / deep link" />
-            </label>
-          </div>
-
-          <div class="field-grid" *ngIf="state.destination.type === 'catalog'">
-            <label class="form-field field-span-2">
-              <span>Catálogo</span>
-              <input type="text" [(ngModel)]="state.destination.catalogId" (ngModelChange)="touchState()" placeholder="Identificador ou nome do catálogo" />
             </label>
           </div>
         </section>
@@ -763,7 +718,7 @@
             </label>
             <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
               <span>URL da imagem</span>
-              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
+              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState(); previewImageFailed.set(false)" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
               <small *ngIf="fieldInvalid('creative.imageUrl')">A URL da imagem deve começar com `http://` ou `https://`.</small>
             </label>
           </div>
@@ -864,9 +819,14 @@
             </div>
           </div>
 
-          <div class="json-preview">
-            <span class="section-kicker">JSON final expandido</span>
-            <pre>{{ reviewJson() }}</pre>
+          <div class="technical-review">
+            <button class="link-btn technical-toggle" type="button" (click)="technicalReviewOpen.set(!technicalReviewOpen())" [attr.aria-expanded]="technicalReviewOpen()">
+              {{ technicalReviewOpen() ? 'Ocultar payload técnico' : 'Ver payload técnico' }}
+            </button>
+            <div class="json-preview" *ngIf="technicalReviewOpen()">
+              <span class="section-kicker">JSON final expandido</span>
+              <pre>{{ reviewJson() }}</pre>
+            </div>
           </div>
 
           <div class="submit-error" *ngIf="submitError()">
@@ -875,9 +835,9 @@
 
           <div class="review-actions">
             <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
-            <button class="btn btn-secondary" type="button" (click)="closePanel()">Voltar</button>
+            <button class="btn btn-secondary" type="button" (click)="requestClosePanel()">Voltar</button>
             <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-              {{ submitting() ? 'Criando campanha...' : 'Publicar / criar campanha' }}
+              {{ submitting() ? 'Criando na Meta...' : 'Criar na Meta' }}
             </button>
           </div>
         </section>
@@ -969,19 +929,27 @@
           </div>
 
           <div class="creative-preview">
-            <div class="preview-media" *ngIf="state.creative.imageUrl.trim(); else previewPlaceholder">
-              <img [src]="state.creative.imageUrl" alt="Preview do criativo" />
+            <div class="preview-ad-header">
+              <div class="preview-avatar">{{ selectedStoreName().slice(0, 1) }}</div>
+              <div>
+                <strong>{{ selectedStoreName() }}</strong>
+                <span>Patrocinado · Meta</span>
+              </div>
+            </div>
+
+            <div class="preview-message">{{ previewMessage() }}</div>
+
+            <div class="preview-media" *ngIf="state.creative.imageUrl.trim() && !previewImageFailed(); else previewPlaceholder">
+              <img [src]="state.creative.imageUrl" alt="Preview do criativo" (error)="onPreviewImageError()" />
             </div>
 
             <ng-template #previewPlaceholder>
-              <div class="preview-placeholder">Preview com fallback elegante</div>
+              <div class="preview-placeholder">{{ previewPlaceholderMessage() }}</div>
             </ng-template>
 
             <div class="preview-copy">
-              <span class="preview-store">{{ selectedStoreName() }}</span>
               <strong>{{ previewHeadline() }}</strong>
               <p>{{ previewDescription() }}</p>
-              <div class="preview-message">{{ previewMessage() }}</div>
               <button class="preview-cta" type="button">{{ previewCta() }}</button>
             </div>
           </div>
@@ -1001,7 +969,7 @@
       </div>
       <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar</button>
       <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-        {{ submitting() ? 'Criando...' : 'Enviar' }}
+        {{ submitting() ? 'Criando...' : 'Criar' }}
       </button>
     </div>
   </section>
@@ -1010,7 +978,7 @@
     <div class="success-card">
       <span class="section-kicker">Campanha criada</span>
       <strong>{{ success.name }}</strong>
-      <p>A criação real foi concluída com sucesso. IDs retornados pela API:</p>
+      <p>A criação real foi concluída com sucesso com status inicial {{ success.response.initialStatus === 'ACTIVE' ? 'ativo' : 'pausado' }}. IDs retornados pela API:</p>
       <div class="success-meta">
         <span>Campaign: {{ success.response.campaignId }}</span>
         <span>AdSet: {{ success.response.adSetId }}</span>
@@ -1019,6 +987,19 @@
       </div>
       <div class="review-actions success-actions">
         <button class="btn btn-primary" type="button" (click)="finishSuccessFlow()">Voltar para campanhas</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="success-overlay" *ngIf="closeConfirmOpen()">
+    <div class="success-card close-confirm-card" role="dialog" aria-modal="true" aria-labelledby="close-builder-title">
+      <span class="section-kicker">Rascunho em andamento</span>
+      <strong id="close-builder-title">Fechar o builder?</strong>
+      <p>O preenchimento atual tem dados de campanha. Você pode manter o rascunho local antes de sair.</p>
+      <div class="review-actions success-actions">
+        <button class="btn btn-secondary" type="button" (click)="keepEditing()">Continuar editando</button>
+        <button class="btn btn-secondary" type="button" (click)="saveDraftAndClose()">Salvar e sair</button>
+        <button class="btn btn-primary" type="button" (click)="discardAndClose()">Sair sem salvar</button>
       </div>
     </div>
   </div>

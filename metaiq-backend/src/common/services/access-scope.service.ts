@@ -8,8 +8,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, SelectQueryBuilder, Repository } from 'typeorm';
 import { Role } from '../enums';
 import { AuthenticatedUser } from '../interfaces';
+import { OwnershipResource } from '../decorators/check-ownership.decorator';
 import { Store } from '../../modules/stores/store.entity';
 import { UserStore } from '../../modules/user-stores/user-store.entity';
+import { Campaign } from '../../modules/campaigns/campaign.entity';
+import { AdAccount } from '../../modules/ad-accounts/ad-account.entity';
+import { Insight } from '../../modules/insights/insight.entity';
 
 @Injectable()
 export class AccessScopeService {
@@ -109,6 +113,60 @@ export class AccessScopeService {
     }
   }
 
+  async canAccessCampaign(user: AuthenticatedUser, campaignId: string): Promise<boolean> {
+    const query = this.storeRepository.manager
+      .getRepository(Campaign)
+      .createQueryBuilder('campaign')
+      .where('campaign.id = :campaignId', { campaignId });
+
+    await this.applyCampaignScope(query, 'campaign', user);
+    return query.getExists();
+  }
+
+  async canAccessMetricCampaign(user: AuthenticatedUser, campaignId: string): Promise<boolean> {
+    return this.canAccessCampaign(user, campaignId);
+  }
+
+  async canAccessAdAccount(user: AuthenticatedUser, adAccountId: string): Promise<boolean> {
+    const query = this.storeRepository.manager
+      .getRepository(AdAccount)
+      .createQueryBuilder('adAccount')
+      .where('adAccount.id = :adAccountId', { adAccountId });
+
+    await this.applyAdAccountScope(query, 'adAccount', user);
+    return query.getExists();
+  }
+
+  async canAccessInsight(user: AuthenticatedUser, insightId: string): Promise<boolean> {
+    const query = this.storeRepository.manager
+      .getRepository(Insight)
+      .createQueryBuilder('insight')
+      .innerJoin('insight.campaign', 'campaign')
+      .where('insight.id = :insightId', { insightId });
+
+    await this.applyCampaignScope(query, 'campaign', user);
+    return query.getExists();
+  }
+
+  async canAccessResource(
+    user: AuthenticatedUser,
+    resource: OwnershipResource,
+    id: string,
+  ): Promise<boolean> {
+    switch (resource) {
+      case 'campaign':
+        return this.canAccessCampaign(user, id);
+      case 'metricCampaign':
+        return this.canAccessMetricCampaign(user, id);
+      case 'adAccount':
+        return this.canAccessAdAccount(user, id);
+      case 'insight':
+        return this.canAccessInsight(user, id);
+      default:
+        return false;
+    }
+  }
+
   async applyCampaignScope<T>(
     query: SelectQueryBuilder<T>,
     alias: string,
@@ -118,38 +176,28 @@ export class AccessScopeService {
       return query;
     }
 
-    query
-      .leftJoin(`${alias}.store`, `${alias}_scopeStore`)
-      .leftJoin(`${alias}.user`, `${alias}_scopeOwner`);
+    query.innerJoin(`${alias}.store`, `${alias}_scopeStore`);
 
     if (this.isAdmin(user) || this.isManager(user)) {
       if (!user.tenantId) {
         return query.andWhere('1 = 0');
       }
 
-      return query.andWhere(
-        `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId AND ${alias}_scopeStore.deletedAt IS NULL)
-          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
-        )`,
-        { scopeTenantId: user.tenantId },
-      );
+      return query
+        .andWhere(`${alias}_scopeStore.tenantId = :scopeTenantId`, {
+          scopeTenantId: user.tenantId,
+        })
+        .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
     if (!storeIds?.length) {
-      return query.andWhere(`(${alias}.storeId IS NULL AND ${alias}.userId = :scopeUserId)`, {
-        scopeUserId: user.id,
-      });
+      return query.andWhere('1 = 0');
     }
 
-    return query.andWhere(
-      `(
-        ${alias}.storeId IN (:...scopeStoreIds)
-        OR (${alias}.storeId IS NULL AND ${alias}.userId = :scopeUserId)
-      )`,
-      { scopeStoreIds: storeIds, scopeUserId: user.id },
-    );
+    return query.andWhere(`${alias}.storeId IN (:...scopeStoreIds)`, {
+      scopeStoreIds: storeIds,
+    });
   }
 
   async applyAdAccountScope<T>(
@@ -161,37 +209,27 @@ export class AccessScopeService {
       return query;
     }
 
-    query
-      .leftJoin(`${alias}.store`, `${alias}_scopeStore`)
-      .leftJoin(`${alias}.user`, `${alias}_scopeOwner`);
+    query.innerJoin(`${alias}.store`, `${alias}_scopeStore`);
 
     if (this.isAdmin(user) || this.isManager(user)) {
       if (!user.tenantId) {
         return query.andWhere('1 = 0');
       }
 
-      return query.andWhere(
-        `(
-          (${alias}.storeId IS NOT NULL AND ${alias}_scopeStore.tenantId = :scopeTenantId AND ${alias}_scopeStore.deletedAt IS NULL)
-          OR (${alias}.storeId IS NULL AND ${alias}_scopeOwner.tenantId = :scopeTenantId)
-        )`,
-        { scopeTenantId: user.tenantId },
-      );
+      return query
+        .andWhere(`${alias}_scopeStore.tenantId = :scopeTenantId`, {
+          scopeTenantId: user.tenantId,
+        })
+        .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
     if (!storeIds?.length) {
-      return query.andWhere(`(${alias}.storeId IS NULL AND ${alias}.userId = :scopeUserId)`, {
-        scopeUserId: user.id,
-      });
+      return query.andWhere('1 = 0');
     }
 
-    return query.andWhere(
-      `(
-        ${alias}.storeId IN (:...scopeStoreIds)
-        OR (${alias}.storeId IS NULL AND ${alias}.userId = :scopeUserId)
-      )`,
-      { scopeStoreIds: storeIds, scopeUserId: user.id },
-    );
+    return query.andWhere(`${alias}.storeId IN (:...scopeStoreIds)`, {
+      scopeStoreIds: storeIds,
+    });
   }
 }

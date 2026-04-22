@@ -144,6 +144,7 @@ export class CampaignsService {
     const adAccount = await this.campaignRepository.manager
       .createQueryBuilder()
       .select('adAccount.id', 'id')
+      .addSelect('adAccount.active', 'active')
       .from('ad_accounts', 'adAccount')
       .where('adAccount.id = :adAccountId', { adAccountId })
       .andWhere('adAccount.storeId = :storeId', { storeId })
@@ -151,6 +152,10 @@ export class CampaignsService {
 
     if (!adAccount) {
       throw new ForbiddenException('AdAccount não pertence à store informada');
+    }
+
+    if (!adAccount.active) {
+      throw new ForbiddenException('AdAccount inativa não pode receber novas campanhas');
     }
 
     await this.accessScope.validateStoreAccess(user, storeId);

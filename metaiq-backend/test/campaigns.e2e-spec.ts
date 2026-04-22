@@ -15,6 +15,7 @@ import { MetricDaily } from '../src/modules/metrics/metric-daily.entity';
 import { Insight } from '../src/modules/insights/insight.entity';
 import { StoreIntegration } from '../src/modules/integrations/store-integration.entity';
 import { IntegrationStatus } from '../src/common/enums';
+import { MetricsService } from '../src/modules/metrics/metrics.service';
 
 jest.setTimeout(60000);
 
@@ -31,12 +32,13 @@ describe('Current tenant/store security E2E', () => {
   let metricRepo: Repository<MetricDaily>;
   let insightRepo: Repository<Insight>;
   let integrationRepo: Repository<StoreIntegration>;
+  let metricsService: MetricsService;
 
   const runId = `e2e_${Date.now()}`;
   const password = 'Test@1234';
   const range = 'from=2026-01-01&to=2026-12-31';
 
-  type TestUserKey = Role | 'MANAGER_B' | 'OPERATIONAL_UNLINKED' | 'INACTIVE';
+  type TestUserKey = Role | 'TENANT_ADMIN' | 'MANAGER_B' | 'OPERATIONAL_UNLINKED' | 'INACTIVE' | 'SOFT_DELETED';
 
   const users: Partial<Record<TestUserKey, User>> = {};
   const tokens: Partial<Record<Role, string>> = {};
@@ -45,6 +47,8 @@ describe('Current tenant/store security E2E', () => {
   const adAccounts: AdAccount[] = [];
   const campaigns: Campaign[] = [];
   let insightA: Insight;
+  let insightB: Insight;
+  let tenantAdminToken: string;
 
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
@@ -98,6 +102,7 @@ describe('Current tenant/store security E2E', () => {
     metricRepo = dataSource.getRepository(MetricDaily);
     insightRepo = dataSource.getRepository(Insight);
     integrationRepo = dataSource.getRepository(StoreIntegration);
+    metricsService = app.get(MetricsService);
 
     await cleanup();
     await seedTenantGraph();
@@ -113,15 +118,17 @@ describe('Current tenant/store security E2E', () => {
     if (!dataSource?.isInitialized) return;
 
     const campaignMetaIds = [`${runId}_campaign_a`, `${runId}_campaign_b`];
-    const adAccountMetaIds = [`${runId}_ad_a`, `${runId}_ad_b`];
+    const adAccountMetaIds = [`${runId}_ad_a`, `${runId}_ad_b`, `${runId}_ad_inactive`];
     const emails = [
       `${runId}.admin@test.com`,
+      `${runId}.tenant-admin@test.com`,
       `${runId}.manager@test.com`,
       `${runId}.operational@test.com`,
       `${runId}.operational-unlinked@test.com`,
       `${runId}.client@test.com`,
       `${runId}.managerb@test.com`,
       `${runId}.inactive@test.com`,
+      `${runId}.soft-deleted@test.com`,
       `${runId}.created-operational@test.com`,
     ];
     const storeNames = [`${runId} Store A`, `${runId} Store B`, `${runId} Store Created`, `${runId} Store Edited`];
@@ -224,6 +231,17 @@ describe('Current tenant/store security E2E', () => {
         active: true,
       }),
     );
+    users.TENANT_ADMIN = await userRepo.save(
+      userRepo.create({
+        email: `${runId}.tenant-admin@test.com`,
+        name: 'E2E Tenant Admin A',
+        password: passwordHash,
+        role: Role.ADMIN,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        active: true,
+      }),
+    );
     users[Role.OPERATIONAL] = await userRepo.save(
       userRepo.create({
         email: `${runId}.operational@test.com`,
@@ -268,6 +286,18 @@ describe('Current tenant/store security E2E', () => {
         active: false,
       }),
     );
+    users.SOFT_DELETED = await userRepo.save(
+      userRepo.create({
+        email: `${runId}.soft-deleted@test.com`,
+        name: 'E2E Soft Deleted A',
+        password: passwordHash,
+        role: Role.OPERATIONAL,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        active: true,
+        deletedAt: new Date(),
+      }),
+    );
     users.MANAGER_B = await userRepo.save(
       userRepo.create({
         email: `${runId}.managerb@test.com`,
@@ -307,7 +337,18 @@ describe('Current tenant/store security E2E', () => {
         active: true,
       }),
     );
-    adAccounts.push(adAccountA, adAccountB);
+    const inactiveAdAccount = await adAccountRepo.save(
+      adAccountRepo.create({
+        metaId: `${runId}_ad_inactive`,
+        name: 'E2E Inactive Ad Account A',
+        currency: 'BRL',
+        accessToken: 'test-secret-token-inactive',
+        userId: users[Role.MANAGER]!.id,
+        storeId: storeA.id,
+        active: false,
+      }),
+    );
+    adAccounts.push(adAccountA, adAccountB, inactiveAdAccount);
 
     const campaignA = await campaignRepo.save(
       campaignRepo.create({
@@ -381,7 +422,7 @@ describe('Current tenant/store security E2E', () => {
         ruleVersion: 1,
       }),
     );
-    await insightRepo.save(
+    insightB = await insightRepo.save(
       insightRepo.create({
         campaignId: campaignB.id,
         type: 'alert',
@@ -410,6 +451,7 @@ describe('Current tenant/store security E2E', () => {
     tokens[Role.OPERATIONAL] = await login(users[Role.OPERATIONAL]!.email);
     tokens[Role.CLIENT] = await login(users[Role.CLIENT]!.email);
     tokens[Role.PLATFORM_ADMIN] = tokens[Role.ADMIN];
+    tenantAdminToken = await login(users.TENANT_ADMIN!.email);
   }
 
   describe('auth', () => {
@@ -429,9 +471,17 @@ describe('Current tenant/store security E2E', () => {
         .send({ email: users[Role.ADMIN]!.email, password })
         .expect(200);
 
+      const setCookie = loginResponse.headers['set-cookie'];
+      const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+      const refreshCookie = cookies.find((cookie: string) =>
+        cookie.startsWith('metaiq_refresh_token='),
+      );
+      expect(refreshCookie).toBeTruthy();
+
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .send({ refreshToken: loginResponse.body.refreshToken })
+        .set('Cookie', refreshCookie as string)
+        .send({})
         .expect(200);
 
       const me = await request(app.getHttpServer())
@@ -444,6 +494,75 @@ describe('Current tenant/store security E2E', () => {
   });
 
   describe('stores and users by role', () => {
+    it('restricts global manager endpoints to platform admin only', async () => {
+      await request(app.getHttpServer())
+        .get('/api/managers')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(403);
+
+      const platformManagers = await request(app.getHttpServer())
+        .get('/api/managers')
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+
+      expect(platformManagers.body.map((manager: Manager) => manager.id)).toEqual(
+        expect.arrayContaining([managers[0].id, managers[1].id]),
+      );
+    });
+
+    it('scopes dashboard user counts and ignores soft-deleted users', async () => {
+      const tenantSummary = await request(app.getHttpServer())
+        .get('/api/dashboard/summary?days=90')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(200);
+
+      expect(tenantSummary.body.counts.users).toBe(5);
+      expect(tenantSummary.body.counts.campaigns).toBe(1);
+      expect(tenantSummary.body.counts.activeCampaigns).toBe(1);
+      expect(tenantSummary.body.metrics.spend).toBe(10);
+      expect(tenantSummary.body.metrics.revenue).toBe(50);
+      expect(tenantSummary.body.highlights.campaigns.map((campaign: Campaign) => campaign.id)).toEqual([
+        campaigns[0].id,
+      ]);
+      expect(tenantSummary.body.insights.map((insight: Insight) => insight.id)).toEqual([insightA.id]);
+
+      const platformSummary = await request(app.getHttpServer())
+        .get('/api/dashboard/summary?days=90')
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+
+      expect(platformSummary.body.counts.users).toBe(7);
+      expect(platformSummary.body.counts.campaigns).toBe(2);
+      expect(platformSummary.body.counts.activeCampaigns).toBe(2);
+      expect(platformSummary.body.metrics.spend).toBe(10009);
+      expect(platformSummary.body.metrics.revenue).toBe(100049);
+    });
+
+    it('keeps direct HTTP user listing and lookup scoped to the tenant admin tenant', async () => {
+      const tenantUsers = await request(app.getHttpServer())
+        .get('/api/users')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(200);
+
+      const tenantUserIds = tenantUsers.body.map((user: User) => user.id);
+      expect(tenantUserIds).toEqual(
+        expect.arrayContaining([
+          users.TENANT_ADMIN!.id,
+          users[Role.MANAGER]!.id,
+          users[Role.OPERATIONAL]!.id,
+          users[Role.CLIENT]!.id,
+        ]),
+      );
+      expect(tenantUserIds).not.toContain(users[Role.ADMIN]!.id);
+      expect(tenantUserIds).not.toContain(users.MANAGER_B!.id);
+      expect(tenantUserIds).not.toContain(users.SOFT_DELETED!.id);
+
+      await request(app.getHttpServer())
+        .get(`/api/users/${users.MANAGER_B!.id}`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(403);
+    });
+
     it('returns accessible stores by role and blocks cross-tenant store access', async () => {
       const adminStores = await request(app.getHttpServer())
         .get('/api/stores/accessible')
@@ -530,6 +649,101 @@ describe('Current tenant/store security E2E', () => {
   });
 
   describe('campaigns, ad accounts, metrics, insights, and dashboards', () => {
+    it('rejects campaign and ad account creation without storeId', async () => {
+      await request(app.getHttpServer())
+        .post('/api/ad-accounts')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .send({
+          metaId: `${runId}_ad_without_store`,
+          name: 'Ad Account Without Store',
+          currency: 'BRL',
+        })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .send({
+          metaId: `${runId}_campaign_without_store`,
+          name: 'Campaign Without Store',
+          status: 'ACTIVE',
+          objective: 'CONVERSIONS',
+          dailyBudget: 50,
+          startTime: '2026-04-01',
+          adAccountId: adAccounts[0].id,
+        })
+        .expect(400);
+    });
+
+    it('blocks campaign creation when the selected ad account is inactive', async () => {
+      await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .send({
+          metaId: `${runId}_campaign_inactive_ad_account`,
+          name: 'Blocked inactive ad account campaign',
+          status: 'ACTIVE',
+          objective: 'CONVERSIONS',
+          dailyBudget: 50,
+          startTime: '2026-04-01',
+          storeId: stores[0].id,
+          adAccountId: adAccounts[2].id,
+        })
+        .expect(403);
+    });
+
+    it('rejects invalid metric identifiers and date ranges before querying data', async () => {
+      await request(app.getHttpServer())
+        .get('/api/metrics?campaignId=not-a-uuid')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/api/metrics/summary?from=invalid-date&to=2026-12-31')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/api/metrics/summary?from=2026-12-31&to=2026-01-01')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/not-a-uuid?${range}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+    });
+
+    it('upserts one metric per campaign and date atomically', async () => {
+      await metricsService.upsertDailyMetric({
+        campaignId: campaigns[0].id,
+        date: '2020-04-02',
+        impressions: 100,
+        clicks: 10,
+        spend: 10,
+        conversions: 1,
+        revenue: 20,
+      });
+
+      const updated = await metricsService.upsertDailyMetric({
+        campaignId: campaigns[0].id,
+        date: '2020-04-02',
+        impressions: 200,
+        clicks: 20,
+        spend: 30,
+        conversions: 3,
+        revenue: 90,
+      });
+
+      const count = await metricRepo.count({
+        where: { campaignId: campaigns[0].id, date: '2020-04-02' },
+      });
+
+      expect(count).toBe(1);
+      expect(Number(updated.spend)).toBe(30);
+      expect(Number(updated.revenue)).toBe(90);
+    });
+
     it('keeps campaign, ad account, metric, and insight data scoped by store', async () => {
       const campaignsResponse = await request(app.getHttpServer())
         .get(`/api/campaigns?page=1&limit=20&storeId=${stores[0].id}`)
@@ -544,18 +758,36 @@ describe('Current tenant/store security E2E', () => {
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(404);
 
+      await request(app.getHttpServer())
+        .get(`/api/campaigns/${campaigns[1].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .expect(404);
+
       const adAccountsResponse = await request(app.getHttpServer())
         .get(`/api/ad-accounts?storeId=${stores[0].id}`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(200);
-      expect(adAccountsResponse.body.map((account: AdAccount) => account.id)).toEqual([
-        adAccounts[0].id,
-      ]);
-      expect(adAccountsResponse.body[0]).not.toHaveProperty('accessToken');
+      expect(adAccountsResponse.body.map((account: AdAccount) => account.id)).toEqual(
+        expect.arrayContaining([adAccounts[0].id, adAccounts[2].id]),
+      );
+      expect(adAccountsResponse.body).toHaveLength(2);
+      expect(adAccountsResponse.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: adAccounts[2].id, active: false }),
+        ]),
+      );
+      for (const account of adAccountsResponse.body) {
+        expect(account).not.toHaveProperty('accessToken');
+      }
 
       await request(app.getHttpServer())
         .get(`/api/ad-accounts/${adAccounts[1].id}`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .get(`/api/ad-accounts/${adAccounts[1].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
         .expect(404);
 
       const metricsSummary = await request(app.getHttpServer())
@@ -570,6 +802,11 @@ describe('Current tenant/store security E2E', () => {
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(404);
 
+      await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/${campaigns[1].id}/aggregate?${range}`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .expect(404);
+
       const insightsResponse = await request(app.getHttpServer())
         .get(`/api/insights?storeId=${stores[0].id}`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
@@ -577,8 +814,33 @@ describe('Current tenant/store security E2E', () => {
       expect(insightsResponse.body.map((insight: Insight) => insight.id)).toEqual([insightA.id]);
 
       await request(app.getHttpServer())
+        .get(`/api/insights/${insightB.id}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(404);
+
+      await request(app.getHttpServer())
         .patch(`/api/insights/${insightA.id}/resolve`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/api/campaigns/${campaigns[1].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/api/ad-accounts/${adAccounts[1].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/api/insights/${insightB.id}`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/${campaigns[1].id}?${range}`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
         .expect(200);
     });
 

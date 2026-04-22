@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
 
 export class ConnectMetaIntegrationDto {
@@ -111,9 +111,8 @@ export class CreateMetaCampaignDto {
   @MaxLength(2)
   country: string;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
-  @MaxLength(64)
   adAccountId: string;
 
   @IsString()
@@ -166,6 +165,7 @@ export interface CreateMetaCampaignResponseDto {
   adId: string;
   status: 'CREATED';
   executionStatus?: 'ACTIVE';
+  initialStatus?: 'PAUSED' | 'ACTIVE';
   storeId: string;
   adAccountId: string;
   platform: 'META';
@@ -203,54 +203,56 @@ export interface MetaSyncPlan {
 // ─────────────────────────────────────────────────────────
 
 export class RetryPartialCampaignDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(1000)
-  accessToken: string;
+  accessToken?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(64)
-  adAccountExternalId: string;
+  adAccountExternalId?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(64)
-  pageId: string;
+  pageId?: string;
 
+  @IsOptional()
   @IsUrl({ require_protocol: true })
-  @IsNotEmpty()
   @MaxLength(1000)
-  destinationUrl: string;
+  destinationUrl?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(64)
-  objective: string;
+  objective?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(120)
-  name: string;
+  name?: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(1)
-  dailyBudget: number;
+  dailyBudget?: number;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(2)
-  country: string;
+  country?: string;
 
+  @IsOptional()
   @IsString()
   @IsIn(['ACTIVE', 'PAUSED'])
-  initialStatus: 'ACTIVE' | 'PAUSED';
+  initialStatus?: 'ACTIVE' | 'PAUSED';
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(500)
-  message: string;
+  message?: string;
 
   @IsOptional()
   @IsString()
@@ -274,13 +276,13 @@ export class RetryPartialCampaignDto {
 }
 
 export class CleanupPartialResourcesDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(1000)
-  accessToken: string;
+  accessToken?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(64)
-  adAccountExternalId: string;
+  adAccountExternalId?: string;
 }

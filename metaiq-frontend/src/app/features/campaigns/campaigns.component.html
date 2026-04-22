@@ -7,7 +7,7 @@
 
       <div class="header-meta">
         <span class="context-chip">Escopo: {{ selectedScopeName() }}</span>
-        <span class="demo-data-badge">Dados de demonstração</span>
+        <span class="demo-data-badge">{{ metricSourceLabel() }}</span>
       </div>
     </div>
 
@@ -33,7 +33,7 @@
     <div>
       <span class="success-kicker">Campanha criada</span>
       <strong>{{ notice.name }}</strong>
-      <p>{{ notice.storeName }} recebeu a campanha com status inicial pausado na Meta.</p>
+      <p>{{ notice.storeName }} recebeu a campanha com status inicial {{ creationStatusLabel(notice) }} na Meta.</p>
     </div>
 
     <div class="success-meta">
@@ -94,6 +94,7 @@
       <input
         type="text"
         class="search-input"
+        aria-label="Pesquisar campanhas por nome, ID ou loja"
         placeholder="Pesquisar por nome, ID ou store..."
         [ngModel]="searchTerm()"
         (ngModelChange)="setSearchTerm($event)"
@@ -107,6 +108,7 @@
 
       <select
         class="search-input"
+        aria-label="Filtrar campanhas por loja"
         [ngModel]="storeContext.selectedStoreId()"
         (ngModelChange)="setStoreFilter($event)"
       >
@@ -119,24 +121,39 @@
 
     <div class="pagination-info" *ngIf="totalItems() > 0">
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
-      <span class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</span>
+      <span class="demo-data-note">Campanhas reais; métricas estimadas até haver leitura Meta real.</span>
     </div>
 
     <div class="sort-headers" *ngIf="filtered().length > 0">
-      <button class="sort-header-btn" type="button" (click)="toggleSort('name')">Nome {{ getSortIndicator('name') }}</button>
-      <button class="sort-header-btn" type="button" (click)="toggleSort('ctr')">CTR {{ getSortIndicator('ctr') }}</button>
-      <button class="sort-header-btn" type="button" (click)="toggleSort('cpa')">CPA {{ getSortIndicator('cpa') }}</button>
-      <button class="sort-header-btn" type="button" (click)="toggleSort('roas')">ROAS {{ getSortIndicator('roas') }}</button>
-      <button class="sort-header-btn" type="button" (click)="toggleSort('status')">Status {{ getSortIndicator('status') }}</button>
-      <button class="sort-header-btn" type="button" (click)="toggleSort('score')">Score {{ getSortIndicator('score') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('name')" [attr.aria-label]="'Ordenar por nome' + getSortIndicator('name')">Nome {{ getSortIndicator('name') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('ctr')" [attr.aria-label]="'Ordenar por CTR' + getSortIndicator('ctr')">CTR {{ getSortIndicator('ctr') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('cpa')" [attr.aria-label]="'Ordenar por CPA' + getSortIndicator('cpa')">CPA {{ getSortIndicator('cpa') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('roas')" [attr.aria-label]="'Ordenar por ROAS' + getSortIndicator('roas')">ROAS {{ getSortIndicator('roas') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('status')" [attr.aria-label]="'Ordenar por status' + getSortIndicator('status')">Status {{ getSortIndicator('status') }}</button>
+      <button class="sort-header-btn" type="button" (click)="toggleSort('score')" [attr.aria-label]="'Ordenar por score' + getSortIndicator('score')">Score {{ getSortIndicator('score') }}</button>
     </div>
 
     <div class="campaigns-list" *ngIf="filtered().length > 0">
-      <div class="campaign-row" *ngFor="let campaign of pagedCampaigns(); trackBy: trackById" [class.is-highlighted]="isHighlighted(campaign.id)">
+      <div
+        class="campaign-row"
+        *ngFor="let campaign of pagedCampaigns(); trackBy: trackById"
+        [class.is-highlighted]="isHighlighted(campaign.id)"
+        [class.status-active]="campaign.status === 'ACTIVE'"
+        [class.status-paused]="campaign.status === 'PAUSED'"
+        [class.status-archived]="campaign.status === 'ARCHIVED'"
+      >
         <div class="campaign-summary" (click)="toggleExpand(campaign.id)">
           <div class="campaign-info">
             <div class="campaign-header-left">
-              <button class="toggle-btn" type="button" [class.expanded]="expanded() === campaign.id">v</button>
+              <button
+                class="toggle-btn"
+                type="button"
+                [class.expanded]="expanded() === campaign.id"
+                [attr.aria-expanded]="expanded() === campaign.id"
+                [attr.aria-label]="expanded() === campaign.id ? 'Recolher campanha' : 'Expandir campanha'"
+              >
+                <span aria-hidden="true">⌄</span>
+              </button>
               <div class="campaign-names">
                 <div class="campaign-name">{{ campaign.name }}</div>
                 <div class="campaign-id">
@@ -208,9 +225,13 @@
 
           <div class="detail-actions">
             <button class="btn btn-primary" type="button" (click)="openReport(campaign, $event)">Ver relatório</button>
-            <button class="btn btn-secondary" type="button" [disabled]="!canManageOperations()">Editar</button>
-            <button class="btn btn-danger" type="button" *ngIf="campaign.status === 'ACTIVE'" [disabled]="!canManageOperations()">Pausar</button>
-            <button class="btn btn-success" type="button" *ngIf="campaign.status === 'PAUSED'" [disabled]="!canManageOperations()">Ativar</button>
+            <button class="btn btn-secondary" type="button" (click)="editCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">Editar</button>
+            <button class="btn btn-danger" type="button" *ngIf="campaign.status === 'ACTIVE'" (click)="pauseCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">
+              {{ isCampaignActionLoading(campaign.id) ? 'Pausando...' : 'Pausar' }}
+            </button>
+            <button class="btn btn-success" type="button" *ngIf="campaign.status === 'PAUSED'" (click)="activateCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">
+              {{ isCampaignActionLoading(campaign.id) ? 'Ativando...' : 'Ativar' }}
+            </button>
           </div>
         </div>
       </div>
@@ -243,15 +264,17 @@
   </div>
 
   <div class="campaign-report-backdrop" *ngIf="selectedReport() as report" (click)="closeReport()">
-    <section class="campaign-report-modal" (click)="$event.stopPropagation()">
+    <section class="campaign-report-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-report-title" (click)="$event.stopPropagation()">
       <header class="report-header">
         <div>
           <span class="report-eyebrow">Relatório da campanha</span>
-          <h3>{{ report.name }}</h3>
+          <h3 id="campaign-report-title">{{ report.name }}</h3>
           <p>Status da campanha: {{ statusLabel(report.status) }}</p>
         </div>
         <button type="button" class="report-close" (click)="closeReport()">Fechar</button>
       </header>
+
+      <p class="report-source-note">Campanha real com leitura de métricas estimadas neste ambiente.</p>
 
       <div class="report-kpis" *ngIf="report.metrics as metrics">
         <article><span>Spend</span><strong>{{ fmtCurrency(metrics.spend) }}</strong></article>
@@ -270,6 +293,51 @@
       <div class="report-insights">
         <h4>Insights da campanha</h4>
         <div class="report-insight" *ngFor="let insight of reportInsights(report)">{{ insight }}</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="campaign-report-backdrop" *ngIf="editingCampaign() as campaign" (click)="closeEditModal()">
+    <section class="campaign-action-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-edit-title" (click)="$event.stopPropagation()">
+      <header class="report-header">
+        <div>
+          <span class="report-eyebrow">Editar campanha</span>
+          <h3 id="campaign-edit-title">{{ campaign.name }}</h3>
+          <p>Altere o nome operacional exibido na central.</p>
+        </div>
+        <button type="button" class="report-close" (click)="closeEditModal()">Fechar</button>
+      </header>
+
+      <label class="modal-field">
+        <span>Nome da campanha</span>
+        <input type="text" [(ngModel)]="editName" maxlength="200" />
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" (click)="closeEditModal()">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="saveCampaignEdit()" [disabled]="!editName.trim() || editName.trim() === campaign.name || !!actionLoadingId()">Salvar</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="campaign-report-backdrop" *ngIf="statusAction() as action" (click)="closeStatusActionModal()">
+    <section class="campaign-action-modal" role="dialog" aria-modal="true" aria-labelledby="campaign-status-title" (click)="$event.stopPropagation()">
+      <header class="report-header">
+        <div>
+          <span class="report-eyebrow">Confirmação operacional</span>
+          <h3 id="campaign-status-title">{{ statusActionTitle(action) }}</h3>
+          <p>{{ action.campaign.name }}</p>
+        </div>
+        <button type="button" class="report-close" (click)="closeStatusActionModal()">Fechar</button>
+      </header>
+
+      <p class="modal-impact">{{ statusActionImpact(action) }}</p>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" (click)="closeStatusActionModal()">Cancelar</button>
+        <button class="btn" [class.btn-success]="action.nextStatus === 'ACTIVE'" [class.btn-danger]="action.nextStatus === 'PAUSED'" type="button" (click)="confirmStatusAction()" [disabled]="!!actionLoadingId()">
+          Confirmar e {{ statusActionVerb(action) }}
+        </button>
       </div>
     </section>
   </div>

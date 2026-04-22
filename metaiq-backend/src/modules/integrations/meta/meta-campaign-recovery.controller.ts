@@ -50,7 +50,7 @@ export class MetaCampaignRecoveryController {
     @Param('executionId') executionId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.recoveryService.getExecutionStatus(executionId);
+    return this.recoveryService.getExecutionStatus(executionId, storeId, user);
   }
 
   /**
@@ -96,27 +96,7 @@ export class MetaCampaignRecoveryController {
     @Body() dto: RetryPartialCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.recoveryService.retryPartialCampaignCreation(
-      executionId,
-      dto.accessToken,
-      dto.adAccountExternalId,
-      {
-        name: dto.name,
-        adAccountId: '', // Não necessário aqui
-        dailyBudget: dto.dailyBudget,
-        objective: dto.objective,
-        country: dto.country,
-        initialStatus: dto.initialStatus,
-        message: dto.message,
-        cta: dto.cta,
-        imageUrl: dto.imageUrl,
-        headline: dto.headline,
-        description: dto.description,
-      },
-      '', // pageId - obter de outro lugar
-      dto.destinationUrl,
-      dto.objective,
-    );
+    return this.recoveryService.retryPartialCampaignCreation(executionId, dto, storeId, user);
   }
 
   /**
@@ -154,10 +134,6 @@ export class MetaCampaignRecoveryController {
     @Body() dto: CleanupPartialResourcesDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.recoveryService.cleanupPartialResources(
-      executionId,
-      dto.accessToken,
-      dto.adAccountExternalId,
-    );
+    return this.recoveryService.cleanupPartialResources(executionId, storeId, user);
   }
 }

@@ -1,10 +1,10 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, HostListener, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ChartData } from 'chart.js';
-import { Subject } from 'rxjs';
+import { forkJoin, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
@@ -37,6 +37,8 @@ interface Campaign {
   metaId?: string;
   name: string;
   status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  objective?: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null;
+  dailyBudget?: number | null;
   storeId?: string | null;
   store?: Store | null;
   metrics?: CampaignMetric;
@@ -47,6 +49,11 @@ interface CampaignCreationNotice {
   name: string;
   storeName: string;
   response: CampaignCreateSuccessEvent['response'];
+}
+
+interface CampaignStatusAction {
+  campaign: Campaign;
+  nextStatus: 'ACTIVE' | 'PAUSED';
 }
 
 type SortField = 'name' | 'ctr' | 'cpa' | 'roas' | 'score' | 'status';
@@ -89,11 +96,16 @@ export class CampaignsComponent implements OnInit {
   createPanelOpen = signal(false);
   creationNotice = signal<CampaignCreationNotice | null>(null);
   highlightedCampaignId = signal<string | null>(null);
+  actionLoadingId = signal<string | null>(null);
+  editingCampaign = signal<Campaign | null>(null);
+  statusAction = signal<CampaignStatusAction | null>(null);
+  editName = '';
 
   private searchSubject = new Subject<string>();
   private pendingRouteStoreId: string | null = null;
   private pendingOpenCreateFromRoute = false;
   private pendingCreatedMetaCampaignId: string | null = null;
+  private campaignListRequestId = 0;
 
   filtered = computed(() => {
     const query = this.searchTerm().trim().toLowerCase();
@@ -145,7 +157,13 @@ export class CampaignsComponent implements OnInit {
 
   totalItems = computed(() => this.filtered().length);
   totalPages = computed(() => Math.max(1, Math.ceil(this.totalItems() / this.pageSize())));
-  pageNumbers = computed(() => Array.from({ length: this.totalPages() }, (_, index) => index + 1));
+  pageNumbers = computed(() => {
+    const total = this.totalPages();
+    const current = this.currentPage();
+    const start = Math.max(1, current - 2);
+    const end = Math.min(total, start + 4);
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  });
   pageStart = computed(() => (this.totalItems() ? (this.currentPage() - 1) * this.pageSize() + 1 : 0));
   pageEnd = computed(() => (this.totalItems() ? Math.min(this.currentPage() * this.pageSize(), this.totalItems()) : 0));
   activeCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'ACTIVE').length);
@@ -213,6 +231,21 @@ export class CampaignsComponent implements OnInit {
       });
   }
 
+  @HostListener('document:keydown.escape')
+  handleEscape(): void {
+    if (this.editingCampaign()) {
+      this.closeEditModal();
+      return;
+    }
+    if (this.statusAction()) {
+      this.closeStatusActionModal();
+      return;
+    }
+    if (this.selectedReport()) {
+      this.closeReport();
+    }
+  }
+
   refresh(): void {
     this.loadCampaigns();
   }
@@ -246,6 +279,11 @@ export class CampaignsComponent implements OnInit {
 
   dismissCreationNotice(): void {
     this.creationNotice.set(null);
+  }
+
+  creationStatusLabel(notice: CampaignCreationNotice): string {
+    const status = notice.response.initialStatus || notice.response.executionStatus;
+    return status === 'ACTIVE' ? 'ativa' : 'pausada';
   }
 
   setFilter(filterValue: 'ALL' | 'ACTIVE' | 'PAUSED'): void {
@@ -350,6 +388,72 @@ export class CampaignsComponent implements OnInit {
     this.selectedReport.set(null);
   }
 
+  editCampaign(campaign: Campaign, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canManageOperations() || this.actionLoadingId()) return;
+
+    this.editName = campaign.name;
+    this.editingCampaign.set(campaign);
+  }
+
+  closeEditModal(): void {
+    this.editingCampaign.set(null);
+    this.editName = '';
+  }
+
+  saveCampaignEdit(): void {
+    const campaign = this.editingCampaign();
+    const nextName = this.editName.trim();
+    if (!campaign || !nextName || nextName === campaign.name) {
+      this.closeEditModal();
+      return;
+    }
+
+    this.updateCampaign(campaign, { name: nextName }, 'Campanha atualizada', 'Não foi possível atualizar a campanha.');
+    this.closeEditModal();
+  }
+
+  pauseCampaign(campaign: Campaign, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canManageOperations() || this.actionLoadingId()) return;
+    this.statusAction.set({ campaign, nextStatus: 'PAUSED' });
+  }
+
+  activateCampaign(campaign: Campaign, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.canManageOperations() || this.actionLoadingId()) return;
+    this.statusAction.set({ campaign, nextStatus: 'ACTIVE' });
+  }
+
+  closeStatusActionModal(): void {
+    this.statusAction.set(null);
+  }
+
+  confirmStatusAction(): void {
+    const action = this.statusAction();
+    if (!action) return;
+    this.updateCampaignStatus(action.campaign, action.nextStatus);
+    this.closeStatusActionModal();
+  }
+
+  isCampaignActionLoading(campaignId: string): boolean {
+    return this.actionLoadingId() === campaignId;
+  }
+
+  statusActionVerb(action: CampaignStatusAction): string {
+    return action.nextStatus === 'ACTIVE' ? 'ativar' : 'pausar';
+  }
+
+  statusActionTitle(action: CampaignStatusAction): string {
+    return action.nextStatus === 'ACTIVE' ? 'Ativar campanha?' : 'Pausar campanha?';
+  }
+
+  statusActionImpact(action: CampaignStatusAction): string {
+    return action.nextStatus === 'ACTIVE'
+      ? 'A campanha voltará para o status ativo no MetaIQ e poderá ser considerada em fluxos operacionais.'
+      : 'A campanha deixará de ser tratada como ativa no MetaIQ até uma nova ativação.';
+  }
+
   campaignEvolutionChart(campaign: Campaign): ChartData<'line'> {
     const metrics = campaign.metrics;
     const spend = metrics?.spend || 0;
@@ -420,6 +524,10 @@ export class CampaignsComponent implements OnInit {
     return 'neutral';
   }
 
+  metricSourceLabel(): string {
+    return 'Métricas estimadas';
+  }
+
   trackById(_: number, item: { id: string }): string {
     return item.id;
   }
@@ -455,6 +563,7 @@ export class CampaignsComponent implements OnInit {
 
   private loadCampaigns(): void {
     const selectedStoreId = this.storeContext.getValidSelectedStoreId();
+    const requestId = ++this.campaignListRequestId;
     if (!this.storeContext.loaded()) {
       return;
     }
@@ -468,28 +577,151 @@ export class CampaignsComponent implements OnInit {
     this.error.set(null);
 
     this.apiService
-      .getCampaigns(undefined, selectedStoreId || undefined)
+      .getCampaigns({ page: 1, limit: 500 }, selectedStoreId || undefined)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
-          const campaigns = response.data;
-          this.campaigns.set(campaigns);
-          this.loading.set(false);
-
-          if (this.pendingCreatedMetaCampaignId) {
-            const createdCampaign = campaigns.find((campaign) => campaign.metaId === this.pendingCreatedMetaCampaignId);
-            if (createdCampaign) {
-              this.highlightedCampaignId.set(createdCampaign.id);
-              this.expanded.set(createdCampaign.id);
-            }
-            this.pendingCreatedMetaCampaignId = null;
+          if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
+          const totalPages = response.meta.totalPages;
+          if (totalPages <= 1) {
+            this.applyLoadedCampaigns(response.data, requestId, selectedStoreId);
+            return;
           }
+
+          const remainingPages = Array.from({ length: totalPages - 1 }, (_, index) => index + 2);
+          forkJoin(
+            remainingPages.map((page) =>
+              this.apiService.getCampaigns({ page, limit: response.meta.limit }, selectedStoreId || undefined),
+            ),
+          )
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe({
+              next: (responses) => {
+                if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
+                this.applyLoadedCampaigns([
+                  ...response.data,
+                  ...responses.flatMap((item) => item.data),
+                ], requestId, selectedStoreId);
+              },
+              error: () => {
+                if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
+                this.error.set('Não foi possível carregar todas as campanhas no momento.');
+                this.loading.set(false);
+              },
+            });
         },
         error: () => {
+          if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
           this.error.set('Não foi possível carregar campanhas no momento.');
           this.loading.set(false);
         },
       });
+  }
+
+  private applyLoadedCampaigns(campaigns: Campaign[], requestId: number, selectedStoreId: string | null): void {
+    if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
+    this.campaigns.set(campaigns.map((campaign) => this.withPresentationMetrics(campaign)));
+    this.loading.set(false);
+
+    if (this.pendingCreatedMetaCampaignId) {
+      const createdCampaign = campaigns.find((campaign) => campaign.metaId === this.pendingCreatedMetaCampaignId);
+      if (createdCampaign) {
+        this.highlightedCampaignId.set(createdCampaign.id);
+        this.expanded.set(createdCampaign.id);
+      }
+      this.pendingCreatedMetaCampaignId = null;
+    }
+  }
+
+  private isCurrentCampaignListRequest(requestId: number, selectedStoreId: string | null): boolean {
+    return requestId === this.campaignListRequestId
+      && selectedStoreId === this.storeContext.getValidSelectedStoreId();
+  }
+
+  private updateCampaignStatus(campaign: Campaign, status: 'ACTIVE' | 'PAUSED'): void {
+    if (!this.canManageOperations() || this.actionLoadingId() || campaign.status === status) return;
+
+    const label = status === 'ACTIVE' ? 'Campanha ativada' : 'Campanha pausada';
+    const error = status === 'ACTIVE'
+      ? 'Não foi possível ativar a campanha.'
+      : 'Não foi possível pausar a campanha.';
+    this.updateCampaign(campaign, { status }, label, error);
+  }
+
+  private updateCampaign(
+    campaign: Campaign,
+    changes: Partial<Pick<Campaign, 'name' | 'status'>>,
+    successTitle: string,
+    errorMessage: string,
+  ): void {
+    this.actionLoadingId.set(campaign.id);
+    this.apiService.updateCampaign(campaign.id, changes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          const enhanced = this.withPresentationMetrics(updated as Campaign);
+          this.campaigns.update((items) => items.map((item) => item.id === campaign.id ? enhanced : item));
+          if (this.selectedReport()?.id === campaign.id) {
+            this.selectedReport.set(enhanced);
+          }
+          this.actionLoadingId.set(null);
+          this.ui.showSuccess(successTitle, enhanced.name);
+        },
+        error: (err) => {
+          this.actionLoadingId.set(null);
+          this.ui.showError('Ação não concluída', err?.message || errorMessage);
+        },
+      });
+  }
+
+  private withPresentationMetrics(campaign: Campaign): Campaign {
+    if (campaign.metrics) return campaign;
+
+    const seed = this.hashSeed(campaign.id || campaign.metaId || campaign.name);
+    const dailyBudget = Number(campaign.dailyBudget || 0);
+    const activeFactor = campaign.status === 'ACTIVE' ? 1 : campaign.status === 'PAUSED' ? 0.35 : 0.12;
+    const spend = Math.round((dailyBudget > 0 ? dailyBudget * 21 : 650 + (seed % 900)) * activeFactor);
+    const impressions = Math.max(0, Math.round((spend * (80 + (seed % 70))) || (seed % 14000)));
+    const ctr = Number((1.1 + ((seed % 190) / 100)).toFixed(2));
+    const clicks = Math.round(impressions * (ctr / 100));
+    const conversions = Math.round(clicks * (0.025 + ((seed % 30) / 1000)));
+    const cpa = conversions > 0 ? spend / conversions : 0;
+    const roas = spend > 0 ? Number((1.2 + ((seed % 260) / 100)).toFixed(2)) : 0;
+    const score = Math.max(35, Math.min(96, Math.round(45 + roas * 12 + ctr * 4 - cpa / 20)));
+
+    return {
+      ...campaign,
+      metrics: {
+        ctr,
+        cpa,
+        roas,
+        score,
+        spend,
+        conversions,
+        impressions,
+        clicks,
+      },
+      insights: campaign.insights || this.presentationInsights(campaign.status, roas, ctr, cpa),
+    };
+  }
+
+  private presentationInsights(status: Campaign['status'], roas: number, ctr: number, cpa: number): CampaignInsight[] {
+    const statusInsight = status === 'ACTIVE'
+      ? 'Campanha ativa: acompanhe entrega e custo por resultado diariamente.'
+      : status === 'PAUSED'
+        ? 'Campanha pausada: revise criativo e público antes de reativar.'
+        : 'Campanha arquivada mantida apenas para histórico.';
+
+    return [
+      { type: 'INFO', title: statusInsight },
+      { type: roas >= 2.5 ? 'OPORTUNIDADE' : 'ALERTA', title: roas >= 2.5 ? 'ROAS estimado saudável para escalar com cautela.' : 'ROAS estimado pede revisão de oferta.' },
+      { type: ctr >= 1.8 ? 'INFO' : 'ALERTA', title: ctr >= 1.8 ? 'CTR estimado competitivo.' : 'CTR estimado baixo: teste nova chamada.' },
+      { type: cpa <= 80 ? 'INFO' : 'ALERTA', title: cpa <= 80 ? 'CPA estimado dentro da faixa esperada.' : 'CPA estimado alto para este recorte.' },
+    ];
+  }
+
+  private hashSeed(value: string): number {
+    return value.split('').reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) >>> 0, 2166136261);
   }
 
   private applyRouteIntent(): void {

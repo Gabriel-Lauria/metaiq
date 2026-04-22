@@ -137,7 +137,7 @@ export class MetaGraphApiClient {
   }
 
   private logAxiosError(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'DELETE',
     url: string,
     payloadOrParams: Record<string, unknown> | undefined,
     error: unknown,

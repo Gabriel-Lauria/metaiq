@@ -21,7 +21,7 @@ class CampaignQueryDto extends PaginationDto {
 
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
 export class CampaignsController {
   constructor(private readonly campaignsService: CampaignsService) {}
 
@@ -34,7 +34,7 @@ export class CampaignsController {
   }
 
   @Get(':id')
-  @CheckOwnership('campaign')
+  @CheckOwnership('campaign', 'id')
   @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
@@ -54,7 +54,7 @@ export class CampaignsController {
 
   @Patch(':id')
   @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
-  @CheckOwnership('campaign')
+  @CheckOwnership('campaign', 'id')
   @UseGuards(OwnershipGuard)
   async update(
     @Param('id') id: string,

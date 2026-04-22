@@ -34,7 +34,7 @@ export class AdAccountsController {
    * Lista todas as contas do usuário
    */
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async findByUser(
     @CurrentUser() user: AuthenticatedUser,
     @Query('storeId') storeId?: string,
@@ -47,8 +47,8 @@ export class AdAccountsController {
    * Busca uma conta específica (com validação de ownership)
    */
   @Get(':id')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
-  @CheckOwnership('adAccount')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @CheckOwnership('adAccount', 'id')
   @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
@@ -62,7 +62,7 @@ export class AdAccountsController {
    * Cria uma nova conta de anúncios
    */
   @Post()
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async create(
     @Body() dto: CreateAdAccountDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -75,8 +75,8 @@ export class AdAccountsController {
    * Atualiza dados da conta
    */
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  @CheckOwnership('adAccount')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('adAccount', 'id')
   @UseGuards(OwnershipGuard)
   async update(
     @Param('id') id: string,
@@ -91,8 +91,8 @@ export class AdAccountsController {
    * Desativa a conta
    */
   @Delete(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  @CheckOwnership('adAccount')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('adAccount', 'id')
   @UseGuards(OwnershipGuard)
   async remove(
     @Param('id') id: string,
