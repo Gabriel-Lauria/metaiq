@@ -56,15 +56,83 @@ describe('AuthService token storage', () => {
     localStorage.setItem('accessToken', 'stale-token');
     const service = TestBed.inject(AuthService);
 
-    service.ensureAuthenticated().subscribe((authenticated) => {
+    service.initializeSession().subscribe((authenticated) => {
       expect(authenticated).toBeTrue();
       expect(service.getAccessToken()).toBe('access-token');
       expect(localStorage.getItem('accessToken')).toBeNull();
+      expect(service.isInitialized()).toBeTrue();
       done();
     });
 
     const request = httpMock.expectOne((req) => req.url.endsWith('/auth/refresh'));
     expect(request.request.withCredentials).toBeTrue();
     request.flush(authResponse);
+  });
+
+  it('clears local session and finishes initialization when refresh fails', (done) => {
+    const service = TestBed.inject(AuthService);
+
+    service.initializeSession().subscribe((authenticated) => {
+      expect(authenticated).toBeFalse();
+      expect(service.getAccessToken()).toBeNull();
+      expect(service.getCurrentUser()).toBeNull();
+      expect(service.isInitialized()).toBeTrue();
+      done();
+    });
+
+    const request = httpMock.expectOne((req) => req.url.endsWith('/auth/refresh'));
+    expect(request.request.withCredentials).toBeTrue();
+    request.flush({ message: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+  });
+
+  it('does not start a second refresh while session restoration is pending', () => {
+    const service = TestBed.inject(AuthService);
+
+    service.ensureAuthenticated().subscribe();
+    service.ensureAuthenticated().subscribe();
+
+    const requests = httpMock.match((req) => req.url.endsWith('/auth/refresh'));
+    expect(requests.length).toBe(1);
+    expect(requests[0].request.withCredentials).toBeTrue();
+    requests[0].flush(authResponse);
+  });
+
+  it('clears local and remote session on logout', () => {
+    const service = TestBed.inject(AuthService);
+
+    service.login({ email: 'admin@test.com', password: 'secret123' }).subscribe();
+    httpMock.expectOne((req) => req.url.endsWith('/auth/login')).flush(authResponse);
+
+    expect(service.getAccessToken()).toBe('access-token');
+
+    service.logout();
+
+    const logoutRequest = httpMock.expectOne((req) => req.url.endsWith('/auth/logout'));
+    expect(logoutRequest.request.withCredentials).toBeTrue();
+    expect(service.getAccessToken()).toBeNull();
+    expect(service.getCurrentUser()).toBeNull();
+    logoutRequest.flush({ success: true });
+  });
+
+  it('rejects unknown backend roles instead of falling back to an operational profile', () => {
+    const service = TestBed.inject(AuthService);
+
+    service.login({ email: 'admin@test.com', password: 'secret123' }).subscribe({
+      next: () => fail('login should fail for an unknown role'),
+      error: (error) => {
+        expect(error.message).toContain('Perfil de acesso inválido');
+        expect(service.getAccessToken()).toBeNull();
+        expect(service.getCurrentUser()).toBeNull();
+      },
+    });
+
+    const request = httpMock.expectOne((req) => req.url.endsWith('/auth/login'));
+    request.flush({
+      ...authResponse,
+      user: {
+        ...authResponse.user,
+        role: 'UNKNOWN_ROLE' as Role,
+      },
+    });
   });
 });

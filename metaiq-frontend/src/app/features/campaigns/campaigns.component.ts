@@ -316,7 +316,7 @@ export class CampaignsComponent implements OnInit {
   }
 
   canCreateCampaigns(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
 
   canManageOperations(): boolean {
@@ -326,7 +326,7 @@ export class CampaignsComponent implements OnInit {
   createButtonHint(): string {
     return this.canCreateCampaigns()
       ? 'Abrir builder de campanha'
-      : 'Criação real disponível para Operação e Plataforma.';
+      : 'Criação real disponível para Administração, Operação e Plataforma.';
   }
 
   creationOverviewLabel(): string {
@@ -754,7 +754,7 @@ export class CampaignsComponent implements OnInit {
       } else {
         this.ui.showWarning(
           'Criação indisponível',
-          'Seu perfil pode acompanhar campanhas, mas a criação real fica disponível para Operação.',
+          'Seu perfil pode acompanhar campanhas, mas a criação real fica disponível para Administração e Operação.',
         );
       }
     }

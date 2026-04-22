@@ -3,6 +3,7 @@ import { registerAs } from '@nestjs/config';
 export interface AppConfig {
   port: number;
   frontendUrl: string;
+  corsOrigins: string[];
   nodeEnv: string;
   cryptoSecret: string;
   enablePublicRegister: boolean;
@@ -19,6 +20,10 @@ function requireProductionSecret(name: string, fallback: string): string {
 export default registerAs('app', () => ({
   port: parseInt(process.env.PORT || '3004', 10),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:4200',
+  corsOrigins: (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:4200')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   nodeEnv: process.env.NODE_ENV || 'development',
   cryptoSecret: requireProductionSecret('CRYPTO_SECRET', 'replace-with-a-secure-secret'),
   enablePublicRegister: process.env.AUTH_ENABLE_PUBLIC_REGISTER === 'true',

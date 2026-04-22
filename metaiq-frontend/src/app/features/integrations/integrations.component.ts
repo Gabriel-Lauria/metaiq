@@ -68,7 +68,7 @@ export class IntegrationsComponent implements OnInit {
     this.error.set(null);
 
     const currentRole = this.authService.getCurrentRole();
-    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.MANAGER].includes(currentRole)
+    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(currentRole)
       ? this.api.getStores()
       : this.api.getAccessibleStores();
 
@@ -109,6 +109,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   connect(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.savingStoreId.set(store.id);
     this.api.startMetaOAuth(store.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -126,6 +127,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   disconnect(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.savingStoreId.set(store.id);
     this.api.disconnectMetaIntegration(store.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -144,6 +146,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   fetchAdAccounts(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.loadingAccounts.set(true);
     this.api.getMetaAdAccounts(store.id)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -163,6 +166,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   syncAdAccounts(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.loadingAccounts.set(true);
     this.mergeIntegration({
       ...(this.selectedIntegration() as StoreIntegration),
@@ -206,11 +210,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   canManageIntegrations(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
-  }
-
-  isOperational(): boolean {
-    return this.authService.getCurrentRole() === Role.OPERATIONAL;
+    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
 
   isManager(): boolean {
@@ -301,6 +301,7 @@ export class IntegrationsComponent implements OnInit {
   }
 
   savePage(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     const page = this.pages().find((item) => item.id === this.pageForm.pageId);
     if (!page) {
       this.ui.showError('Página obrigatória', 'Selecione uma página disponível para a integração.');
@@ -324,10 +325,12 @@ export class IntegrationsComponent implements OnInit {
   }
 
   refreshPages(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.loadPagesIfNeeded(store.id, true);
   }
 
   goToCampaigns(store: Store): void {
+    if (!this.canManageIntegrations()) return;
     this.router.navigate(['/campaigns'], {
       queryParams: {
         openCreate: 1,

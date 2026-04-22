@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { LoggerService } from '../services/logger.service';
 
 @Injectable()
 @Catch()
@@ -16,7 +17,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
   private readonly isProduction: boolean;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    private structuredLogger: LoggerService,
+  ) {
     this.isProduction = this.configService.get<string>('app.nodeEnv') === 'production';
   }
 
@@ -48,18 +52,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error = exception.name;
     }
 
-    // Log error for debugging (but don't expose sensitive info)
-    this.logger.error(
-      `HTTP ${status} Error: ${message}`,
-      {
-        url: request.url,
-        method: request.method,
-        ip: request.ip,
-        userAgent: request.get('User-Agent'),
-        error: exception instanceof Error ? exception.stack : String(exception),
-        details: extra,
-      },
-    );
+    const errorMetadata = {
+      requestId: request.requestId,
+      status,
+      url: request.url,
+      method: request.method,
+      ip: request.ip,
+      userAgent: request.get('User-Agent'),
+      details: extra,
+    };
+
+    if (this.structuredLogger) {
+      this.structuredLogger.error(`HTTP ${status} Error`, exception, errorMetadata);
+    } else {
+      this.logger.error(`HTTP ${status} Error: ${message}`, errorMetadata);
+    }
 
     // Don't expose stack traces in production
     const errorResponse = {
@@ -70,6 +77,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error,
       timestamp: new Date().toISOString(),
       path: request.url,
+      requestId: request.requestId,
       ...(this.isProduction ? {} : extra),
     };
 

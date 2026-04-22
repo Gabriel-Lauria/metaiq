@@ -20,12 +20,9 @@
   --shadow-md: 0 22px 60px rgba(15, 23, 42, 0.08);
   color: #0f172a;
   position: relative;
-  padding: 6px;
+  padding: 0;
   border-radius: 12px;
-  background:
-    radial-gradient(circle at 12% 0%, rgba(249, 115, 22, 0.13), transparent 28%),
-    radial-gradient(circle at 86% 8%, rgba(15, 118, 110, 0.13), transparent 30%),
-    linear-gradient(180deg, #f7f9fb 0%, #ffffff 46%);
+  background: transparent;
 }
 
 .campaigns-header,
@@ -181,8 +178,8 @@
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
 }
 
 .overview-card {
@@ -257,7 +254,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 14px;
+  padding: 12px;
   border-color: var(--line);
   box-shadow: var(--shadow-sm);
 }
@@ -393,7 +390,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 20px 18px 24px;
+  padding: 16px 18px 16px 24px;
   cursor: pointer;
   background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
 }
@@ -438,7 +435,7 @@
 
 .campaign-id {
   color: var(--muted);
-  font-family: 'Space Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -474,7 +471,7 @@
 .detail-value,
 .score-num {
   color: #0f172a;
-  font-family: 'Space Mono', monospace;
+  font-family: var(--font-mono);
   font-weight: 800;
 }
 

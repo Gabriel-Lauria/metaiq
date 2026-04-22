@@ -41,6 +41,14 @@ const commonOptions = {
 
 const databaseType = getEnv('DB_TYPE', 'DATABASE_TYPE') || 'postgres';
 
+if (process.env.NODE_ENV === 'production' && databaseType !== 'postgres') {
+  throw new Error('DB_TYPE must be postgres in production');
+}
+
+if (process.env.NODE_ENV === 'production' && parseBoolean(process.env.TYPEORM_SYNCHRONIZE, false)) {
+  throw new Error('TYPEORM_SYNCHRONIZE must be false in production');
+}
+
 const postgresOptions = (): DataSourceOptions => {
   const url = getEnv('DB_URL', 'DATABASE_URL');
 

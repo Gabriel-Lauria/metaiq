@@ -1,6 +1,8 @@
 .metrics-page {
   display: grid;
   gap: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .page-header-row,
@@ -18,7 +20,8 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: 24px;
+  padding: 22px 24px;
+  box-shadow: var(--shadow-sm);
 }
 
 .eyebrow {
@@ -59,8 +62,8 @@ h1 {
 
 .filters-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 12px;
 }
 
 .filters-grid label {
@@ -73,7 +76,7 @@ h1 {
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
 }
 
 .filters-grid input,
@@ -90,7 +93,7 @@ h1 {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .chart-grid {
@@ -102,7 +105,9 @@ h1 {
 .chart-card {
   display: grid;
   gap: 16px;
-  padding: 20px;
+  min-width: 0;
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
 }
 
 .chart-card-wide {
@@ -123,6 +128,7 @@ h1 {
   display: grid;
   gap: 18px;
   padding: 24px;
+  box-shadow: var(--shadow-sm);
 }
 
 .section-header {
@@ -134,17 +140,21 @@ h1 {
 
 .table-wrapper {
   overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 table {
+  min-width: 820px;
   width: 100%;
   border-collapse: collapse;
+  background: #ffffff;
 }
 
 thead th {
   padding: 14px 12px;
   border-bottom: 1px solid var(--border);
-  color: var(--text-muted);
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 800;
   text-align: left;
@@ -155,6 +165,13 @@ tbody td {
   padding: 16px 12px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
   color: var(--text);
+  vertical-align: top;
+}
+
+tbody td:first-child {
+  max-width: 280px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .insights-grid {

@@ -223,8 +223,8 @@ export class MetaSyncService {
 
   private async validateCanManage(storeId: string, user: AuthenticatedUser): Promise<void> {
     await this.accessScope.validateStoreAccess(user, storeId);
-    if (![Role.PLATFORM_ADMIN, Role.OPERATIONAL].includes(user.role)) {
-      throw new ForbiddenException('Apenas PLATFORM_ADMIN e OPERATIONAL podem gerenciar integrações com Meta');
+    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL].includes(user.role)) {
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN e OPERATIONAL podem gerenciar integrações com Meta');
     }
   }
 

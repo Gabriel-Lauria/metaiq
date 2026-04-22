@@ -41,7 +41,7 @@ export class MetaIntegrationController {
   }
 
   @Get('oauth/start')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   startOAuth(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -50,7 +50,7 @@ export class MetaIntegrationController {
   }
 
   @Get('sync-plan')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   getSyncPlan(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -59,7 +59,7 @@ export class MetaIntegrationController {
   }
 
   @Get('pages')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   getPages(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -68,7 +68,7 @@ export class MetaIntegrationController {
   }
 
   @Patch('page')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   updatePage(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -78,7 +78,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   getAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -87,7 +87,7 @@ export class MetaIntegrationController {
   }
 
   @Post('ad-accounts/sync')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   syncAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -97,7 +97,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts/:adAccountId/campaigns')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   getCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,
@@ -107,7 +107,7 @@ export class MetaIntegrationController {
   }
 
   @Post('ad-accounts/:adAccountId/campaigns/sync')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   syncCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,
@@ -118,7 +118,7 @@ export class MetaIntegrationController {
   }
 
   @Post('campaigns')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   createCampaign(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -129,7 +129,7 @@ export class MetaIntegrationController {
   }
 
   @Post('connect')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   connect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -139,7 +139,7 @@ export class MetaIntegrationController {
   }
 
   @Patch('status')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   updateStatus(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -149,7 +149,7 @@ export class MetaIntegrationController {
   }
 
   @Delete()
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   disconnect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,

@@ -165,7 +165,7 @@ export class InsightsService {
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
       .where('insight.id = :id', { id });
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyInsightScope(query, 'campaign', user);
     const insight = await query.getOne();
 
     if (!insight) {
@@ -188,7 +188,7 @@ export class InsightsService {
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign')
       .where('insight.id = :id', { id });
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyInsightScope(query, 'campaign', user);
     const insight = await query.getOne();
 
     if (!insight) {
@@ -272,7 +272,7 @@ export class InsightsService {
     const query = this.insightRepo
       .createQueryBuilder('insight')
       .innerJoinAndSelect('insight.campaign', 'campaign');
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyInsightScope(query, 'campaign', user);
 
     if (filters.storeId) {
       await this.accessScope.validateStoreAccess(user, filters.storeId);

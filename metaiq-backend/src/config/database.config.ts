@@ -30,6 +30,21 @@ const getEnv = (...names: string[]): string | undefined => {
 };
 
 const dbType = (getEnv('DB_TYPE', 'DATABASE_TYPE') || 'postgres') as 'sqlite' | 'postgres';
+const synchronize = parseBoolean(
+  process.env.TYPEORM_SYNCHRONIZE,
+  false,
+);
+const migrationsRun = parseBoolean(process.env.TYPEORM_MIGRATIONS_RUN, false);
+
+if (process.env.NODE_ENV === 'production') {
+  if (dbType !== 'postgres') {
+    throw new Error('DB_TYPE must be postgres in production');
+  }
+
+  if (synchronize) {
+    throw new Error('TYPEORM_SYNCHRONIZE must be false in production');
+  }
+}
 
 export default registerAs('database', () => ({
   type: dbType,
@@ -43,9 +58,6 @@ export default registerAs('database', () => ({
   username: getEnv('DB_USER', 'POSTGRES_USER') || 'metaiq',
   password: getEnv('DB_PASSWORD', 'POSTGRES_PASSWORD') || 'metaiq',
   ssl: getEnv('DB_SSL', 'POSTGRES_SSL') === 'true' ? { rejectUnauthorized: false } : false,
-  synchronize: parseBoolean(
-    process.env.TYPEORM_SYNCHRONIZE,
-    false,
-  ),
-  migrationsRun: parseBoolean(process.env.TYPEORM_MIGRATIONS_RUN, false),
+  synchronize,
+  migrationsRun,
 }));

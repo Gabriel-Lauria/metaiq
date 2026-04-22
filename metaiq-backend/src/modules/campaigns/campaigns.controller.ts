@@ -44,7 +44,7 @@ export class CampaignsController {
   }
 
   @Post()
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   async create(
     @Body() dto: CreateCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
@@ -53,7 +53,7 @@ export class CampaignsController {
   }
 
   @Patch(':id')
-  @Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
   @CheckOwnership('campaign', 'id')
   @UseGuards(OwnershipGuard)
   async update(

@@ -81,7 +81,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async updateUser(
     @Param('id') id: string,
     @Request() req: any,
@@ -93,7 +93,7 @@ export class UsersController {
   }
 
   @Patch(':id/password')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async resetUserPassword(
     @Param('id') id: string,
     @Request() req: any,
@@ -105,7 +105,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async createUser(
     @Request() req: any,
     @Body() dto: CreateUserDto,
@@ -120,14 +120,14 @@ export class UsersController {
    * Lista todos os usuários
    */
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async findAll(@Request() req: any): Promise<Omit<User, 'password'>[]> {
     const users = await this.usersService.findAllForUser(req.user);
     return users.map(({ password: _password, ...user }) => user);
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
   async deleteUser(
     @Param('id') id: string,
     @Request() req: any,

@@ -121,7 +121,7 @@
           </div>
 
           <div class="ai-section-intro">
-            <p>Use a IA para ganhar velocidade no primeiro preenchimento. Ela ajuda com nome, objetivo, mensagem, headline, interesses e UTMs, sem alterar o payload real compatível com o backend.</p>
+            <p>Use a IA para ganhar velocidade no primeiro preenchimento. Ela ajuda com nome, público, estratégia, copy e orçamento, sem alterar o payload real compatível com o backend.</p>
             <div class="prompt-presets">
               <button class="prompt-preset" type="button" *ngFor="let preset of aiPromptPresets" (click)="applyPromptPreset(preset)">
                 {{ preset }}
@@ -131,7 +131,7 @@
 
           <div class="ai-workspace">
             <label class="form-field field-span-2">
-              <span>Prompt em linguagem natural</span>
+              <span>Descreva sua campanha</span>
               <textarea
                 [(ngModel)]="state.ui.aiPrompt"
                 (ngModelChange)="touchState()"
@@ -166,10 +166,17 @@
             </div>
           </div>
 
+          <div class="ai-detected-fields" *ngIf="state.ui.aiCreativeIdeas.length">
+            <span class="section-kicker">Ideias de criativo</span>
+            <div class="token-list">
+              <span class="token" *ngFor="let idea of state.ui.aiCreativeIdeas">{{ idea }}</span>
+            </div>
+          </div>
+
           <div class="ai-actions">
             <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar prompt</button>
             <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
-              {{ aiSuggesting() ? 'Gerando sugestões...' : 'Gerar sugestões' }}
+              {{ aiSuggesting() ? 'Gerando com IA...' : 'Gerar com IA' }}
             </button>
           </div>
 

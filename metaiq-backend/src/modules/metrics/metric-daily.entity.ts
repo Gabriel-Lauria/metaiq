@@ -4,7 +4,7 @@ import { Campaign } from '../campaigns/campaign.entity';
 @Entity('metrics_daily')
 @Index(['campaignId'])
 @Index(['date'])
-@Index(['campaignId', 'date'], { unique: true })
+@Index('IDX_metrics_daily_campaignId_date_unique', ['campaignId', 'date'], { unique: true })
 export class MetricDaily {
   @PrimaryGeneratedColumn('uuid')
   id: string;

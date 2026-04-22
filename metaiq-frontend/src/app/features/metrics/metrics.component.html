@@ -43,7 +43,7 @@
       Campanha
       <select [ngModel]="selectedCampaign()" (ngModelChange)="setCampaign($event)">
         <option value="Todas">Todas</option>
-        <option *ngFor="let campaign of allCampaigns()" [value]="campaign.name">{{ campaign.name }}</option>
+        <option *ngFor="let campaign of contextualCampaigns(); trackBy: trackById" [value]="campaign.name">{{ campaign.name }}</option>
       </select>
     </label>
   </div>

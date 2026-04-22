@@ -111,6 +111,7 @@ export interface CampaignBuilderState {
     aiApplied: boolean;
     aiDetectedFields: string[];
     aiLastSummary: string;
+    aiCreativeIdeas: string[];
   };
 }
 

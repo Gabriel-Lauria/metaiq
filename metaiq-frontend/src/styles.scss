@@ -12,12 +12,14 @@
   --danger: #dc2626;
   --warning: #f59e0b;
   --text: #0f172a;
-  --text-muted: #64748b;
-  --text-soft: #475569;
+  --text-muted: #475569;
+  --text-soft: #334155;
   --border: #e2e8f0;
   --shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 10px 28px rgba(15, 23, 42, 0.05);
   --radius: 20px;
-  --font-sans: 'DM Sans', sans-serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 
   /* Aliases para componentes mais antigos */
   --bg-primary: var(--bg-page);
@@ -86,7 +88,7 @@ html {
 
 body {
   min-height: 100%;
-  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-page);
   color: var(--text);
   line-height: 1.6;
@@ -94,6 +96,42 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.page-shell {
+  display: grid;
+  gap: 22px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.page-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.page-subtitle {
+  margin: 8px 0 0;
+  max-width: 720px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 body,
@@ -185,7 +223,7 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-surface);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-sm);
 }
 
 .section-title {
@@ -256,10 +294,12 @@ button {
 
 .ui-table {
   display: grid;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #ffffff;
+  box-shadow: var(--shadow-sm);
 }
 
 .ui-table-head,
@@ -268,10 +308,11 @@ button {
   gap: 12px;
   align-items: center;
   padding: 14px 16px;
+  min-width: 760px;
 }
 
 .ui-table-head {
-  color: var(--text-muted);
+  color: var(--text-soft);
   background: #f8fafc;
   font-size: 12px;
   font-weight: 800;
@@ -280,7 +321,24 @@ button {
 
 .ui-table-row {
   color: var(--text);
+  min-width: 760px;
+}
+
+.ui-table-row > *,
+.ui-table-head > * {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-table-row strong {
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .ui-table-row + .ui-table-row {

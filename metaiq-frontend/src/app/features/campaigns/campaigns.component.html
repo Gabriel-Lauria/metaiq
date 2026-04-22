@@ -14,10 +14,10 @@
     <div class="header-actions">
       <button class="btn btn-secondary" type="button" (click)="refresh()">Atualizar</button>
       <button
+        *ngIf="canCreateCampaigns()"
         class="btn btn-primary"
         type="button"
         (click)="openCreatePanel()"
-        [disabled]="!canCreateCampaigns()"
         [title]="createButtonHint()"
       >
         Nova campanha
@@ -26,7 +26,7 @@
   </div>
 
   <p class="permission-hint" *ngIf="!canCreateCampaigns()">
-    Seu perfil acompanha campanhas, mas a criação real fica disponível para Operação.
+    Seu perfil acompanha campanhas, mas a criação real fica disponível para Administração e Operação.
   </p>
 
   <section class="creation-success-banner" *ngIf="creationNotice() as notice">
@@ -225,11 +225,11 @@
 
           <div class="detail-actions">
             <button class="btn btn-primary" type="button" (click)="openReport(campaign, $event)">Ver relatório</button>
-            <button class="btn btn-secondary" type="button" (click)="editCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">Editar</button>
-            <button class="btn btn-danger" type="button" *ngIf="campaign.status === 'ACTIVE'" (click)="pauseCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">
+            <button class="btn btn-secondary" type="button" *ngIf="canManageOperations()" (click)="editCampaign(campaign, $event)" [disabled]="!!actionLoadingId()">Editar</button>
+            <button class="btn btn-danger" type="button" *ngIf="canManageOperations() && campaign.status === 'ACTIVE'" (click)="pauseCampaign(campaign, $event)" [disabled]="!!actionLoadingId()">
               {{ isCampaignActionLoading(campaign.id) ? 'Pausando...' : 'Pausar' }}
             </button>
-            <button class="btn btn-success" type="button" *ngIf="campaign.status === 'PAUSED'" (click)="activateCampaign(campaign, $event)" [disabled]="!canManageOperations() || !!actionLoadingId()">
+            <button class="btn btn-success" type="button" *ngIf="canManageOperations() && campaign.status === 'PAUSED'" (click)="activateCampaign(campaign, $event)" [disabled]="!!actionLoadingId()">
               {{ isCampaignActionLoading(campaign.id) ? 'Ativando...' : 'Ativar' }}
             </button>
           </div>

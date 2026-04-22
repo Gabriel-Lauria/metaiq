@@ -24,6 +24,7 @@ describe('InsightsService', () => {
 
   const mockAccessScopeService = {
     applyCampaignScope: jest.fn(async (query) => query),
+    applyInsightScope: jest.fn(async (query) => query),
   };
 
   beforeEach(async () => {

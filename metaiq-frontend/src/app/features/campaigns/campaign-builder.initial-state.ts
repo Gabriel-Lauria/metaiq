@@ -109,6 +109,7 @@ export function buildInitialCampaignBuilderState(now = new Date()): CampaignBuil
       aiApplied: false,
       aiDetectedFields: [],
       aiLastSummary: '',
+      aiCreativeIdeas: [],
     },
   };
 }

@@ -1,5 +1,5 @@
 import { Component, effect, inject, signal } from '@angular/core';
-import { AsyncPipe, DatePipe, NgIf } from '@angular/common';
+import { AsyncPipe, DatePipe, NgFor, NgIf } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { NotificationContainerComponent } from './core/components/notification-container.component';
@@ -9,12 +9,21 @@ import { roleLabel } from './core/role-labels';
 import { AuthService } from './core/services/auth.service';
 import { UiService } from './core/services/ui.service';
 
+interface MenuItem {
+  label: string;
+  route: string;
+  icon: string;
+  title: string;
+  roles: Role[];
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [
     AsyncPipe,
     DatePipe,
+    NgFor,
     NgIf,
     RouterLink,
     RouterOutlet,
@@ -36,6 +45,79 @@ export class AppComponent {
   today = new Date();
   sidebarOpen = signal(this.getSavedSidebarState());
   sidebarOverlayOpen = signal(false);
+  private readonly allAuthenticatedRoles = [
+    Role.PLATFORM_ADMIN,
+    Role.ADMIN,
+    Role.MANAGER,
+    Role.OPERATIONAL,
+    Role.CLIENT,
+  ];
+
+  private readonly menu: MenuItem[] = [
+    {
+      label: 'dashboard',
+      route: '/dashboard',
+      icon: 'D',
+      title: 'Dashboard',
+      roles: this.allAuthenticatedRoles,
+    },
+    {
+      label: 'Campanhas',
+      route: '/campaigns',
+      icon: 'C',
+      title: 'Campanhas',
+      roles: this.allAuthenticatedRoles,
+    },
+    {
+      label: 'Métricas',
+      route: '/metrics',
+      icon: 'M',
+      title: 'Métricas',
+      roles: this.allAuthenticatedRoles,
+    },
+    {
+      label: 'Insights',
+      route: '/insights',
+      icon: 'I',
+      title: 'Insights',
+      roles: this.allAuthenticatedRoles,
+    },
+    {
+      label: 'Resultados',
+      route: '/results',
+      icon: 'R',
+      title: 'Resultados',
+      roles: [Role.CLIENT],
+    },
+    {
+      label: 'Empresas',
+      route: '/admin/managers',
+      icon: 'E',
+      title: 'Empresas',
+      roles: [Role.PLATFORM_ADMIN],
+    },
+    {
+      label: 'Lojas',
+      route: '/manager/stores',
+      icon: 'S',
+      title: 'Lojas',
+      roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER],
+    },
+    {
+      label: 'Usuários',
+      route: '/manager/users',
+      icon: 'U',
+      title: 'Usuários',
+      roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER],
+    },
+    {
+      label: 'Integrações',
+      route: '/manager/integrations',
+      icon: 'I',
+      title: 'Integrações',
+      roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL],
+    },
+  ];
 
   constructor() {
     this.router.events
@@ -115,32 +197,13 @@ export class AppComponent {
     return this.router.url === route;
   }
 
-  canSeeCampaigns(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT]);
-  }
-
-  canSeeManagers(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN]);
-  }
-
-  canSeeTenantManagement(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER]);
-  }
-
-  canSeeIntegrations(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.OPERATIONAL]);
-  }
-
-  canSeeOperationalReadouts(): boolean {
-    return this.authService.hasAnyRole([Role.OPERATIONAL]);
-  }
-
-  canSeeMetrics(): boolean {
-    return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT]);
-  }
-
-  canSeeClientResults(): boolean {
-    return this.authService.hasAnyRole([Role.CLIENT]);
+  getMenu(): MenuItem[] {
+    return this.menu
+      .filter((item) => this.authService.hasAnyRole(item.roles))
+      .map((item) => ({
+        ...item,
+        label: item.route === '/dashboard' ? this.dashboardLabel() : item.label,
+      }));
   }
 
   dashboardLabel(): string {

@@ -12,6 +12,17 @@ import { Injectable, Logger } from '@nestjs/common';
 @Injectable()
 export class LoggerService {
   private readonly logger = new Logger('MetaIQ');
+  private readonly sensitiveKeys = [
+    'password',
+    'token',
+    'accessToken',
+    'refreshToken',
+    'authorization',
+    'cookie',
+    'secret',
+    'apiKey',
+    'metaAccessToken',
+  ];
 
   /**
    * Log de informação
@@ -21,7 +32,7 @@ export class LoggerService {
       timestamp: new Date().toISOString(),
       level: 'INFO',
       message,
-      ...(metadata && { metadata }),
+      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.log(JSON.stringify(log));
   }
@@ -34,7 +45,7 @@ export class LoggerService {
       timestamp: new Date().toISOString(),
       level: 'WARN',
       message,
-      ...(metadata && { metadata }),
+      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.warn(JSON.stringify(log));
   }
@@ -50,9 +61,9 @@ export class LoggerService {
       error: error ? {
         name: error.name,
         message: error.message,
-        stack: error.stack,
+        ...(process.env.NODE_ENV === 'production' ? {} : { stack: error.stack }),
       } : undefined,
-      ...(metadata && { metadata }),
+      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.error(JSON.stringify(log));
   }
@@ -66,7 +77,7 @@ export class LoggerService {
         timestamp: new Date().toISOString(),
         level: 'DEBUG',
         message,
-        ...(metadata && { metadata }),
+        ...(metadata && { metadata: this.sanitize(metadata) }),
       };
       this.logger.debug(JSON.stringify(log));
     }
@@ -81,7 +92,7 @@ export class LoggerService {
       level: 'METRIC',
       operation,
       durationMs,
-      ...(metadata && { metadata }),
+      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.log(JSON.stringify(log));
   }
@@ -107,5 +118,27 @@ export class LoggerService {
         this.metric(operation, duration, { success, ...endMetadata });
       },
     };
+  }
+
+  private sanitize(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitize(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => [
+        key,
+        this.isSensitiveKey(key) ? '[REDACTED]' : this.sanitize(nestedValue),
+      ]),
+    );
+  }
+
+  private isSensitiveKey(key: string): boolean {
+    const normalized = key.toLowerCase();
+    return this.sensitiveKeys.some((sensitive) => normalized.includes(sensitive.toLowerCase()));
   }
 }

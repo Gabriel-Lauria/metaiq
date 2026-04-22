@@ -169,8 +169,20 @@ export class MetricsComponent {
     return store?.name || 'Todas as lojas';
   });
 
+  readonly contextualCampaigns = computed(() => {
+    const stores = this.storeContext.stores();
+    if (!stores.length) {
+      return this.allCampaigns();
+    }
+
+    return this.allCampaigns().map((campaign, index) => ({
+      ...campaign,
+      storeId: stores[index % stores.length]?.id ?? campaign.storeId,
+    }));
+  });
+
   readonly filteredCampaigns = computed(() =>
-    this.allCampaigns().filter((campaign) => {
+    this.contextualCampaigns().filter((campaign) => {
       const matchesStore = !this.selectedStore() || campaign.storeId === this.selectedStore();
       const matchesAccount = this.selectedAccount() === 'Todas' || campaign.account === this.selectedAccount();
       const matchesCampaign = this.selectedCampaign() === 'Todas' || campaign.name === this.selectedCampaign();
@@ -347,12 +359,8 @@ export class MetricsComponent {
 
   constructor() {
     effect(() => {
-      const stores = this.storeContext.stores();
-      if (!stores.length || this.selectedStore()) {
-        return;
-      }
-
-      this.selectedStore.set(this.storeContext.selectedStoreId() || stores[0]?.id || '');
+      if (this.selectedStore() || this.storeContext.selectedStoreId()) return;
+      this.selectedStore.set('');
     });
   }
 

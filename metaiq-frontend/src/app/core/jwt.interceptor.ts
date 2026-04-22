@@ -13,7 +13,6 @@ import { AuthService } from './services/auth.service';
 import { UiService } from './services/ui.service';
 import { AuthResponse } from './models';
 
-let isRefreshing = false;
 let refreshTokenRequest: Observable<string> | null = null;
 const REFRESH_ATTEMPTED = new HttpContextToken<boolean>(() => false);
 
@@ -36,7 +35,7 @@ export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
     catchError(error => {
       if (error instanceof HttpErrorResponse && error.status === 401) {
         if (isAuthUrl(req.url) || req.context.get(REFRESH_ATTEMPTED)) {
-          if (!isLoginUrl(req.url)) {
+          if (!isAuthUrl(req.url)) {
             forceCleanLogout(authService, router, uiService);
           }
           return throwError(() => error);
@@ -67,21 +66,17 @@ function handle401Error(
   router: Router,
   uiService: UiService
 ): Observable<any> {
-  if (!isRefreshing) {
-    isRefreshing = true;
+  if (!refreshTokenRequest) {
     refreshTokenRequest = authService.refreshToken().pipe(
       map((response: AuthResponse) => response.accessToken),
-      shareReplay(1),
+      shareReplay({ bufferSize: 1, refCount: false }),
       finalize(() => {
-        isRefreshing = false;
         refreshTokenRequest = null;
       })
     );
   }
 
-  return (refreshTokenRequest ?? authService.refreshToken().pipe(
-    map((response: AuthResponse) => response.accessToken)
-  )).pipe(
+  return refreshTokenRequest.pipe(
     switchMap((accessToken: string) => {
       if (!accessToken) {
         throw new Error('Falha ao renovar token');
@@ -98,18 +93,13 @@ function handle401Error(
 }
 
 function isAuthUrl(url: string): boolean {
-  const whitelist = ['/auth/login', '/auth/register', '/auth/refresh'];
+  const whitelist = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
   return whitelist.some(path => url.includes(path));
 }
 
-function isLoginUrl(url: string): boolean {
-  return url.includes('/auth/login');
-}
-
 function forceCleanLogout(authService: AuthService, router: Router, uiService: UiService): void {
-  authService.logout();
+  authService.clearLocalSession();
   refreshTokenRequest = null;
-  isRefreshing = false;
   uiService.showWarning('Sessão expirada', 'Faça login novamente para continuar.');
   if (router.url !== '/auth') {
     router.navigate(['/auth']);

@@ -42,6 +42,7 @@ export class UsersComponent implements OnInit {
   platformRoles = [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT];
   isPlatformAdmin = computed(() => this.auth.getCurrentRole() === Role.PLATFORM_ADMIN);
   isAdmin = computed(() => [Role.PLATFORM_ADMIN, Role.ADMIN].includes(this.auth.getCurrentRole() as Role));
+  canResetPasswords = computed(() => [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(this.auth.getCurrentRole() as Role));
 
   ngOnInit(): void {
     this.load();
@@ -112,7 +113,7 @@ export class UsersComponent implements OnInit {
   }
 
   resetPassword(): void {
-    if (!this.isPlatformAdmin() || !this.passwordUserId || !this.newPassword.trim()) {
+    if (!this.canResetPasswords() || !this.passwordUserId || !this.newPassword.trim()) {
       this.error.set('Selecione um usuário e informe a nova senha.');
       return;
     }
@@ -169,7 +170,20 @@ export class UsersComponent implements OnInit {
   }
 
   canDelete(user: User): boolean {
-    return user.role !== Role.PLATFORM_ADMIN;
+    const currentRole = this.auth.getCurrentRole();
+    if (user.role === Role.PLATFORM_ADMIN) return false;
+    if (currentRole === Role.MANAGER) {
+      return [Role.OPERATIONAL, Role.CLIENT].includes(user.role as Role);
+    }
+    return [Role.PLATFORM_ADMIN, Role.ADMIN].includes(currentRole as Role);
+  }
+
+  canResetPasswordFor(user: User): boolean {
+    const currentRole = this.auth.getCurrentRole();
+    if (currentRole === Role.MANAGER) {
+      return [Role.OPERATIONAL, Role.CLIENT].includes(user.role as Role);
+    }
+    return [Role.PLATFORM_ADMIN, Role.ADMIN].includes(currentRole as Role);
   }
 
   trackById(_: number, item: { id: string }): string {

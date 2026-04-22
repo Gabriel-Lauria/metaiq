@@ -19,7 +19,7 @@ class DashboardSummaryQueryDto {
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 

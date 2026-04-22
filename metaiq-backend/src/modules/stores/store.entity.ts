@@ -19,6 +19,7 @@ import { StoreIntegration } from '../integrations/store-integration.entity';
 @Entity('stores')
 @Index(['managerId'])
 @Index(['tenantId'])
+@Index(['createdByUserId'])
 export class Store {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -31,6 +32,9 @@ export class Store {
 
   @Column()
   tenantId: string;
+
+  @Column({ nullable: true })
+  createdByUserId: string | null;
 
   @Column({ default: true })
   active: boolean;

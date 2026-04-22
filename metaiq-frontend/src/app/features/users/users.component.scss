@@ -1,15 +1,20 @@
 .user-grid {
-  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.2fr) 160px minmax(160px, 1fr) 150px;
+  grid-template-columns: minmax(170px, 1fr) minmax(220px, 1.2fr) minmax(130px, 0.7fr) minmax(180px, 1fr) minmax(170px, 0.8fr);
 }
 
 strong {
-  color: #f0f4ff;
+  color: var(--text);
   font-weight: 700;
 }
 
 .ui-table-row span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.ui-table-row,
+.ui-table-head {
+  min-width: 900px;
 }
 
 .actions {
@@ -23,6 +28,8 @@ strong {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  background: #ffffff;
 }
 
 @media (max-width: 760px) {

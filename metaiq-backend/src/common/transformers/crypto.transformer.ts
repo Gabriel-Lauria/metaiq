@@ -1,4 +1,5 @@
 import { ValueTransformer } from 'typeorm';
+import { Logger } from '@nestjs/common';
 import { encrypt, decrypt } from '../crypto.util';
 
 /**
@@ -8,6 +9,8 @@ import { encrypt, decrypt } from '../crypto.util';
  *   accessToken: string;
  */
 export class CryptoTransformer implements ValueTransformer {
+  private readonly logger = new Logger(CryptoTransformer.name);
+
   /**
    * Chama encrypt() quando o valor é SALVO no banco
    * TypeORM chama esse método ANTES de executar database INSERT/UPDATE
@@ -17,7 +20,7 @@ export class CryptoTransformer implements ValueTransformer {
     try {
       return encrypt(value);
     } catch (error) {
-      console.error('[CryptoTransformer] Erro ao encriptar:', error);
+      this.logger.error('Erro ao encriptar valor protegido', error instanceof Error ? error.stack : String(error));
       throw error;
     }
   }
@@ -31,7 +34,7 @@ export class CryptoTransformer implements ValueTransformer {
     try {
       return decrypt(value);
     } catch (error) {
-      console.error('[CryptoTransformer] Erro ao decriptar:', error);
+      this.logger.error('Erro ao decriptar valor protegido', error instanceof Error ? error.stack : String(error));
       throw error;
     }
   }

@@ -3,7 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { Role } from '../src/common/enums';
+import { Role, SyncStatus } from '../src/common/enums';
 import { User } from '../src/modules/users/user.entity';
 import { Manager } from '../src/modules/managers/manager.entity';
 import { Tenant } from '../src/modules/tenants/tenant.entity';
@@ -38,7 +38,7 @@ describe('Current tenant/store security E2E', () => {
   const password = 'Test@1234';
   const range = 'from=2026-01-01&to=2026-12-31';
 
-  type TestUserKey = Role | 'TENANT_ADMIN' | 'MANAGER_B' | 'OPERATIONAL_UNLINKED' | 'INACTIVE' | 'SOFT_DELETED';
+  type TestUserKey = Role | 'TENANT_ADMIN' | 'MANAGER_PEER' | 'MANAGER_B' | 'OPERATIONAL_UNLINKED' | 'INACTIVE' | 'SOFT_DELETED';
 
   const users: Partial<Record<TestUserKey, User>> = {};
   const tokens: Partial<Record<Role, string>> = {};
@@ -117,12 +117,22 @@ describe('Current tenant/store security E2E', () => {
   async function cleanup() {
     if (!dataSource?.isInitialized) return;
 
-    const campaignMetaIds = [`${runId}_campaign_a`, `${runId}_campaign_b`];
-    const adAccountMetaIds = [`${runId}_ad_a`, `${runId}_ad_b`, `${runId}_ad_inactive`];
+    const campaignMetaIds = [
+      `${runId}_campaign_a`,
+      `${runId}_campaign_peer`,
+      `${runId}_campaign_b`,
+      `${runId}_campaign_admin_create`,
+      `${runId}_campaign_operational_create`,
+      `${runId}_campaign_platform_create`,
+      `${runId}_campaign_cross_tenant_blocked`,
+      `${runId}_campaign_client_blocked`,
+    ];
+    const adAccountMetaIds = [`${runId}_ad_a`, `${runId}_ad_peer`, `${runId}_ad_b`, `${runId}_ad_inactive`];
     const emails = [
       `${runId}.admin@test.com`,
       `${runId}.tenant-admin@test.com`,
       `${runId}.manager@test.com`,
+      `${runId}.manager-peer@test.com`,
       `${runId}.operational@test.com`,
       `${runId}.operational-unlinked@test.com`,
       `${runId}.client@test.com`,
@@ -131,7 +141,7 @@ describe('Current tenant/store security E2E', () => {
       `${runId}.soft-deleted@test.com`,
       `${runId}.created-operational@test.com`,
     ];
-    const storeNames = [`${runId} Store A`, `${runId} Store B`, `${runId} Store Created`, `${runId} Store Edited`];
+    const storeNames = [`${runId} Store A`, `${runId} Store Peer`, `${runId} Store B`, `${runId} Store Created`, `${runId} Store Edited`];
     const managerNames = [`${runId} Manager A`, `${runId} Manager B`, `${runId} Manager Created`];
 
     const existingStores = await storeRepo.find({
@@ -201,14 +211,6 @@ describe('Current tenant/store security E2E', () => {
       tenantRepo.create({ id: managerB.id, name: managerB.name }),
     ]);
 
-    const storeA = await storeRepo.save(
-      storeRepo.create({ name: `${runId} Store A`, managerId: managerA.id, tenantId: managerA.id, active: true }),
-    );
-    const storeB = await storeRepo.save(
-      storeRepo.create({ name: `${runId} Store B`, managerId: managerB.id, tenantId: managerB.id, active: true }),
-    );
-    stores.push(storeA, storeB);
-
     users[Role.ADMIN] = await userRepo.save(
       userRepo.create({
         email: `${runId}.admin@test.com`,
@@ -250,6 +252,7 @@ describe('Current tenant/store security E2E', () => {
         role: Role.OPERATIONAL,
         managerId: managerA.id,
         tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
         active: true,
       }),
     );
@@ -261,6 +264,7 @@ describe('Current tenant/store security E2E', () => {
         role: Role.CLIENT,
         managerId: managerA.id,
         tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
         active: true,
       }),
     );
@@ -272,6 +276,7 @@ describe('Current tenant/store security E2E', () => {
         role: Role.OPERATIONAL,
         managerId: managerA.id,
         tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
         active: true,
       }),
     );
@@ -283,6 +288,7 @@ describe('Current tenant/store security E2E', () => {
         role: Role.OPERATIONAL,
         managerId: managerA.id,
         tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
         active: false,
       }),
     );
@@ -294,8 +300,21 @@ describe('Current tenant/store security E2E', () => {
         role: Role.OPERATIONAL,
         managerId: managerA.id,
         tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
         active: true,
         deletedAt: new Date(),
+      }),
+    );
+    users.MANAGER_PEER = await userRepo.save(
+      userRepo.create({
+        email: `${runId}.manager-peer@test.com`,
+        name: 'E2E Manager Peer A',
+        password: passwordHash,
+        role: Role.MANAGER,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        createdByUserId: users.TENANT_ADMIN!.id,
+        active: true,
       }),
     );
     users.MANAGER_B = await userRepo.save(
@@ -309,6 +328,35 @@ describe('Current tenant/store security E2E', () => {
         active: true,
       }),
     );
+
+    const storeA = await storeRepo.save(
+      storeRepo.create({
+        name: `${runId} Store A`,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        createdByUserId: users[Role.MANAGER]!.id,
+        active: true,
+      }),
+    );
+    const storePeer = await storeRepo.save(
+      storeRepo.create({
+        name: `${runId} Store Peer`,
+        managerId: managerA.id,
+        tenantId: managerA.id,
+        createdByUserId: users.MANAGER_PEER!.id,
+        active: true,
+      }),
+    );
+    const storeB = await storeRepo.save(
+      storeRepo.create({
+        name: `${runId} Store B`,
+        managerId: managerB.id,
+        tenantId: managerB.id,
+        createdByUserId: users.MANAGER_B!.id,
+        active: true,
+      }),
+    );
+    stores.push(storeA, storeB, storePeer);
 
     await userStoreRepo.save([
       userStoreRepo.create({ userId: users[Role.OPERATIONAL]!.id, storeId: storeA.id }),
@@ -327,6 +375,17 @@ describe('Current tenant/store security E2E', () => {
       }),
     );
     const adAccountB = await adAccountRepo.save(
+      adAccountRepo.create({
+        metaId: `${runId}_ad_peer`,
+        name: 'E2E Ad Account Peer',
+        currency: 'BRL',
+        accessToken: 'test-secret-token-peer',
+        userId: users.MANAGER_PEER!.id,
+        storeId: storePeer.id,
+        active: true,
+      }),
+    );
+    const adAccountCrossTenant = await adAccountRepo.save(
       adAccountRepo.create({
         metaId: `${runId}_ad_b`,
         name: 'E2E Ad Account B',
@@ -348,7 +407,7 @@ describe('Current tenant/store security E2E', () => {
         active: false,
       }),
     );
-    adAccounts.push(adAccountA, adAccountB, inactiveAdAccount);
+    adAccounts.push(adAccountA, adAccountCrossTenant, inactiveAdAccount, adAccountB);
 
     const campaignA = await campaignRepo.save(
       campaignRepo.create({
@@ -367,6 +426,21 @@ describe('Current tenant/store security E2E', () => {
     );
     const campaignB = await campaignRepo.save(
       campaignRepo.create({
+        metaId: `${runId}_campaign_peer`,
+        name: 'E2E Campaign Peer',
+        status: 'ACTIVE',
+        objective: 'TRAFFIC',
+        dailyBudget: 150,
+        score: 60,
+        startTime: new Date('2026-01-01'),
+        userId: users.MANAGER_PEER!.id,
+        createdByUserId: users.MANAGER_PEER!.id,
+        storeId: storePeer.id,
+        adAccountId: adAccountB.id,
+      }),
+    );
+    const campaignCrossTenant = await campaignRepo.save(
+      campaignRepo.create({
         metaId: `${runId}_campaign_b`,
         name: 'E2E Campaign B',
         status: 'ACTIVE',
@@ -377,10 +451,10 @@ describe('Current tenant/store security E2E', () => {
         userId: users.MANAGER_B!.id,
         createdByUserId: users.MANAGER_B!.id,
         storeId: storeB.id,
-        adAccountId: adAccountB.id,
+        adAccountId: adAccountCrossTenant.id,
       }),
     );
-    campaigns.push(campaignA, campaignB);
+    campaigns.push(campaignA, campaignCrossTenant, campaignB);
 
     await metricRepo.save([
       metricRepo.create({
@@ -397,6 +471,18 @@ describe('Current tenant/store security E2E', () => {
       }),
       metricRepo.create({
         campaignId: campaignB.id,
+        date: '2026-04-01',
+        impressions: 3000,
+        clicks: 300,
+        spend: 30,
+        conversions: 15,
+        revenue: 150,
+        ctr: 10,
+        cpa: 2,
+        roas: 5,
+      }),
+      metricRepo.create({
+        campaignId: campaignCrossTenant.id,
         date: '2026-04-01',
         impressions: 9999,
         clicks: 999,
@@ -424,7 +510,7 @@ describe('Current tenant/store security E2E', () => {
     );
     insightB = await insightRepo.save(
       insightRepo.create({
-        campaignId: campaignB.id,
+        campaignId: campaignCrossTenant.id,
         type: 'alert',
         severity: 'danger',
         message: 'E2E insight B',
@@ -443,6 +529,16 @@ describe('Current tenant/store security E2E', () => {
       .send({ email, password })
       .expect(200);
     return response.body.accessToken as string;
+  }
+
+  function extractRefreshCookie(response: any): string {
+    const setCookie = response.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    const refreshCookie = cookies.find((cookie: string) =>
+      cookie.startsWith('metaiq_refresh_token='),
+    );
+    expect(refreshCookie).toBeTruthy();
+    return refreshCookie as string;
   }
 
   async function loginAllActiveUsers() {
@@ -471,16 +567,11 @@ describe('Current tenant/store security E2E', () => {
         .send({ email: users[Role.ADMIN]!.email, password })
         .expect(200);
 
-      const setCookie = loginResponse.headers['set-cookie'];
-      const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
-      const refreshCookie = cookies.find((cookie: string) =>
-        cookie.startsWith('metaiq_refresh_token='),
-      );
-      expect(refreshCookie).toBeTruthy();
+      const refreshCookie = extractRefreshCookie(loginResponse);
 
       await request(app.getHttpServer())
         .post('/api/auth/refresh')
-        .set('Cookie', refreshCookie as string)
+        .set('Cookie', refreshCookie)
         .send({})
         .expect(200);
 
@@ -490,6 +581,84 @@ describe('Current tenant/store security E2E', () => {
         .expect(200);
       expect(me.body.email).toBe(users[Role.ADMIN]!.email);
       expect(me.body).not.toHaveProperty('password');
+    });
+
+    it('requires refresh token cookie, rotates refresh tokens, and rejects stale tokens', async () => {
+      const loginResponse = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: users[Role.MANAGER]!.email, password })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .send({ refreshToken: 'legacy-body-token' })
+        .expect(401);
+
+      const oldRefreshCookie = extractRefreshCookie(loginResponse);
+      const refreshResponse = await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', oldRefreshCookie)
+        .send({})
+        .expect(200);
+
+      expect(refreshResponse.body).toHaveProperty('accessToken');
+      expect(refreshResponse.body).not.toHaveProperty('refreshToken');
+      const rotatedRefreshCookie = extractRefreshCookie(refreshResponse);
+      expect(rotatedRefreshCookie).not.toEqual(oldRefreshCookie);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', oldRefreshCookie)
+        .send({})
+        .expect(401);
+    });
+
+    it('blocks refresh after the user is deactivated and clears logout cookie', async () => {
+      const loginResponse = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: users.OPERATIONAL_UNLINKED!.email, password })
+        .expect(200);
+      const refreshCookie = extractRefreshCookie(loginResponse);
+
+      await userRepo.update(users.OPERATIONAL_UNLINKED!.id, { active: false });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', refreshCookie)
+        .send({})
+        .expect(401);
+
+      const disabledUser = await userRepo.findOneByOrFail({ id: users.OPERATIONAL_UNLINKED!.id });
+      expect(disabledUser.refreshToken).toBeNull();
+      await userRepo.update(users.OPERATIONAL_UNLINKED!.id, { active: true });
+
+      const logoutLoginResponse = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: users.OPERATIONAL_UNLINKED!.email, password })
+        .expect(200);
+      const logoutCookie = extractRefreshCookie(logoutLoginResponse);
+
+      const logoutResponse = await request(app.getHttpServer())
+        .post('/api/auth/logout')
+        .set('Cookie', logoutCookie)
+        .send({})
+        .expect(200);
+
+      const clearCookieHeader = logoutResponse.headers['set-cookie'];
+      const clearCookies = Array.isArray(clearCookieHeader)
+        ? clearCookieHeader
+        : clearCookieHeader
+          ? [clearCookieHeader]
+          : [];
+      expect(clearCookies.some((cookie: string) =>
+        cookie.startsWith('metaiq_refresh_token=;') && cookie.includes('HttpOnly'),
+      )).toBe(true);
+
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', logoutCookie)
+        .send({})
+        .expect(401);
     });
   });
 
@@ -516,13 +685,14 @@ describe('Current tenant/store security E2E', () => {
         .set('Authorization', `Bearer ${tenantAdminToken}`)
         .expect(200);
 
-      expect(tenantSummary.body.counts.users).toBe(5);
-      expect(tenantSummary.body.counts.campaigns).toBe(1);
-      expect(tenantSummary.body.counts.activeCampaigns).toBe(1);
-      expect(tenantSummary.body.metrics.spend).toBe(10);
-      expect(tenantSummary.body.metrics.revenue).toBe(50);
+      expect(tenantSummary.body.counts.users).toBe(6);
+      expect(tenantSummary.body.counts.campaigns).toBe(2);
+      expect(tenantSummary.body.counts.activeCampaigns).toBe(2);
+      expect(tenantSummary.body.metrics.spend).toBe(40);
+      expect(tenantSummary.body.metrics.revenue).toBe(200);
       expect(tenantSummary.body.highlights.campaigns.map((campaign: Campaign) => campaign.id)).toEqual([
         campaigns[0].id,
+        campaigns[2].id,
       ]);
       expect(tenantSummary.body.insights.map((insight: Insight) => insight.id)).toEqual([insightA.id]);
 
@@ -531,11 +701,11 @@ describe('Current tenant/store security E2E', () => {
         .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
         .expect(200);
 
-      expect(platformSummary.body.counts.users).toBe(7);
-      expect(platformSummary.body.counts.campaigns).toBe(2);
-      expect(platformSummary.body.counts.activeCampaigns).toBe(2);
-      expect(platformSummary.body.metrics.spend).toBe(10009);
-      expect(platformSummary.body.metrics.revenue).toBe(100049);
+      expect(platformSummary.body.counts.users).toBe(8);
+      expect(platformSummary.body.counts.campaigns).toBe(3);
+      expect(platformSummary.body.counts.activeCampaigns).toBe(3);
+      expect(platformSummary.body.metrics.spend).toBe(10039);
+      expect(platformSummary.body.metrics.revenue).toBe(100199);
     });
 
     it('keeps direct HTTP user listing and lookup scoped to the tenant admin tenant', async () => {
@@ -549,6 +719,7 @@ describe('Current tenant/store security E2E', () => {
         expect.arrayContaining([
           users.TENANT_ADMIN!.id,
           users[Role.MANAGER]!.id,
+          users.MANAGER_PEER!.id,
           users[Role.OPERATIONAL]!.id,
           users[Role.CLIENT]!.id,
         ]),
@@ -563,6 +734,84 @@ describe('Current tenant/store security E2E', () => {
         .expect(403);
     });
 
+    it('scopes manager reads to resources created by that manager inside the same tenant', async () => {
+      const managerUsers = await request(app.getHttpServer())
+        .get('/api/users')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      const managerUserIds = managerUsers.body.map((user: User) => user.id);
+      expect(managerUserIds).toEqual(
+        expect.arrayContaining([
+          users[Role.MANAGER]!.id,
+          users[Role.OPERATIONAL]!.id,
+          users[Role.CLIENT]!.id,
+        ]),
+      );
+      expect(managerUserIds).not.toContain(users.MANAGER_PEER!.id);
+      expect(managerUserIds).not.toContain(users.TENANT_ADMIN!.id);
+
+      const managerStores = await request(app.getHttpServer())
+        .get('/api/stores')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      expect(managerStores.body.map((store: Store) => store.id)).toEqual([stores[0].id]);
+
+      await request(app.getHttpServer())
+        .get(`/api/stores/${stores[2].id}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(403);
+
+      const managerCampaigns = await request(app.getHttpServer())
+        .get('/api/campaigns?page=1&limit=20')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      const managerCampaignIds = managerCampaigns.body.data.map((campaign: Campaign) => campaign.id);
+      expect(managerCampaignIds).toContain(campaigns[0].id);
+      expect(managerCampaignIds).not.toContain(campaigns[2].id);
+
+      const managerMetrics = await request(app.getHttpServer())
+        .get(`/api/metrics/summary?${range}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      expect(managerMetrics.body.spend).toBe(10);
+      expect(managerMetrics.body.revenue).toBe(50);
+
+      await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/${campaigns[2].id}?${range}`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(404);
+
+      const managerAdAccounts = await request(app.getHttpServer())
+        .get('/api/ad-accounts')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      const managerAdAccountIds = managerAdAccounts.body.map((account: AdAccount) => account.id);
+      expect(managerAdAccountIds).toEqual(expect.arrayContaining([adAccounts[0].id, adAccounts[2].id]));
+      expect(managerAdAccountIds).not.toContain(adAccounts[3].id);
+
+      const managerInsights = await request(app.getHttpServer())
+        .get('/api/insights')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      expect(managerInsights.body.map((insight: Insight) => insight.id)).toEqual([insightA.id]);
+
+      const tenantAdminCampaigns = await request(app.getHttpServer())
+        .get('/api/campaigns?page=1&limit=20')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(200);
+      const tenantAdminCampaignIds = tenantAdminCampaigns.body.data.map((campaign: Campaign) => campaign.id);
+      expect(tenantAdminCampaignIds).toEqual(expect.arrayContaining([campaigns[0].id, campaigns[2].id]));
+      expect(tenantAdminCampaignIds).not.toContain(campaigns[1].id);
+
+      const platformCampaigns = await request(app.getHttpServer())
+        .get('/api/campaigns?page=1&limit=20')
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+      expect(platformCampaigns.body.data.map((campaign: Campaign) => campaign.id)).toEqual(
+        expect.arrayContaining([campaigns[0].id, campaigns[1].id, campaigns[2].id]),
+      );
+    });
+
     it('returns accessible stores by role and blocks cross-tenant store access', async () => {
       const adminStores = await request(app.getHttpServer())
         .get('/api/stores/accessible')
@@ -571,6 +820,14 @@ describe('Current tenant/store security E2E', () => {
       expect(adminStores.body.map((store: Store) => store.id)).toEqual(
         expect.arrayContaining([stores[0].id, stores[1].id]),
       );
+
+      const tenantAdminStores = await request(app.getHttpServer())
+        .get('/api/stores/accessible')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(200);
+      const tenantAdminStoreIds = tenantAdminStores.body.map((store: Store) => store.id);
+      expect(tenantAdminStoreIds).toEqual(expect.arrayContaining([stores[0].id, stores[2].id]));
+      expect(tenantAdminStoreIds).not.toContain(stores[1].id);
 
       const managerStores = await request(app.getHttpServer())
         .get('/api/stores/accessible')
@@ -692,6 +949,105 @@ describe('Current tenant/store security E2E', () => {
         .expect(403);
     });
 
+    it('allows tenant admin and operational to create or edit campaigns only inside their tenant scope', async () => {
+      const adminCreate = await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({
+          metaId: `${runId}_campaign_admin_create`,
+          name: 'Tenant admin created campaign',
+          status: 'ACTIVE',
+          objective: 'CONVERSIONS',
+          dailyBudget: 70,
+          startTime: '2026-04-01',
+          storeId: stores[0].id,
+          adAccountId: adAccounts[0].id,
+        })
+        .expect(201);
+
+      expect(adminCreate.body.storeId).toBe(stores[0].id);
+      expect(adminCreate.body.createdByUserId).toBe(users.TENANT_ADMIN!.id);
+
+      const adminPatch = await request(app.getHttpServer())
+        .patch(`/api/campaigns/${adminCreate.body.id}`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({ name: 'Tenant admin edited campaign', dailyBudget: 90 })
+        .expect(200);
+
+      expect(adminPatch.body.name).toBe('Tenant admin edited campaign');
+      expect(Number(adminPatch.body.dailyBudget)).toBe(90);
+
+      await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({
+          metaId: `${runId}_campaign_cross_tenant_blocked`,
+          name: 'Cross tenant blocked campaign',
+          status: 'ACTIVE',
+          objective: 'REACH',
+          dailyBudget: 70,
+          startTime: '2026-04-01',
+          storeId: stores[1].id,
+          adAccountId: adAccounts[1].id,
+        })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/api/campaigns/${campaigns[1].id}`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({ name: 'Cross tenant edit blocked' })
+        .expect(404);
+
+      const operationalCreate = await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .send({
+          metaId: `${runId}_campaign_operational_create`,
+          name: 'Operational created campaign',
+          status: 'ACTIVE',
+          objective: 'TRAFFIC',
+          dailyBudget: 60,
+          startTime: '2026-04-01',
+          storeId: stores[0].id,
+          adAccountId: adAccounts[0].id,
+        })
+        .expect(201);
+
+      expect(operationalCreate.body.storeId).toBe(stores[0].id);
+
+      await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tokens[Role.CLIENT]}`)
+        .send({
+          metaId: `${runId}_campaign_client_blocked`,
+          name: 'Client blocked campaign',
+          status: 'ACTIVE',
+          objective: 'TRAFFIC',
+          dailyBudget: 60,
+          startTime: '2026-04-01',
+          storeId: stores[0].id,
+          adAccountId: adAccounts[0].id,
+        })
+        .expect(403);
+
+      const platformCreate = await request(app.getHttpServer())
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .send({
+          metaId: `${runId}_campaign_platform_create`,
+          name: 'Platform admin global campaign',
+          status: 'ACTIVE',
+          objective: 'REACH',
+          dailyBudget: 120,
+          startTime: '2026-04-01',
+          storeId: stores[1].id,
+          adAccountId: adAccounts[1].id,
+        })
+        .expect(201);
+
+      expect(platformCreate.body.storeId).toBe(stores[1].id);
+    });
+
     it('rejects invalid metric identifiers and date ranges before querying data', async () => {
       await request(app.getHttpServer())
         .get('/api/metrics?campaignId=not-a-uuid')
@@ -700,6 +1056,11 @@ describe('Current tenant/store security E2E', () => {
 
       await request(app.getHttpServer())
         .get('/api/metrics/summary?from=invalid-date&to=2026-12-31')
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/api/metrics/summary?from=2026-01-01&to=invalid-date')
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(400);
 
@@ -744,14 +1105,86 @@ describe('Current tenant/store security E2E', () => {
       expect(Number(updated.revenue)).toBe(90);
     });
 
+    it('keeps one metric row under concurrent upserts for the same campaign and date', async () => {
+      await Promise.all([
+        metricsService.upsertDailyMetric({
+          campaignId: campaigns[0].id,
+          date: '2020-04-03',
+          impressions: 100,
+          clicks: 10,
+          spend: 20,
+          conversions: 2,
+          revenue: 60,
+        }),
+        metricsService.upsertDailyMetric({
+          campaignId: campaigns[0].id,
+          date: '2020-04-03',
+          impressions: 300,
+          clicks: 30,
+          spend: 40,
+          conversions: 4,
+          revenue: 120,
+        }),
+      ]);
+
+      const rows = await metricRepo.find({
+        where: { campaignId: campaigns[0].id, date: '2020-04-03' },
+      });
+
+      expect(rows).toHaveLength(1);
+      expect([20, 40]).toContain(Number(rows[0].spend));
+      expect([60, 120]).toContain(Number(rows[0].revenue));
+    });
+
+    it('aggregates CTR, CPA, and ROAS from totals instead of averaging derived metrics', async () => {
+      await metricsService.upsertDailyMetric({
+        campaignId: campaigns[0].id,
+        date: '2020-04-04',
+        impressions: 100,
+        clicks: 50,
+        spend: 10,
+        conversions: 1,
+        revenue: 20,
+      });
+      await metricsService.upsertDailyMetric({
+        campaignId: campaigns[0].id,
+        date: '2020-04-05',
+        impressions: 900,
+        clicks: 50,
+        spend: 90,
+        conversions: 9,
+        revenue: 180,
+      });
+
+      const aggregate = await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/${campaigns[0].id}/aggregate?from=2020-04-04&to=2020-04-05`)
+        .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+
+      expect(aggregate.body.impressions).toBe(1000);
+      expect(aggregate.body.clicks).toBe(100);
+      expect(aggregate.body.spend).toBe(100);
+      expect(aggregate.body.conversions).toBe(10);
+      expect(aggregate.body.revenue).toBe(200);
+      expect(aggregate.body.ctr).toBe(10);
+      expect(aggregate.body.cpa).toBe(10);
+      expect(aggregate.body.roas).toBe(2);
+      expect(aggregate.body.avgCtr).toBe(10);
+      expect(aggregate.body.avgCpa).toBe(10);
+      expect(aggregate.body.avgRoas).toBe(2);
+    });
+
     it('keeps campaign, ad account, metric, and insight data scoped by store', async () => {
       const campaignsResponse = await request(app.getHttpServer())
         .get(`/api/campaigns?page=1&limit=20&storeId=${stores[0].id}`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
         .expect(200);
-      expect(campaignsResponse.body.data.map((campaign: Campaign) => campaign.id)).toEqual([
-        campaigns[0].id,
-      ]);
+      const scopedCampaignIds = campaignsResponse.body.data.map((campaign: Campaign) => campaign.id);
+      expect(scopedCampaignIds).toContain(campaigns[0].id);
+      expect(scopedCampaignIds).not.toContain(campaigns[1].id);
+      for (const campaign of campaignsResponse.body.data as Campaign[]) {
+        expect(campaign.storeId).toBe(stores[0].id);
+      }
 
       await request(app.getHttpServer())
         .get(`/api/campaigns/${campaigns[1].id}`)
@@ -858,7 +1291,7 @@ describe('Current tenant/store security E2E', () => {
   });
 
   describe('store Meta integrations', () => {
-    it('allows linked operational and platform admin to start Meta OAuth by store', async () => {
+    it('allows tenant admin, linked operational, and platform admin to operate Meta by store scope', async () => {
       const initial = await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/status`)
         .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
@@ -877,24 +1310,89 @@ describe('Current tenant/store security E2E', () => {
       expect(started.body.authorizationUrl).toContain('response_type=code');
       expect(started.body.authorizationUrl).toContain('state=');
 
-      const adminStarted = await request(app.getHttpServer())
-        .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
-        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+      const tenantAdminStarted = await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
         .expect(200);
-      expect(adminStarted.body.authorizationUrl).toContain('https://www.facebook.com/');
-      expect(adminStarted.body.authorizationUrl).toContain('state=');
+      expect(tenantAdminStarted.body.authorizationUrl).toContain('https://www.facebook.com/');
+      expect(tenantAdminStarted.body.authorizationUrl).toContain('state=');
+
+      const tenantAdminPlan = await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/sync-plan`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(200);
+      expect(tenantAdminPlan.body.storeId).toBe(stores[0].id);
+      expect(tenantAdminPlan.body.steps).toContain('FETCH_EXTERNAL_AD_ACCOUNTS');
+
+      const tenantAdminStatus = await request(app.getHttpServer())
+        .patch(`/api/integrations/meta/stores/${stores[0].id}/status`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({ status: IntegrationStatus.ERROR, lastSyncStatus: SyncStatus.ERROR, lastSyncError: 'manual admin test' })
+        .expect(200);
+      expect(tenantAdminStatus.body.status).toBe(IntegrationStatus.ERROR);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(403);
+
+      const platformStarted = await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(200);
+      expect(platformStarted.body.authorizationUrl).toContain('https://www.facebook.com/');
+      expect(platformStarted.body.authorizationUrl).toContain('state=');
 
       await request(app.getHttpServer())
         .patch(`/api/integrations/meta/stores/${stores[0].id}/status`)
         .set('Authorization', `Bearer ${tokens[Role.MANAGER]}`)
-        .send({ status: IntegrationStatus.EXPIRED, lastSyncStatus: 'ERROR', lastSyncError: 'expired token' })
+        .send({ status: IntegrationStatus.EXPIRED, lastSyncStatus: SyncStatus.ERROR, lastSyncError: 'expired token' })
         .expect(403);
 
       const disconnected = await request(app.getHttpServer())
         .delete(`/api/integrations/meta/stores/${stores[0].id}`)
-        .set('Authorization', `Bearer ${tokens[Role.ADMIN]}`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
         .expect(200);
       expect(disconnected.body.status).toBe(IntegrationStatus.NOT_CONNECTED);
+    });
+
+    it('keeps Meta recovery restricted to platform admin, tenant admin, and operational store scope', async () => {
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001/retry`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({ name: 'Retry payload' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001/cleanup`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .send({})
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[1].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`)
+        .set('Authorization', `Bearer ${tenantAdminToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`)
+        .set('Authorization', `Bearer ${tokens[Role.OPERATIONAL]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`)
+        .set('Authorization', `Bearer ${tokens[Role.CLIENT]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[1].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`)
+        .set('Authorization', `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .expect(400);
     });
 
     it('blocks unlinked operational, manager, and client integration execution', async () => {

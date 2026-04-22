@@ -13,6 +13,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/user.entity';
 import { Role } from '../../common/enums';
+import { AuditService } from '../../common/services/audit.service';
 
 interface JwtPayload {
   sub: string;
@@ -28,27 +29,32 @@ export class AuthService {
     private userRepository: Repository<User>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private auditService: AuditService,
   ) {}
 
   async login(email: string, password: string) {
     const user = await this.userRepository.findOne({ where: { email, deletedAt: IsNull() } });
     if (!user) {
+      this.auditAuth('auth.login', 'failure', { email }, 'invalid_credentials');
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
     if (!user.active) {
       await this.clearRefreshTokenForInactiveUser(user);
+      this.auditAuth('auth.login', 'failure', user, 'inactive_user');
       throw new UnauthorizedException('Usuário inativo');
     }
     this.assertValidRole(user);
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      this.auditAuth('auth.login', 'failure', user, 'invalid_credentials');
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
     const tokens = await this.generateTokens(user);
     await this.updateRefreshToken(user.id, tokens.refreshToken);
+    this.auditAuth('auth.login', 'success', user);
 
     return this.buildAuthResponse(user, tokens);
   }
@@ -74,6 +80,7 @@ export class AuthService {
     await this.userRepository.save(user);
     const tokens = await this.generateTokens(user);
     await this.updateRefreshToken(user.id, tokens.refreshToken);
+    this.auditAuth('auth.register', 'success', user);
 
     return this.buildAuthResponse(user, tokens);
   }
@@ -96,6 +103,7 @@ export class AuthService {
     this.assertValidRole(user);
 
     const tokens = await this.rotateRefreshToken(user, refreshToken);
+    this.auditAuth('auth.refresh', 'success', user);
     return this.buildAuthResponse(user, tokens);
   }
 
@@ -107,7 +115,17 @@ export class AuthService {
     try {
       const payload = await this.validateRefreshToken(refreshToken);
       await this.updateRefreshToken(payload.sub, null);
+      this.auditService.record({
+        action: 'auth.logout',
+        status: 'success',
+        actorId: payload.sub,
+      });
     } catch {
+      this.auditService.record({
+        action: 'auth.logout',
+        status: 'failure',
+        reason: 'stale_or_invalid_refresh_token',
+      });
       // Logout should still succeed from the client perspective even if the token is stale.
     }
   }
@@ -227,5 +245,25 @@ export class AuthService {
 
   private hashRefreshToken(refreshToken: string) {
     return createHash('sha256').update(refreshToken).digest('hex');
+  }
+
+  private auditAuth(
+    action: string,
+    status: 'success' | 'failure',
+    userOrPayload: User | { email: string },
+    reason?: string,
+  ): void {
+    const user = 'id' in userOrPayload ? userOrPayload : null;
+    this.auditService.record({
+      action,
+      status,
+      actorId: user?.id,
+      actorRole: user?.role,
+      tenantId: user?.tenantId,
+      reason,
+      metadata: {
+        email: userOrPayload.email,
+      },
+    });
   }
 }

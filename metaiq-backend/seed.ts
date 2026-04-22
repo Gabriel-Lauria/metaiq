@@ -367,25 +367,155 @@ async function seed() {
     console.log('🔐 Usuário vinculado à Loja Demo');
   }
 
+  if (!store.createdByUserId) {
+    store.createdByUserId = user.id;
+    await storeRepo.save(store);
+  }
+
+  const demoPassword = await bcrypt.hash('Demo@1234', 12);
+  const ensureDemoUser = async (input: {
+    name: string;
+    email: string;
+    role: Role;
+    createdByUserId?: string | null;
+  }): Promise<User> => {
+    let demoUser = await userRepo.findOne({ where: { email: input.email } });
+    if (!demoUser) {
+      demoUser = userRepo.create({
+        name: input.name,
+        email: input.email,
+        password: demoPassword,
+        role: input.role,
+        managerId: manager.id,
+        tenantId: tenant.id,
+        createdByUserId: input.createdByUserId ?? user.id,
+        active: true,
+      });
+    } else {
+      demoUser.name = input.name;
+      demoUser.password = demoPassword;
+      demoUser.role = input.role;
+      demoUser.managerId = manager.id;
+      demoUser.tenantId = tenant.id;
+      demoUser.createdByUserId = demoUser.createdByUserId ?? input.createdByUserId ?? user.id;
+      demoUser.active = true;
+      demoUser.deletedAt = null;
+    }
+
+    return userRepo.save(demoUser);
+  };
+
+  const managerUser = await ensureDemoUser({
+    name: 'Marina Supervisor',
+    email: 'manager@metaiq.dev',
+    role: Role.MANAGER,
+    createdByUserId: user.id,
+  });
+  const operationalUser = await ensureDemoUser({
+    name: 'Otavio Trafego',
+    email: 'operacional@metaiq.dev',
+    role: Role.OPERATIONAL,
+    createdByUserId: managerUser.id,
+  });
+  const analystUser = await ensureDemoUser({
+    name: 'Bianca Performance',
+    email: 'analista@metaiq.dev',
+    role: Role.OPERATIONAL,
+    createdByUserId: managerUser.id,
+  });
+  const clientUser = await ensureDemoUser({
+    name: 'Cliente Final Demo',
+    email: 'cliente@metaiq.dev',
+    role: Role.CLIENT,
+    createdByUserId: managerUser.id,
+  });
+
+  const ensureUserStore = async (userId: string, storeId: string): Promise<void> => {
+    const exists = await userStoreRepo.findOne({ where: { userId, storeId } });
+    if (!exists) {
+      await userStoreRepo.save(userStoreRepo.create({ userId, storeId }));
+    }
+  };
+
+  const demoStoreDefs = [
+    { name: 'Loja Demo', owner: user, operators: [operationalUser, analystUser], client: clientUser },
+    { name: 'Aurora Moda', owner: managerUser, operators: [operationalUser], client: clientUser },
+    { name: 'Nexa Fitness', owner: managerUser, operators: [analystUser], client: clientUser },
+    { name: 'Casa Vila Decor', owner: user, operators: [operationalUser], client: null },
+    { name: 'Bistro Jardim', owner: managerUser, operators: [operationalUser, analystUser], client: null },
+  ];
+
+  const demoStores: Store[] = [];
+  for (const def of demoStoreDefs) {
+    let demoStore = await storeRepo.findOne({ where: { name: def.name, tenantId: tenant.id } });
+    if (!demoStore) {
+      demoStore = storeRepo.create({
+        name: def.name,
+        managerId: manager.id,
+        tenantId: tenant.id,
+        createdByUserId: def.owner.id,
+        active: true,
+      });
+    } else {
+      demoStore.managerId = manager.id;
+      demoStore.tenantId = tenant.id;
+      demoStore.createdByUserId = demoStore.createdByUserId ?? def.owner.id;
+      demoStore.active = true;
+      demoStore.deletedAt = null;
+    }
+
+    demoStore = await storeRepo.save(demoStore);
+    demoStores.push(demoStore);
+
+    await ensureUserStore(user.id, demoStore.id);
+    await ensureUserStore(managerUser.id, demoStore.id);
+    for (const operator of def.operators) {
+      await ensureUserStore(operator.id, demoStore.id);
+    }
+    if (def.client) {
+      await ensureUserStore(def.client.id, demoStore.id);
+    }
+  }
+
   // ── Conta de anúncio ──────────────────────────────────────
   const accRepo = ds.getRepository(AdAccount);
-  let account = await accRepo.findOne({ where: { userId: user.id } });
+  const accountByStore = new Map<string, AdAccount>();
+  for (const [index, demoStore] of demoStores.entries()) {
+    const metaId = `act_demo_${String(index + 1).padStart(3, '0')}`;
+    let account = await accRepo.findOne({ where: { metaId } });
 
-  if (!account) {
-    account = accRepo.create({
-      metaId: 'act_123456789',
-      name: 'Conta Demo — E-commerce',
-      accessToken: 'demo_token_nao_funcional',
-      tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
-      userId: user.id,
-      storeId: store.id,
-    });
-    await accRepo.save(account);
-    console.log('🔗 Conta Meta criada:', account.metaId);
-  } else if (!account.storeId) {
-    account.storeId = store.id;
-    await accRepo.save(account);
+    if (!account) {
+      account = accRepo.create({
+        metaId,
+        provider: 'META' as any,
+        externalId: metaId,
+        syncStatus: 'SUCCESS' as any,
+        importedAt: new Date(),
+        lastSeenAt: new Date(),
+        name: `Conta Meta — ${demoStore.name}`,
+        currency: 'BRL',
+        accessToken: 'demo_token_nao_funcional',
+        tokenExpiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+        active: true,
+        userId: user.id,
+        storeId: demoStore.id,
+      });
+    } else {
+      account.name = `Conta Meta — ${demoStore.name}`;
+      account.externalId = account.externalId ?? metaId;
+      account.syncStatus = 'SUCCESS' as any;
+      account.importedAt = account.importedAt ?? new Date();
+      account.lastSeenAt = new Date();
+      account.currency = account.currency ?? 'BRL';
+      account.active = true;
+      account.userId = user.id;
+      account.storeId = demoStore.id;
+    }
+
+    account = await accRepo.save(account);
+    accountByStore.set(demoStore.id, account);
   }
+  console.log(`🔗 Contas Meta demo prontas: ${accountByStore.size}`);
 
   // ── Campanhas ─────────────────────────────────────────────
   const campRepo = ds.getRepository(Campaign);
@@ -552,7 +682,17 @@ async function seed() {
     },
   ];
 
-  for (const def of campaignDefs) {
+  for (const storeIndex of demoStores.keys()) {
+    const demoStore = demoStores[storeIndex];
+    const account = accountByStore.get(demoStore.id)!;
+    const campaignSlice = campaignDefs.map((def, defIndex) => ({
+      ...def,
+      metaId: `${def.metaId}_store_${storeIndex + 1}`,
+      name: storeIndex === 0 ? def.name : `${demoStore.name} — ${def.name}`,
+      budget: roundMoney(def.budget * (0.75 + storeIndex * 0.12 + (defIndex % 3) * 0.05)),
+    }));
+
+  for (const def of campaignSlice) {
     let camp = await campRepo.findOne({ where: { metaId: def.metaId } });
 
     if (!camp) {
@@ -563,7 +703,7 @@ async function seed() {
         objective: def.cpaBase > 0 ? 'CONVERSIONS' : 'REACH',
         dailyBudget: def.budget,
         userId: user.id,
-        storeId: store.id,
+        storeId: demoStore.id,
         createdByUserId: user.id,
         adAccountId: account.id,
         startTime: new Date(Date.now() - def.startDay * 86400000),
@@ -647,6 +787,7 @@ async function seed() {
         .padStart(3)} ROAS=${agg.roas.toFixed(2)}× CPA=R$${agg.cpa.toFixed(0)}`
     );
   }
+  }
 
   await ds.destroy();
   console.log('\n');
@@ -654,14 +795,20 @@ async function seed() {
   console.log('✅ SEED COMPLETADO COM SUCESSO!');
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log('\n📊 DADOS CRIADOS:');
-  console.log('   • 12 campanhas (9 ACTIVE, 2 PAUSED)');
+  console.log(`   • ${demoStores.length} stores/clientes da agência`);
+  console.log(`   • ${demoStores.length} contas Meta fake`);
+  console.log(`   • ${demoStores.length * campaignDefs.length} campanhas distribuídas por store`);
   console.log('   • 90 dias de histórico de métricas');
   console.log('   • Dozens de insights automáticos');
+  console.log('   • Usuários ADMIN, MANAGER, OPERATIONAL e CLIENT para validar permissões');
   console.log('   • Variações realistas de performance');
   console.log('   • Tendências de melhora/piora');
   console.log('\n🔐 CREDENCIAIS DE ACESSO:');
   console.log('   Email: demo@metaiq.dev');
   console.log('   Senha: Demo@1234');
+  console.log('   Manager: manager@metaiq.dev / Demo@1234');
+  console.log('   Operacional: operacional@metaiq.dev / Demo@1234');
+  console.log('   Cliente: cliente@metaiq.dev / Demo@1234');
   console.log('\n🎯 O QUE VER:');
   console.log('   1. Dashboard com KPIs agregados');
   console.log('   2. Campanhas com diferentes performances');

@@ -32,14 +32,14 @@ type UiStateType = 'loading' | 'empty' | 'error';
       padding: 40px 28px;
       text-align: center;
       border: 1px dashed rgba(37, 99, 235, 0.22);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.03);
-      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
     }
 
     .ui-state h2 {
       margin: 0;
-      color: #f8fafc;
+      color: #0f172a;
       font-size: 20px;
       font-weight: 800;
     }
@@ -47,7 +47,7 @@ type UiStateType = 'loading' | 'empty' | 'error';
     .ui-state p {
       margin: 0;
       max-width: 460px;
-      color: #94a3b8;
+      color: #64748b;
       font-size: 14px;
       line-height: 1.7;
     }
@@ -55,7 +55,7 @@ type UiStateType = 'loading' | 'empty' | 'error';
     .state-error {
       border-style: solid;
       border-color: rgba(239, 68, 68, 0.24);
-      background: rgba(239, 68, 68, 0.08);
+      background: #fff7f7;
     }
 
     .state-icon {

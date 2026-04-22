@@ -225,6 +225,20 @@ export interface CampaignAiSuggestResponse {
   suggestions: CampaignAiSuggestions;
 }
 
+export interface CampaignSuggestionRequest {
+  prompt: string;
+  storeId: string;
+}
+
+export interface CampaignSuggestionResponse {
+  name: string;
+  audience: string;
+  strategy: string;
+  copy: string;
+  budgetSuggestion: string;
+  creativeIdeas: string[];
+}
+
 export interface ConnectMetaIntegrationRequest {
   externalBusinessId?: string;
   externalAdAccountId?: string;

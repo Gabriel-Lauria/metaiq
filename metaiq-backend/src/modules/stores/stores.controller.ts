@@ -8,16 +8,22 @@ import { UserStore } from '../user-stores/user-store.entity';
 import { CreateStoreDto, UpdateStoreDto } from './dto/store.dto';
 import { Store } from './store.entity';
 import { StoresService } from './stores.service';
+import { AuditService } from '../../common/services/audit.service';
 
 @Controller('stores')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.MANAGER)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
 export class StoresController {
-  constructor(private readonly storesService: StoresService) {}
+  constructor(
+    private readonly storesService: StoresService,
+    private readonly auditService: AuditService,
+  ) {}
 
   @Post()
-  create(@Request() req: any, @Body() dto: CreateStoreDto): Promise<Store> {
-    return this.storesService.create(req.user, dto);
+  async create(@Request() req: any, @Body() dto: CreateStoreDto): Promise<Store> {
+    const store = await this.storesService.create(req.user, dto);
+    this.audit(req, 'store.create', store.id, 'store');
+    return store;
   }
 
   @Get()
@@ -26,7 +32,7 @@ export class StoresController {
   }
 
   @Get('accessible')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   findAccessible(@Request() req: any): Promise<Store[]> {
     return this.storesService.findAccessible(req.user);
   }
@@ -45,7 +51,10 @@ export class StoresController {
     @Param('userId') userId: string,
     @Request() req: any,
   ): Promise<UserStore> {
-    return this.storesService.linkUserToStore(storeId, userId, req.user);
+    return this.storesService.linkUserToStore(storeId, userId, req.user).then((link) => {
+      this.audit(req, 'store.user.link', storeId, 'store', { userId });
+      return link;
+    });
   }
 
   @Delete(':storeId/users/:userId')
@@ -56,7 +65,10 @@ export class StoresController {
   ): Promise<{ message: string }> {
     return this.storesService
       .unlinkUserFromStore(storeId, userId, req.user)
-      .then(() => ({ message: 'Vínculo removido' }));
+      .then(() => {
+        this.audit(req, 'store.user.unlink', storeId, 'store', { userId });
+        return { message: 'Vínculo removido' };
+      });
   }
 
   @Get(':id')
@@ -70,18 +82,47 @@ export class StoresController {
     @Request() req: any,
     @Body() dto: UpdateStoreDto,
   ): Promise<Store> {
-    return this.storesService.update(id, req.user, dto);
+    return this.storesService.update(id, req.user, dto).then((store) => {
+      this.audit(req, 'store.update', id, 'store');
+      return store;
+    });
   }
 
   @Patch(':id/toggle-active')
   toggleActive(@Param('id') id: string, @Request() req: any): Promise<Store> {
-    return this.storesService.toggleActive(id, req.user);
+    return this.storesService.toggleActive(id, req.user).then((store) => {
+      this.audit(req, 'store.toggle_active', id, 'store');
+      return store;
+    });
   }
 
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: any): Promise<{ message: string }> {
     return this.storesService
       .remove(id, req.user)
-      .then(() => ({ message: 'Loja excluída com segurança' }));
+      .then(() => {
+        this.audit(req, 'store.delete', id, 'store');
+        return { message: 'Loja excluída com segurança' };
+      });
+  }
+
+  private audit(
+    req: any,
+    action: string,
+    targetId: string,
+    targetType: string,
+    metadata?: Record<string, unknown>,
+  ): void {
+    this.auditService.record({
+      action,
+      status: 'success',
+      actorId: req.user?.id,
+      actorRole: req.user?.role,
+      tenantId: req.user?.tenantId,
+      targetType,
+      targetId,
+      requestId: req.requestId,
+      metadata,
+    });
   }
 }

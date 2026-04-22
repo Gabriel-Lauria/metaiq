@@ -38,12 +38,12 @@
     </button>
   </form>
 
-  <form class="toolbar section-panel" *ngIf="isPlatformAdmin()" (ngSubmit)="resetPassword()">
+  <form class="toolbar section-panel" *ngIf="canResetPasswords()" (ngSubmit)="resetPassword()">
     <div class="form-field">
       <label for="passwordUserId">Usuário</label>
       <select id="passwordUserId" class="form-select" name="passwordUserId" [(ngModel)]="passwordUserId">
         <option value="">Usuário para alterar senha</option>
-        <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id">{{ user.name }} - {{ user.email }}</option>
+        <option *ngFor="let user of users(); trackBy: trackById" [value]="user.id" [disabled]="!canResetPasswordFor(user)">{{ user.name }} - {{ user.email }}</option>
       </select>
     </div>
     <div class="form-field">
@@ -94,7 +94,7 @@
       <app-ui-badge [label]="roleLabel(user.role)" [tone]="roleTone(user.role)" />
       <span>{{ user.tenantId || 'Sem empresa' }}</span>
       <span class="actions">
-        <button class="btn btn-danger" type="button" (click)="askDelete(user)" [disabled]="saving() || !canDelete(user)">
+        <button class="btn btn-danger" type="button" *ngIf="canDelete(user)" (click)="askDelete(user)" [disabled]="saving()">
           Excluir usuário
         </button>
       </span>

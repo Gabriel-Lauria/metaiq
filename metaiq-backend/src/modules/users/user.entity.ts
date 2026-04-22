@@ -17,6 +17,7 @@ import { UserStore } from '../user-stores/user-store.entity';
 @Entity('users')
 @Index(['managerId'])
 @Index(['tenantId'])
+@Index(['createdByUserId'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -38,6 +39,9 @@ export class User {
 
   @Column({ nullable: true })
   tenantId: string | null;
+
+  @Column({ nullable: true })
+  createdByUserId: string | null;
 
   @ManyToOne(() => Manager, (manager) => manager.users, { nullable: true })
   @JoinColumn({ name: 'managerId' })

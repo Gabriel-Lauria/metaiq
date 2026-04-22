@@ -8,6 +8,7 @@ import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import {
   AdAccount,
   CampaignAiSuggestResponse,
+  CampaignSuggestionResponse,
   CreateMetaCampaignRequest,
   IntegrationProvider,
   IntegrationStatus,
@@ -432,6 +433,7 @@ export class CampaignCreatePanelComponent {
     this.state.ui.aiApplied = false;
     this.state.ui.aiDetectedFields = [];
     this.state.ui.aiLastSummary = '';
+    this.state.ui.aiCreativeIdeas = [];
     this.touchState();
   }
 
@@ -443,23 +445,31 @@ export class CampaignCreatePanelComponent {
   applyAiSuggestions(): void {
     const prompt = this.state.ui.aiPrompt.trim();
     if (!prompt) {
-      this.ui.showWarning('Prompt vazio', 'Descreva rapidamente a campanha para gerar sugestões.');
+      this.ui.showWarning('Descrição vazia', 'Descreva rapidamente a campanha para gerar com IA.');
       return;
     }
+
+    const storeId = this.storeContext.getValidSelectedStoreId();
+    if (!storeId) {
+      this.ui.showWarning('Store obrigatória', 'Selecione uma store válida antes de gerar com IA.');
+      return;
+    }
+
     this.aiSuggesting.set(true);
 
-    this.campaignAiService.suggest(prompt)
+    this.campaignAiService.suggest(prompt, storeId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.aiSuggesting.set(false);
-          const mergedResult = this.mergeAiResultWithFallback(prompt, result);
-          const appliedCount = this.applyAiResult(mergedResult);
+          const mergedResult = this.mergeAiResultWithFallback(prompt, this.mapCampaignSuggestionToBuilderResult(result));
+          const appliedCount = this.applyAiResult(mergedResult) + this.applyCampaignSuggestionExtras(result);
+          this.state.ui.aiCreativeIdeas = result.creativeIdeas || [];
           this.touchState();
           this.ui.showSuccess(
-            'Sugestões aplicadas',
+            'IA aplicada ao formulário',
             appliedCount > 0
-              ? `${appliedCount} campos vazios foram preenchidos com sugestões da IA.`
+              ? `${appliedCount} campos foram preenchidos com sugestões da IA.`
               : 'A IA analisou o briefing, mas não encontrou campos vazios para preencher.',
           );
           this.scrollToSection('builder-general');
@@ -468,6 +478,7 @@ export class CampaignCreatePanelComponent {
           this.aiSuggesting.set(false);
           const fallback = this.buildFallbackAiResult(prompt);
           const appliedCount = this.applyAiResult(fallback);
+          this.state.ui.aiCreativeIdeas = [];
           this.touchState();
           this.ui.showWarning(
             'IA indisponível no momento',
@@ -766,6 +777,76 @@ export class CampaignCreatePanelComponent {
       objectiveOptions: this.objectiveOptions,
       genderOptions: this.genderOptions,
     };
+  }
+
+  private mapCampaignSuggestionToBuilderResult(result: CampaignSuggestionResponse): CampaignAiSuggestResponse {
+    const combinedText = [
+      this.state.ui.aiPrompt,
+      result.audience,
+      result.strategy,
+      result.budgetSuggestion,
+    ].filter(Boolean).join('\n');
+    const normalized = normalizePromptText(combinedText);
+    const objective = detectObjectiveFromPrompt(normalized);
+    const budget = extractBudgetFromPrompt(result.budgetSuggestion || combinedText, normalized);
+    const budgetType = detectBudgetTypeFromPrompt(normalized);
+    const country = detectCountryFromPrompt(normalized, this.state.audience.country);
+    const city = detectCityFromPrompt(combinedText, normalized);
+    const region = detectRegionFromPrompt(combinedText, normalized);
+    const gender = detectGenderFromPrompt(normalized);
+    const cta = detectCtaFromPrompt(normalized);
+    const interests = result.audience?.trim() || detectInterestFallbackFromPrompt(normalized);
+
+    return {
+      summary: result.strategy || 'Sugestão de campanha gerada pela IA.',
+      detectedFields: [
+        'Nome',
+        'Público',
+        'Estratégia',
+        'Copy',
+        'Orçamento',
+        ...(result.creativeIdeas?.length ? ['Ideias de criativo'] : []),
+      ],
+      suggestions: {
+        campaignName: result.name || null,
+        objective,
+        budget: budget > 0 ? budget : null,
+        budgetType,
+        country,
+        region,
+        city,
+        ageMin: null,
+        ageMax: null,
+        gender,
+        destinationType: null,
+        websiteUrl: null,
+        message: result.copy || null,
+        headline: result.name || null,
+        description: null,
+        cta,
+        interests,
+        utmSource: 'meta',
+        utmMedium: 'paid-social',
+        utmCampaign: result.name ? this.slugify(result.name) : null,
+      },
+    };
+  }
+
+  private applyCampaignSuggestionExtras(result: CampaignSuggestionResponse): number {
+    let appliedCount = 0;
+
+    if (this.shouldApplySuggestion('tracking.goals', this.state.tracking.goals, this.initialState.tracking.goals) && result.strategy?.trim()) {
+      this.state.tracking.goals = result.strategy.trim();
+      appliedCount += 1;
+    }
+
+    const ideas = (result.creativeIdeas || []).map((item) => item.trim()).filter(Boolean);
+    if (this.shouldApplySuggestion('tracking.notes', this.state.tracking.notes, this.initialState.tracking.notes) && ideas.length) {
+      this.state.tracking.notes = `Ideias de criativo: ${ideas.join('; ')}`;
+      appliedCount += 1;
+    }
+
+    return appliedCount;
   }
 
   private applyAiResult(result: CampaignAiSuggestResponse): number {

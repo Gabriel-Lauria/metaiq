@@ -6,3 +6,14 @@ export class CampaignAiSuggestDto {
   @MaxLength(4000)
   prompt: string;
 }
+
+export class CampaignSuggestionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4000)
+  prompt: string;
+
+  @IsString()
+  @IsNotEmpty()
+  storeId: string;
+}

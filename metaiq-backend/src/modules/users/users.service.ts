@@ -111,7 +111,7 @@ export class UsersService {
 
   async createForUser(requester: AuthenticatedUser, dto: CreateUserDto): Promise<User> {
     if (this.accessScope.isPlatformAdmin(requester)) {
-      return this.createUserWithResolvedScope(dto);
+      return this.createUserWithResolvedScope(dto, requester.id);
     }
 
     if (!(this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) || !requester.tenantId) {
@@ -131,7 +131,7 @@ export class UsersService {
       role,
       managerId: requester.managerId,
       tenantId: requester.tenantId,
-    });
+    }, requester.id);
   }
 
   /**
@@ -169,9 +169,9 @@ export class UsersService {
         return [];
       }
 
-      return this.userRepository.find({
-        where: { tenantId: requester.tenantId, deletedAt: IsNull() },
-      });
+      const query = this.userRepository.createQueryBuilder('user');
+      await this.accessScope.applyUserScope(query, 'user', requester);
+      return query.getMany();
     }
 
     return this.userRepository.find({
@@ -192,6 +192,9 @@ export class UsersService {
 
     if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
       this.accessScope.validateTenantAccess(requester, user.tenantId);
+      if (this.accessScope.isManager(requester) && user.createdByUserId !== requester.id && user.id !== requester.id) {
+        throw new NotFoundException(`Usuário ${id} não encontrado`);
+      }
       return user;
     }
 
@@ -227,7 +230,7 @@ export class UsersService {
 
     if (dto.managerId !== undefined) {
       if (!this.accessScope.isPlatformAdmin(requester)) {
-        throw new ForbiddenException('Apenas ADMIN pode alterar managerId');
+        throw new ForbiddenException('Apenas PLATFORM_ADMIN pode alterar managerId');
       }
 
       if (requester.id === user.id) {
@@ -263,7 +266,7 @@ export class UsersService {
     dto: ResetUserPasswordDto,
   ): Promise<User> {
     if (!(this.accessScope.isPlatformAdmin(requester) || this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester))) {
-      throw new ForbiddenException('Apenas ADMIN pode alterar a senha de qualquer usuário');
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN ou MANAGER podem alterar a senha de usuários no próprio escopo');
     }
 
     const user = await this.findOneForUser(id, requester);
@@ -331,7 +334,7 @@ export class UsersService {
     return bcrypt.compare(password, hash);
   }
 
-  private async createUserWithResolvedScope(dto: CreateUserDto): Promise<User> {
+  private async createUserWithResolvedScope(dto: CreateUserDto, createdByUserId?: string | null): Promise<User> {
     const existing = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -363,6 +366,7 @@ export class UsersService {
       role,
       managerId,
       tenantId,
+      createdByUserId: createdByUserId ?? null,
       active: dto.active ?? true,
       deletedAt: null,
     });

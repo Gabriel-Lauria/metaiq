@@ -7,7 +7,7 @@ import { MetaGraphApiClient } from './meta-graph-api.client';
 import { CreateMetaCampaignDto, RetryPartialCampaignDto } from './dto/meta-integration.dto';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
-import { IntegrationProvider, IntegrationStatus } from '../../../common/enums';
+import { IntegrationProvider, IntegrationStatus, Role } from '../../../common/enums';
 import { StoreIntegration } from '../store-integration.entity';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
@@ -53,6 +53,7 @@ export class MetaCampaignRecoveryService {
     storeId: string,
     user: AuthenticatedUser,
   ): Promise<{ success: boolean; message: string; ids?: Record<string, string> }> {
+    await this.validateCanManage(storeId, user);
     const execution = await this.getScopedExecution(executionId, storeId, user);
 
     if (execution.status === MetaCampaignCreationStatus.ACTIVE) {
@@ -105,6 +106,7 @@ export class MetaCampaignRecoveryService {
     storeId: string,
     user: AuthenticatedUser,
   ): Promise<{ success: boolean; message: string; cleaned: Record<string, boolean> }> {
+    await this.validateCanManage(storeId, user);
     const execution = await this.getScopedExecution(executionId, storeId, user);
 
     if (execution.status !== MetaCampaignCreationStatus.PARTIAL && execution.status !== MetaCampaignCreationStatus.FAILED) {
@@ -193,7 +195,7 @@ export class MetaCampaignRecoveryService {
    * Retorna informações sobre uma execução de criação de campanha
    */
   async getExecutionStatus(executionId: string, storeId: string, user: AuthenticatedUser) {
-    await this.accessScope.validateStoreAccess(user, storeId);
+    await this.validateCanManage(storeId, user);
     const execution = await this.campaignCreationRepository.findOne({
       where: { id: executionId, storeId },
       relations: ['store', 'adAccount', 'campaign'],
@@ -354,6 +356,13 @@ export class MetaCampaignRecoveryService {
     }
 
     return execution;
+  }
+
+  private async validateCanManage(storeId: string, user: AuthenticatedUser): Promise<void> {
+    await this.accessScope.validateStoreAccess(user, storeId);
+    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL].includes(user.role)) {
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN e OPERATIONAL podem gerenciar recuperações de campanhas Meta');
+    }
   }
 
   private async getRecoveryContext(execution: MetaCampaignCreation, dto?: RetryPartialCampaignDto) {

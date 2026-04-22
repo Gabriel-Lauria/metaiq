@@ -42,7 +42,15 @@
   />
 
   <app-ui-state
-    *ngIf="!loading() && !error() && insights().length === 0"
+    *ngIf="needsStoreSelection() && !loading() && !error()"
+    type="empty"
+    icon="S"
+    title="Selecione uma loja"
+    message="Escolha uma loja no seletor acima para carregar alertas, oportunidades e recomendações."
+  />
+
+  <app-ui-state
+    *ngIf="!loading() && !error() && !needsStoreSelection() && insights().length === 0"
     type="empty"
     icon="i"
     title="Nenhum insight no período"
@@ -58,6 +66,16 @@
         <strong>{{ insight.title || insight.message }}</strong>
       </div>
       <p>{{ insight.description || insight.recommendation }}</p>
+      <div class="insight-actions" *ngIf="canResolveInsights()">
+        <button
+          type="button"
+          class="resolve-btn"
+          (click)="resolveInsight(insight)"
+          [disabled]="resolvingId() === insight.id"
+        >
+          {{ resolvingId() === insight.id ? 'Resolvendo...' : 'Resolver insight' }}
+        </button>
+      </div>
     </article>
   </div>
 </section>

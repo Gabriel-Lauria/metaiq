@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerService } from './services/logger.service';
+import { AuditService } from './services/audit.service';
 import { RetryService } from './services/retry.service';
 import { MetricsService } from './services/metrics.service';
 import { CurrentUserService } from './services/current-user.service';
@@ -25,6 +26,7 @@ import { OwnershipGuard } from './guards/ownership.guard';
   imports: [TypeOrmModule.forFeature([Store, UserStore])],
   providers: [
     LoggerService,
+    AuditService,
     RetryService,
     MetricsService,
     CurrentUserService,
@@ -33,6 +35,7 @@ import { OwnershipGuard } from './guards/ownership.guard';
   ],
   exports: [
     LoggerService,
+    AuditService,
     RetryService,
     MetricsService,
     CurrentUserService,

@@ -21,35 +21,20 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<User | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  private currentRoleSubject = new BehaviorSubject<Role | null>(
-    this.getStoredRole()
-  );
+  private currentRoleSubject = new BehaviorSubject<Role | null>(null);
   public currentRole$ = this.currentRoleSubject.asObservable();
 
   private accessTokenSubject = new BehaviorSubject<string | null>(null);
   public accessToken$ = this.accessTokenSubject.asObservable();
+
+  private authInitializedSubject = new BehaviorSubject<boolean>(false);
+  public authInitialized$ = this.authInitializedSubject.asObservable();
 
   public isAuthenticated$ = this.accessTokenSubject.asObservable()
     .pipe(map(token => !!token));
 
   constructor() {
     localStorage.removeItem('accessToken');
-    this.loadUserFromStorage();
-  }
-
-  private loadUserFromStorage(): void {
-    const user = localStorage.getItem('user');
-    if (user) {
-      try {
-        const parsedUser = JSON.parse(user) as User;
-        const role = this.normalizeRole(parsedUser.role);
-        const userWithRole = { ...parsedUser, role };
-        this.currentUserSubject.next(userWithRole);
-        this.currentRoleSubject.next(role);
-      } catch {
-        this.logout();
-      }
-    }
   }
 
   login(credentials: LoginRequest): Observable<AuthResponse> {
@@ -79,6 +64,10 @@ export class AuthService {
     this.clearSessionState();
   }
 
+  clearLocalSession(): void {
+    this.clearSessionState();
+  }
+
   getCurrentUser(): User | null {
     return this.currentUserSubject.value;
   }
@@ -95,8 +84,22 @@ export class AuthService {
     return !!this.getAccessToken();
   }
 
+  isInitialized(): boolean {
+    return this.authInitializedSubject.value;
+  }
+
+  initializeSession(): Observable<boolean> {
+    if (this.isAuthenticated()) {
+      this.authInitializedSubject.next(true);
+      return of(true);
+    }
+
+    return this.ensureAuthenticated();
+  }
+
   ensureAuthenticated(): Observable<boolean> {
     if (this.isAuthenticated()) {
+      this.authInitializedSubject.next(true);
       return of(true);
     }
 
@@ -108,6 +111,7 @@ export class AuthService {
           return of(false);
         }),
         finalize(() => {
+          this.authInitializedSubject.next(true);
           this.refreshSessionRequest = null;
         }),
         shareReplay(1),
@@ -130,6 +134,7 @@ export class AuthService {
     this.currentUserSubject.next(userWithRole);
     this.currentRoleSubject.next(role);
     this.accessTokenSubject.next(response.accessToken);
+    this.authInitializedSubject.next(true);
   }
 
   private clearSessionStorage(): void {
@@ -143,17 +148,7 @@ export class AuthService {
     this.currentUserSubject.next(null);
     this.currentRoleSubject.next(null);
     this.accessTokenSubject.next(null);
-  }
-
-  private getStoredRole(): Role | null {
-    const user = localStorage.getItem('user');
-    if (!user) return null;
-
-    try {
-      return this.normalizeRole((JSON.parse(user) as User).role);
-    } catch {
-      return null;
-    }
+    this.authInitializedSubject.next(true);
   }
 
   private normalizeRole(role: unknown): Role {
@@ -171,8 +166,10 @@ export class AuthService {
     };
 
     const resolvedRole = aliases[normalized] ?? normalized;
-    return Object.values(Role).includes(resolvedRole as Role)
-      ? (resolvedRole as Role)
-      : Role.OPERATIONAL;
+    if (Object.values(Role).includes(resolvedRole as Role)) {
+      return resolvedRole as Role;
+    }
+
+    throw new Error('Perfil de acesso inválido recebido do backend.');
   }
 }

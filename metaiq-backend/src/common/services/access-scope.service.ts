@@ -55,7 +55,12 @@ export class AccessScopeService {
       }
 
       const stores = await this.storeRepository.find({
-        where: { tenantId: user.tenantId, active: true, deletedAt: IsNull() },
+        where: {
+          tenantId: user.tenantId,
+          active: true,
+          deletedAt: IsNull(),
+          ...(this.isManager(user) ? { createdByUserId: user.id } : {}),
+        },
         select: ['id'],
       });
       return stores.map((store) => store.id);
@@ -86,6 +91,10 @@ export class AccessScopeService {
 
     if (this.isAdmin(user) || this.isManager(user)) {
       if (user.tenantId && store.tenantId === user.tenantId) {
+        if (this.isManager(user) && store.createdByUserId !== user.id) {
+          throw new ForbiddenException('Store fora do escopo do manager');
+        }
+
         return store;
       }
 
@@ -183,11 +192,19 @@ export class AccessScopeService {
         return query.andWhere('1 = 0');
       }
 
-      return query
+      query
         .andWhere(`${alias}_scopeStore.tenantId = :scopeTenantId`, {
           scopeTenantId: user.tenantId,
         })
         .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
+
+      if (this.isManager(user)) {
+        query.andWhere(`${alias}_scopeStore.createdByUserId = :scopeManagerUserId`, {
+          scopeManagerUserId: user.id,
+        });
+      }
+
+      return query;
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
@@ -216,11 +233,19 @@ export class AccessScopeService {
         return query.andWhere('1 = 0');
       }
 
-      return query
+      query
         .andWhere(`${alias}_scopeStore.tenantId = :scopeTenantId`, {
           scopeTenantId: user.tenantId,
         })
         .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
+
+      if (this.isManager(user)) {
+        query.andWhere(`${alias}_scopeStore.createdByUserId = :scopeManagerUserId`, {
+          scopeManagerUserId: user.id,
+        });
+      }
+
+      return query;
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
@@ -231,5 +256,102 @@ export class AccessScopeService {
     return query.andWhere(`${alias}.storeId IN (:...scopeStoreIds)`, {
       scopeStoreIds: storeIds,
     });
+  }
+
+  async applyStoreScope<T>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+    user: AuthenticatedUser,
+    options: { activeOnly?: boolean } = {},
+  ): Promise<SelectQueryBuilder<T>> {
+    const activeOnly = options.activeOnly ?? true;
+    if (this.isPlatformAdmin(user)) {
+      query.andWhere(`${alias}.deletedAt IS NULL`);
+      if (activeOnly) {
+        query.andWhere(`${alias}.active = :scopeStoreActive`, { scopeStoreActive: true });
+      }
+      return query;
+    }
+
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (!user.tenantId) {
+        return query.andWhere('1 = 0');
+      }
+
+      query
+        .andWhere(`${alias}.tenantId = :scopeTenantId`, { scopeTenantId: user.tenantId })
+        .andWhere(`${alias}.deletedAt IS NULL`);
+
+      if (activeOnly) {
+        query.andWhere(`${alias}.active = :scopeStoreActive`, { scopeStoreActive: true });
+      }
+
+      if (this.isManager(user)) {
+        query.andWhere(`${alias}.createdByUserId = :scopeManagerUserId`, {
+          scopeManagerUserId: user.id,
+        });
+      }
+
+      return query;
+    }
+
+    const storeIds = await this.getAllowedStoreIds(user);
+    if (!storeIds?.length) {
+      return query.andWhere('1 = 0');
+    }
+
+    query.andWhere(`${alias}.id IN (:...scopeStoreIds)`, { scopeStoreIds: storeIds });
+    if (activeOnly) {
+      query.andWhere(`${alias}.active = :scopeStoreActive`, { scopeStoreActive: true });
+    }
+    return query.andWhere(`${alias}.deletedAt IS NULL`);
+  }
+
+  async applyUserScope<T>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+    user: AuthenticatedUser,
+  ): Promise<SelectQueryBuilder<T>> {
+    if (this.isPlatformAdmin(user)) {
+      return query.andWhere(`${alias}.deletedAt IS NULL`);
+    }
+
+    if (this.isAdmin(user) || this.isManager(user)) {
+      if (!user.tenantId) {
+        return query.andWhere('1 = 0');
+      }
+
+      query
+        .andWhere(`${alias}.tenantId = :scopeTenantId`, { scopeTenantId: user.tenantId })
+        .andWhere(`${alias}.deletedAt IS NULL`);
+
+      if (this.isManager(user)) {
+        query.andWhere(`(${alias}.createdByUserId = :scopeManagerUserId OR ${alias}.id = :scopeManagerUserId)`, {
+          scopeManagerUserId: user.id,
+        });
+      }
+
+      return query;
+    }
+
+    return query
+      .andWhere(`${alias}.id = :scopeUserId`, { scopeUserId: user.id })
+      .andWhere(`${alias}.deletedAt IS NULL`);
+  }
+
+  async applyMetricScope<T>(
+    query: SelectQueryBuilder<T>,
+    campaignAlias: string,
+    user: AuthenticatedUser,
+  ): Promise<SelectQueryBuilder<T>> {
+    return this.applyCampaignScope(query, campaignAlias, user);
+  }
+
+  async applyInsightScope<T>(
+    query: SelectQueryBuilder<T>,
+    campaignAlias: string,
+    user: AuthenticatedUser,
+  ): Promise<SelectQueryBuilder<T>> {
+    return this.applyCampaignScope(query, campaignAlias, user);
   }
 }

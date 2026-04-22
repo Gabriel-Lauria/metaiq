@@ -88,7 +88,7 @@ export class DashboardService {
       ])
       .where('metric.date BETWEEN :from AND :to', { from, to });
 
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     this.applyStoreFilter(query, storeId);
 
     const result = await query.getRawOne();
@@ -137,23 +137,11 @@ export class DashboardService {
   }
 
   private async countUsers(user: AuthenticatedUser): Promise<number> {
-    if (this.accessScope.isPlatformAdmin(user)) {
-      return this.userRepository.count({
-        where: { active: true, deletedAt: IsNull() },
-      });
-    }
-
-    if (!user.tenantId) {
-      return 0;
-    }
-
-    return this.userRepository.count({
-      where: {
-        tenantId: user.tenantId,
-        active: true,
-        deletedAt: IsNull(),
-      },
-    });
+    const query = this.userRepository
+      .createQueryBuilder('user')
+      .where('user.active = :active', { active: true });
+    await this.accessScope.applyUserScope(query, 'user', user);
+    return query.getCount();
   }
 
   private async getCampaignHighlights(user: AuthenticatedUser, storeId?: string) {
@@ -190,7 +178,7 @@ export class DashboardService {
       .where('insight.resolved = :resolved', { resolved: false })
       .take(20); // Get more to sort in memory
 
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyInsightScope(query, 'campaign', user);
     this.applyStoreFilter(query, storeId);
 
     const insights = await query.getMany();

@@ -43,7 +43,7 @@ export class FinancialDashboardComponent implements OnInit {
         data: summaries.map(s => s.totalBilled),
         backgroundColor: [
           '#007bff', '#28a745', '#ffc107', '#dc3545', '#6f42c1',
-          '#e83e8c', '#fd7e14', '#20c997', '#6c757d', '#17a2b8'
+          '#2563eb', '#f97316', '#16a34a', '#64748b', '#0ea5e9'
         ],
         borderWidth: 1
       }]

@@ -22,12 +22,14 @@ type KpiTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
       .kpi-card {
         display: grid;
         gap: 14px;
+        min-width: 0;
         min-height: 150px;
         padding: 22px;
-        border-radius: 24px;
+        border-radius: 8px;
         background: var(--bg-surface);
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
+        overflow: hidden;
       }
 
       .kpi-header {
@@ -38,11 +40,13 @@ type KpiTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
       }
 
       .kpi-label {
+        min-width: 0;
         color: var(--text-muted);
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+        overflow-wrap: anywhere;
       }
 
       .kpi-marker {
@@ -58,10 +62,13 @@ type KpiTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
       }
 
       .kpi-value {
+        min-width: 0;
         color: var(--text);
-        font-family: 'Space Mono', monospace;
-        font-size: 32px;
+        font-family: var(--font-mono);
+        font-size: clamp(22px, 2.3vw, 32px);
         line-height: 1.05;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .kpi-hint {
@@ -97,7 +104,7 @@ type KpiTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
         }
 
         .kpi-value {
-          font-size: 28px;
+          font-size: 26px;
         }
       }
     `

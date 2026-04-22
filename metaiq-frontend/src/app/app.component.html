@@ -18,99 +18,22 @@
         (click)="toggleSidebar()"
         [title]="sidebarOpen() ? 'Fechar sidebar' : 'Abrir sidebar'"
       >
-        {{ sidebarOpen() ? '←' : '→' }}
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
       </button>
     </div>
 
     <nav class="nav-menu">
       <a
-        routerLink="/dashboard"
+        *ngFor="let item of getMenu()"
+        [routerLink]="item.route"
         class="nav-item"
-        [class.active]="isActive('/dashboard')"
-        title="Dashboard"
+        [class.active]="isActive(item.route)"
+        [title]="item.title"
       >
-        <span class="nav-icon">📊</span>
-        <span class="nav-label">{{ dashboardLabel() }}</span>
-      </a>
-      <a
-        *ngIf="canSeeCampaigns()"
-        routerLink="/campaigns"
-        class="nav-item"
-        [class.active]="isActive('/campaigns')"
-        title="Campanhas"
-      >
-        <span class="nav-icon">📢</span>
-        <span class="nav-label">Campanhas</span>
-      </a>
-      <a
-        *ngIf="canSeeMetrics()"
-        routerLink="/metrics"
-        class="nav-item"
-        [class.active]="isActive('/metrics')"
-        title="Métricas"
-      >
-        <span class="nav-icon">M</span>
-        <span class="nav-label">Métricas</span>
-      </a>
-      <a
-        *ngIf="canSeeOperationalReadouts()"
-        routerLink="/insights"
-        class="nav-item"
-        [class.active]="isActive('/insights')"
-        title="Insights"
-      >
-        <span class="nav-icon">I</span>
-        <span class="nav-label">Insights</span>
-      </a>
-      <a
-        *ngIf="canSeeClientResults()"
-        routerLink="/results"
-        class="nav-item"
-        [class.active]="isActive('/results')"
-        title="Resultados"
-      >
-        <span class="nav-icon">R</span>
-        <span class="nav-label">Resultados</span>
-      </a>
-      <a
-        *ngIf="canSeeManagers()"
-        routerLink="/admin/managers"
-        class="nav-item"
-        [class.active]="isActive('/admin/managers')"
-        title="Empresas"
-      >
-        <span class="nav-icon">M</span>
-        <span class="nav-label">Empresas</span>
-      </a>
-      <a
-        *ngIf="canSeeTenantManagement()"
-        routerLink="/manager/stores"
-        class="nav-item"
-        [class.active]="isActive('/manager/stores')"
-        title="Lojas"
-      >
-        <span class="nav-icon">S</span>
-        <span class="nav-label">Lojas</span>
-      </a>
-      <a
-        *ngIf="canSeeTenantManagement()"
-        routerLink="/manager/users"
-        class="nav-item"
-        [class.active]="isActive('/manager/users')"
-        title="Usuários"
-      >
-        <span class="nav-icon">U</span>
-        <span class="nav-label">Usuários</span>
-      </a>
-      <a
-        *ngIf="canSeeIntegrations()"
-        routerLink="/manager/integrations"
-        class="nav-item"
-        [class.active]="isActive('/manager/integrations')"
-        title="Integrações"
-      >
-        <span class="nav-icon">I</span>
-        <span class="nav-label">Integrações</span>
+        <span class="nav-icon">{{ item.icon }}</span>
+        <span class="nav-label">{{ item.label }}</span>
       </a>
     </nav>
 
@@ -131,9 +54,6 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-content">
-        <button class="toggle-sidebar" (click)="toggleSidebar()" [title]="sidebarOpen() ? 'Fechar sidebar' : 'Abrir sidebar'">
-          {{ sidebarOpen() ? 'Fechar menu' : 'Abrir menu' }}
-        </button>
         <div class="page-title-container">
           <h2 class="page-title-header">{{ currentTitle }}</h2>
         </div>

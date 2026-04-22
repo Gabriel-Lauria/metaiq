@@ -51,6 +51,7 @@ export class StoresService {
       name: dto.name.trim(),
       managerId,
       tenantId,
+      createdByUserId: requester.id,
       active: true,
     });
 
@@ -58,44 +59,24 @@ export class StoresService {
   }
 
   async findAll(requester: AuthenticatedUser): Promise<Store[]> {
-    if (this.accessScope.isPlatformAdmin(requester)) {
-      return this.storeRepository.find({
-        where: { deletedAt: IsNull() },
-        relations: ['manager'],
-        order: { createdAt: 'DESC' },
-      });
-    }
+    const query = this.storeRepository
+      .createQueryBuilder('store')
+      .leftJoinAndSelect('store.manager', 'manager')
+      .orderBy('store.createdAt', 'DESC');
 
-    if (!requester.tenantId) {
-      return [];
-    }
-
-    return this.storeRepository.find({
-      where: { tenantId: requester.tenantId, deletedAt: IsNull() },
-      relations: ['manager'],
-      order: { createdAt: 'DESC' },
-    });
+    await this.accessScope.applyStoreScope(query, 'store', requester, { activeOnly: false });
+    return query.getMany();
   }
 
   async findAccessible(requester: AuthenticatedUser): Promise<Store[]> {
-    if (this.accessScope.isPlatformAdmin(requester)) {
-      return this.storeRepository.find({
-        where: { active: true, deletedAt: IsNull() },
-        relations: ['manager'],
-        order: { name: 'ASC' },
-      });
-    }
+    if (this.accessScope.isPlatformAdmin(requester) || this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
+      const query = this.storeRepository
+        .createQueryBuilder('store')
+        .leftJoinAndSelect('store.manager', 'manager')
+        .orderBy('store.name', 'ASC');
 
-    if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
-      if (!requester.tenantId) {
-        return [];
-      }
-
-      return this.storeRepository.find({
-        where: { tenantId: requester.tenantId, active: true, deletedAt: IsNull() },
-        relations: ['manager'],
-        order: { name: 'ASC' },
-      });
+      await this.accessScope.applyStoreScope(query, 'store', requester);
+      return query.getMany();
     }
 
     const links = await this.userStoreRepository.find({
@@ -111,7 +92,7 @@ export class StoresService {
 
   async findOne(id: string, requester: AuthenticatedUser): Promise<Store> {
     const store = await this.findOneUnsafeInternal(id);
-    this.accessScope.validateTenantAccess(requester, store.tenantId);
+    await this.accessScope.validateStoreAccess(requester, store.id);
     return store;
   }
 
@@ -128,7 +109,7 @@ export class StoresService {
 
     if (dto.managerId !== undefined) {
       if (!this.accessScope.isPlatformAdmin(requester)) {
-        throw new ForbiddenException('Apenas ADMIN pode alterar managerId legado da store');
+        throw new ForbiddenException('Apenas PLATFORM_ADMIN pode alterar managerId legado da store');
       }
 
       await this.ensureManagerExists(dto.managerId);
@@ -252,14 +233,14 @@ export class StoresService {
     if (this.accessScope.isPlatformAdmin(requester)) {
       const tenantId = payloadTenantId ?? legacyManagerId;
       if (!tenantId) {
-        throw new BadRequestException('tenantId é obrigatório para ADMIN criar store');
+        throw new BadRequestException('tenantId é obrigatório para PLATFORM_ADMIN criar store');
       }
 
       return tenantId;
     }
 
     if (!(this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) || !requester.tenantId) {
-      throw new ForbiddenException('Apenas ADMIN ou MANAGER podem gerenciar stores do tenant');
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN ou MANAGER podem gerenciar stores do tenant');
     }
 
     return requester.tenantId;

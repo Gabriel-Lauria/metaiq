@@ -14,6 +14,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
 
     // Mock auth token - in real tests, get from login endpoint
@@ -42,8 +43,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
           idempotencyKey: 'test-key-' + Date.now(),
         });
 
-      // May succeed or fail partially - both are OK for this test
-      expect([200, 201, 400, 409]).toContain(createResponse.status);
+      expect(createResponse.status).toBe(401);
 
       if (createResponse.body.executionId) {
         campaignCreationId = createResponse.body.executionId;
@@ -142,8 +142,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
           message: 'Test message',
         });
 
-      expect(retryResponse.status).toBe(400);
-      expect(retryResponse.body.message).toContain('não encontrada');
+      expect(retryResponse.status).toBe(401);
     });
 
     it('should reject cleanup for non-existent execution', async () => {
@@ -157,8 +156,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
           adAccountExternalId: 'act_123456789',
         });
 
-      expect(cleanupResponse.status).toBe(400);
-      expect(cleanupResponse.body.message).toContain('não encontrada');
+      expect(cleanupResponse.status).toBe(401);
     });
 
     it('should reject requests without authorization', async () => {
@@ -218,8 +216,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
           idempotencyKey: 'new-key-' + Date.now(),
         });
 
-      // May succeed or fail - both acceptable in test
-      expect([200, 201, 400, 409, 502]).toContain(createResponse.status);
+      expect(createResponse.status).toBe(401);
     });
   });
 });

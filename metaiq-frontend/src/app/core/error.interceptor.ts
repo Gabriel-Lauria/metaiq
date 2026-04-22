@@ -48,10 +48,7 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         }
       } else if (error.status === 404) {
         userFriendlyMessage = 'Recurso inexistente ou não encontrado.';
-        if (shouldShowNotification) {
-          uiService.showWarning('Recurso não encontrado', userFriendlyMessage);
-          shouldShowNotification = false;
-        }
+        shouldShowNotification = false;
       } else if (error.status === 429) {
         // Rate limiting - NÃO fazer retry automático
         userFriendlyMessage = 'Muitas tentativas. Aguarde alguns segundos.';

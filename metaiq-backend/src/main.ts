@@ -1,12 +1,13 @@
 import 'reflect-metadata';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from './config/app.config';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
   const appConfig = configService.get<AppConfig>('app') as AppConfig;
@@ -37,11 +38,13 @@ async function bootstrap() {
     disableErrorMessages: appConfig.nodeEnv === 'production',
   }));
 
-  const allowedOrigins = [
-    appConfig.frontendUrl,
-    'http://localhost:4200',
-    'http://localhost:63769',
-  ].filter(Boolean);
+  const configuredOrigins = appConfig.corsOrigins?.length
+    ? appConfig.corsOrigins
+    : [appConfig.frontendUrl].filter(Boolean);
+  const localOrigins = ['http://localhost:4200', 'http://localhost:63769'];
+  const allowedOrigins = appConfig.nodeEnv === 'production'
+    ? configuredOrigins
+    : Array.from(new Set([...configuredOrigins, ...localOrigins]));
 
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -58,20 +61,17 @@ async function bootstrap() {
 
   await app.listen(appConfig.port);
 
-  console.log(`
-╔════════════════════════════════════════════╗
-║      🚀 MetaIQ Backend Server             ║
-╠════════════════════════════════════════════╣
-║                                            ║
-║  🌐 URL: http://localhost:${appConfig.port}           ║
-║  📊 API: http://localhost:${appConfig.port}/api       ║
-║  🏥 Health: http://localhost:${appConfig.port}/health ║
-║                                            ║
-╚════════════════════════════════════════════╝
-  `);
+  logger.log(JSON.stringify({
+    event: 'APPLICATION_STARTED',
+    port: appConfig.port,
+    environment: appConfig.nodeEnv,
+    health: `/api/health`,
+    ready: `/api/ready`,
+    corsOrigins: allowedOrigins,
+  }));
 }
 
 bootstrap().catch((err) => {
-  console.error('❌ Erro ao iniciar servidor:', err);
+  new Logger('Bootstrap').error('Erro ao iniciar servidor', err instanceof Error ? err.stack : String(err));
   process.exit(1);
 });

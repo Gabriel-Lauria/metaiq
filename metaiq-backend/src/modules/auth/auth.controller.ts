@@ -6,16 +6,14 @@ import {
   Post,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
-import { LoginDto, RefreshTokenDto, RegisterDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto } from './dto/auth.dto';
 
 @Controller('auth')
-@UseGuards(ThrottlerGuard)
 export class AuthController {
   constructor(
     private authService: AuthService,
@@ -24,7 +22,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async login(
     @Body() loginDto: LoginDto,
     @Res({ passthrough: true }) response: Response,
@@ -37,13 +35,12 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60 } })
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async refresh(
-    @Body() body: RefreshTokenDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = body?.refreshToken || this.extractRefreshTokenFromCookies(request);
+    const refreshToken = this.extractRefreshTokenFromCookies(request);
     const authResponse = await this.authService.refreshTokens(refreshToken || '');
     this.setRefreshTokenCookie(response, authResponse.refreshToken);
     const { refreshToken: _refreshToken, ...safeResponse } = authResponse;
@@ -52,7 +49,7 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async register(
     @Body() registerDto: RegisterDto,
     @Res({ passthrough: true }) response: Response,
@@ -71,10 +68,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(
     @Req() request: Request,
-    @Body() body: RefreshTokenDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = body?.refreshToken || this.extractRefreshTokenFromCookies(request);
+    const refreshToken = this.extractRefreshTokenFromCookies(request);
     await this.authService.logoutByRefreshToken(refreshToken);
     response.clearCookie('metaiq_refresh_token', this.cookieOptions());
     return { success: true };

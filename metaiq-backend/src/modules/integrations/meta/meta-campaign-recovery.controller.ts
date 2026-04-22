@@ -20,7 +20,7 @@ import { RetryPartialCampaignDto, CleanupPartialResourcesDto } from './dto/meta-
  */
 @Controller('integrations/meta/stores/:storeId/campaigns/recovery')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.PLATFORM_ADMIN, Role.OPERATIONAL)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
 export class MetaCampaignRecoveryController {
   constructor(private readonly recoveryService: MetaCampaignRecoveryService) {}
 

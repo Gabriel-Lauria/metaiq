@@ -1,25 +1,3 @@
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 800;
-  color: var(--text);
-}
-
-.page-subtitle {
-  margin: 10px 0 0;
-  color: var(--text-muted);
-  font-size: 15px;
-  max-width: 520px;
-}
-
 .selected-store {
   margin: 16px 0 0;
   color: var(--text-soft);
@@ -32,17 +10,23 @@
 
 .integration-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 0.9fr) minmax(420px, 1.1fr);
-  gap: 24px;
+  grid-template-columns: minmax(280px, 0.75fr) minmax(560px, 1.25fr);
+  gap: 18px;
+  align-items: start;
 }
 
 .store-panel,
 .integration-panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 22px;
-  padding: 26px;
-  box-shadow: var(--shadow);
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.store-panel {
+  position: sticky;
+  top: 90px;
 }
 
 .panel-header h2 {
@@ -59,8 +43,8 @@
 
 .store-list {
   display: grid;
-  gap: 12px;
-  margin-top: 22px;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 .store-item {
@@ -69,10 +53,10 @@
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
   color: var(--text);
   cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
@@ -136,10 +120,10 @@
 }
 
 .card-detail-item {
-  padding: 20px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--bg-surface-soft);
+  border: 1px solid var(--border);
 }
 
 .card-detail-item span {
@@ -148,7 +132,7 @@
   font-size: 12px;
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .card-detail-item strong {
@@ -164,7 +148,7 @@
 
 .card-role-hint {
   padding: 16px 20px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(37, 99, 235, 0.08);
   color: var(--text-soft);
   font-size: 14px;
@@ -174,14 +158,14 @@
 .accounts-section {
   margin-top: 24px;
   padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border);
 }
 
 .page-configuration-section,
 .next-step-section {
   margin-top: 24px;
   padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border);
 }
 
 .section-header {
@@ -214,10 +198,10 @@
   grid-template-columns: 1fr auto;
   gap: 14px;
   align-items: center;
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--bg-surface-soft);
+  border: 1px solid var(--border);
 }
 
 .account-label {
@@ -225,7 +209,7 @@
   color: var(--text-muted);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   margin-bottom: 6px;
 }
 
@@ -241,8 +225,8 @@
   margin-top: 18px;
   padding: 18px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-surface-soft);
+  border: 1px solid var(--border);
 }
 
 .page-picker strong,
@@ -269,9 +253,9 @@
 .page-picker-controls select {
   min-width: min(320px, 100%);
   min-height: 44px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: #ffffff;
   color: var(--text);
   padding: 10px 12px;
   font: inherit;
@@ -314,6 +298,10 @@
   .page-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .store-panel {
+    position: static;
   }
 
   .next-step-card {

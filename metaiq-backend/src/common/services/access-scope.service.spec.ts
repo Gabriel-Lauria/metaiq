@@ -28,7 +28,7 @@ describe('AccessScopeService', () => {
     return query.andWhere.mock.calls.map(([sql]) => sql).join('\n');
   }
 
-  it('filters campaigns by store tenant only and does not fall back to owner/userId', async () => {
+  it('filters manager campaigns by tenant and store creator', async () => {
     const service = new AccessScopeService({} as any, {} as any);
     const query = createQuery();
 
@@ -38,11 +38,12 @@ describe('AccessScopeService', () => {
     const sql = getWhereSql(query);
     expect(sql).toContain('campaign_scopeStore.tenantId = :scopeTenantId');
     expect(sql).toContain('campaign_scopeStore.deletedAt IS NULL');
+    expect(sql).toContain('campaign_scopeStore.createdByUserId = :scopeManagerUserId');
     expect(sql).not.toContain('storeId IS NULL');
     expect(sql).not.toContain('userId = :scopeUserId');
   });
 
-  it('filters ad accounts by store tenant only and does not fall back to owner/userId', async () => {
+  it('filters manager ad accounts by tenant and store creator', async () => {
     const service = new AccessScopeService({} as any, {} as any);
     const query = createQuery();
 
@@ -52,8 +53,33 @@ describe('AccessScopeService', () => {
     const sql = getWhereSql(query);
     expect(sql).toContain('adAccount_scopeStore.tenantId = :scopeTenantId');
     expect(sql).toContain('adAccount_scopeStore.deletedAt IS NULL');
+    expect(sql).toContain('adAccount_scopeStore.createdByUserId = :scopeManagerUserId');
     expect(sql).not.toContain('storeId IS NULL');
     expect(sql).not.toContain('userId = :scopeUserId');
+  });
+
+  it('filters manager stores by tenant and store creator', async () => {
+    const service = new AccessScopeService({} as any, {} as any);
+    const query = createQuery();
+
+    await service.applyStoreScope(query, 'store', user);
+
+    const sql = getWhereSql(query);
+    expect(sql).toContain('store.tenantId = :scopeTenantId');
+    expect(sql).toContain('store.deletedAt IS NULL');
+    expect(sql).toContain('store.createdByUserId = :scopeManagerUserId');
+  });
+
+  it('filters manager users by tenant and user creator while keeping self visible', async () => {
+    const service = new AccessScopeService({} as any, {} as any);
+    const query = createQuery();
+
+    await service.applyUserScope(query, 'user', user);
+
+    const sql = getWhereSql(query);
+    expect(sql).toContain('user.tenantId = :scopeTenantId');
+    expect(sql).toContain('user.deletedAt IS NULL');
+    expect(sql).toContain('(user.createdByUserId = :scopeManagerUserId OR user.id = :scopeManagerUserId)');
   });
 
   it('denies operational/client users with no allowed stores instead of falling back to userId', async () => {

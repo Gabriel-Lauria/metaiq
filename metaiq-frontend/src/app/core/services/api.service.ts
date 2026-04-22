@@ -221,6 +221,10 @@ export class ApiService {
     return this.get<Insight[]>('/insights', params);
   }
 
+  resolveInsight(id: string): Observable<Insight> {
+    return this.patch<Insight>(`/insights/${id}/resolve`, {});
+  }
+
   // ── Meta Accounts ─────────────────────────────────────────────
   getAdAccounts(storeId?: string): Observable<AdAccount[]> {
     const params = storeId ? new HttpParams().set('storeId', storeId) : undefined;

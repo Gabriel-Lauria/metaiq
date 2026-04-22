@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { CampaignAiSuggestResponse } from '../../core/models';
+import { CampaignSuggestionResponse } from '../../core/models';
 import { environment } from '../../core/environment';
 
 const API = environment.apiUrl;
@@ -10,7 +10,7 @@ const API = environment.apiUrl;
 export class CampaignAiService {
   private http = inject(HttpClient);
 
-  suggest(prompt: string): Observable<CampaignAiSuggestResponse> {
-    return this.http.post<CampaignAiSuggestResponse>(`${API}/campaign-ai/suggest`, { prompt });
+  suggest(prompt: string, storeId: string): Observable<CampaignSuggestionResponse> {
+    return this.http.post<CampaignSuggestionResponse>(`${API}/ai/campaign-suggestions`, { prompt, storeId });
   }
 }

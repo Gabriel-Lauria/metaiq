@@ -92,7 +92,7 @@
         <div class="card-actions">
           <button
             class="btn btn-primary"
-            *ngIf="isOperational() && !isConnected()"
+            *ngIf="canManageIntegrations() && !isConnected()"
             type="button"
             (click)="connect(store)"
             [disabled]="savingStoreId() === store.id"
@@ -102,7 +102,7 @@
 
           <button
             class="btn btn-primary"
-            *ngIf="isOperational() && isConnected()"
+            *ngIf="canManageIntegrations() && isConnected()"
             type="button"
             (click)="syncAdAccounts(store)"
             [disabled]="isSyncInProgress()"
@@ -112,7 +112,7 @@
 
           <button
             class="btn btn-secondary"
-            *ngIf="isOperational() && isConnected()"
+            *ngIf="canManageIntegrations() && isConnected()"
             type="button"
             (click)="fetchAdAccounts(store)"
             [disabled]="isSyncInProgress()"
@@ -122,7 +122,7 @@
 
           <button
             class="btn btn-secondary"
-            *ngIf="isOperational() && isConnected()"
+            *ngIf="canManageIntegrations() && isConnected()"
             type="button"
             (click)="disconnect(store)"
             [disabled]="savingStoreId() === store.id"
@@ -196,7 +196,7 @@
             <small *ngIf="!hasConfiguredPage()">A Meta exige uma página vinculada para criar o creative da campanha.</small>
           </div>
 
-          <div class="page-picker-controls" *ngIf="!hasConfiguredPage() || pages().length">
+          <div class="page-picker-controls" *ngIf="canManageIntegrations() && (!hasConfiguredPage() || pages().length)">
             <select
               name="metaPageId"
               [(ngModel)]="pageForm.pageId"
@@ -230,7 +230,7 @@
           <button
             class="btn btn-secondary"
             type="button"
-            *ngIf="hasConfiguredPage() && !pages().length"
+            *ngIf="canManageIntegrations() && hasConfiguredPage() && !pages().length"
             (click)="refreshPages(store)"
             [disabled]="loadingPages()"
           >
@@ -258,7 +258,7 @@
             </small>
           </div>
 
-          <button class="btn btn-primary" type="button" (click)="goToCampaigns(store)">
+          <button class="btn btn-primary" type="button" *ngIf="canManageIntegrations()" (click)="goToCampaigns(store)">
             {{ hasConfiguredPage() ? 'Criar campanha na área de campanhas' : 'Ir para Campanhas' }}
           </button>
         </div>

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CommonModule } from '../../common/common.module';
 import { Manager } from './manager.entity';
 import { Tenant } from '../tenants/tenant.entity';
 import { Store } from '../stores/store.entity';
@@ -15,6 +16,7 @@ import { ManagersService } from './managers.service';
 
 @Module({
   imports: [
+    CommonModule,
     TypeOrmModule.forFeature([
       Manager,
       Tenant,

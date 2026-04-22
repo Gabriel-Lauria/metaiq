@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isUUID } from 'class-validator';
 import { MetricDaily } from './metric-daily.entity';
 import { MetricsEngine } from './metrics.engine';
 import { PaginationDto, PaginatedResponse } from '../../common/dto/pagination.dto';
@@ -39,6 +40,7 @@ export class MetricsService {
     to: Date,
     storeId?: string,
   ): Promise<any> {
+    this.assertValidDateRange(from, to);
     const fromStr = from.toISOString().split('T')[0];
     const toStr = to.toISOString().split('T')[0];
 
@@ -54,7 +56,7 @@ export class MetricsService {
         'SUM(m.revenue) as revenue',
       ])
       .where('m.date BETWEEN :from AND :to', { from: fromStr, to: toStr });
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     await this.applyStoreFilter(query, user, storeId);
     const result = await query.getRawOne();
 
@@ -131,7 +133,7 @@ export class MetricsService {
       .orderBy('m.date', 'DESC')
       .skip(skip)
       .take(limit);
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     await this.applyStoreFilter(query, user, filters.storeId);
     const [data, total] = await query.getManyAndCount();
 
@@ -216,7 +218,7 @@ export class MetricsService {
       ])
       .where('m.campaignId = :campaignId', { campaignId })
       .andWhere('m.date BETWEEN :from AND :to', { from, to });
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     const result = await query.getRawOne();
 
     if (!result) {
@@ -263,26 +265,37 @@ export class MetricsService {
       .where('m.campaignId = :campaignId', { campaignId })
       .andWhere('m.date BETWEEN :from AND :to', { from, to })
       .orderBy('m.date', 'DESC');
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     return query.getMany();
   }
 
   async upsertDailyMetric(data: Partial<MetricDaily>): Promise<MetricDaily> {
-    if (!data.campaignId || !data.date) {
-      throw new BadRequestException('campaignId e date são obrigatórios para upsert de métricas');
-    }
+    const campaignId = this.assertValidCampaignId(data.campaignId);
+    const date = this.normalizeMetricDate(data.date);
+    const impressions = this.assertFiniteNumber(data.impressions, 'impressions');
+    const clicks = this.assertFiniteNumber(data.clicks, 'clicks');
+    const spend = this.assertFiniteNumber(data.spend, 'spend');
+    const conversions = this.assertFiniteNumber(data.conversions, 'conversions');
+    const revenue = this.assertFiniteNumber(data.revenue, 'revenue');
 
     const enriched = {
       ...data,
-      ctr: calcCTR(data.clicks ?? 0, data.impressions ?? 0),
-      cpa: calcCPA(data.spend ?? 0, data.conversions ?? 0),
-      roas: calcROAS(data.revenue ?? 0, data.spend ?? 0),
+      campaignId,
+      date,
+      impressions,
+      clicks,
+      spend,
+      conversions,
+      revenue,
+      ctr: calcCTR(clicks, impressions),
+      cpa: calcCPA(spend, conversions),
+      roas: calcROAS(revenue, spend),
     } as Partial<MetricDaily>;
 
     await this.metricRepository.upsert(enriched, ['campaignId', 'date']);
 
     const metric = await this.metricRepository.findOne({
-      where: { campaignId: data.campaignId, date: data.date },
+      where: { campaignId, date },
     });
 
     if (!metric) {
@@ -305,7 +318,7 @@ export class MetricsService {
       .orderBy('m.date', 'DESC')
       .skip(skip)
       .take(limit);
-    await this.accessScope.applyCampaignScope(query, 'campaign', user);
+    await this.accessScope.applyMetricScope(query, 'campaign', user);
     const [data, total] = await query.getManyAndCount();
 
     const totalPages = Math.ceil(total / limit);
@@ -340,5 +353,57 @@ export class MetricsService {
     if (!(await this.accessScope.canAccessMetricCampaign(user, campaignId))) {
       throw new NotFoundException('Recurso não encontrado');
     }
+  }
+
+  private assertValidDateRange(from: Date, to: Date): void {
+    if (!(from instanceof Date) || Number.isNaN(from.getTime())) {
+      throw new BadRequestException('from deve ser uma data válida');
+    }
+
+    if (!(to instanceof Date) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('to deve ser uma data válida');
+    }
+
+    if (from > to) {
+      throw new BadRequestException('from não pode ser posterior a to');
+    }
+  }
+
+  private assertValidCampaignId(campaignId: unknown): string {
+    if (typeof campaignId !== 'string' || !isUUID(campaignId)) {
+      throw new BadRequestException('campaignId deve ser um UUID válido');
+    }
+
+    return campaignId;
+  }
+
+  private normalizeMetricDate(date: unknown): string {
+    if (date instanceof Date) {
+      if (Number.isNaN(date.getTime())) {
+        throw new BadRequestException('date deve ser uma data válida');
+      }
+
+      return date.toISOString().split('T')[0];
+    }
+
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new BadRequestException('date deve estar no formato YYYY-MM-DD');
+    }
+
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().split('T')[0] !== date) {
+      throw new BadRequestException('date deve ser uma data válida');
+    }
+
+    return date;
+  }
+
+  private assertFiniteNumber(value: unknown, field: string): number {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue) || numberValue < 0) {
+      throw new BadRequestException(`${field} deve ser um número maior ou igual a zero`);
+    }
+
+    return numberValue;
   }
 }
