@@ -21,6 +21,7 @@ export class AuthComponent implements OnInit {
   message = '';
   messageType: 'error' | 'success' | 'info' = 'info';
   apiOffline = false;
+  readonly betaAccessUrl = 'https://www.metaiq.com.br';
 
   constructor(
     private fb: FormBuilder,
@@ -40,8 +41,8 @@ export class AuthComponent implements OnInit {
 
   private initializeForms(): void {
     this.loginForm = this.fb.group({
-      email: ['demo@metaiq.dev', [Validators.required, Validators.email]],
-      password: ['Demo@1234', [Validators.required, Validators.minLength(6)]]
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(6)]]
     });
 
     this.registerForm = this.fb.group({
@@ -111,6 +112,10 @@ export class AuthComponent implements OnInit {
           }
         });
     }
+  }
+
+  requestBetaAccess(): void {
+    window.open(this.betaAccessUrl, '_blank', 'noopener');
   }
 
   getFieldError(form: FormGroup, fieldName: string): string {

@@ -121,6 +121,10 @@ h1 {
   }
 }
 
+.mode-switch.single-mode {
+  grid-template-columns: 1fr;
+}
+
 .auth-form {
   display: grid;
   gap: 14px;
@@ -212,22 +216,34 @@ h1 {
   animation: spin 0.7s linear infinite;
 }
 
-.demo-hint {
+.beta-actions {
   display: grid;
-  grid-template-columns: auto 1fr 1fr;
-  gap: 8px;
-  align-items: center;
+  gap: 12px;
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid #d9dfdc;
+}
+
+.secondary-action {
+  min-height: 44px;
+  border: 1px solid #cfd8d3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #151716;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary-action:hover {
+  border-color: #279b7a;
+  color: #279b7a;
+}
+
+.beta-note {
   color: #59615d;
   font-size: 12px;
-
-  strong {
-    color: #151716;
-    font-weight: 800;
-    overflow-wrap: anywhere;
-  }
+  line-height: 1.5;
 }
 
 @keyframes spin {
@@ -265,7 +281,4 @@ h1 {
     padding: 22px;
   }
 
-  .demo-hint {
-    grid-template-columns: 1fr;
-  }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Post,
@@ -54,14 +55,9 @@ export class AuthController {
     @Body() registerDto: RegisterDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const authResponse = await this.authService.register(
-      registerDto.email,
-      registerDto.password,
-      registerDto.name,
-    );
-    this.setRefreshTokenCookie(response, authResponse.refreshToken);
-    const { refreshToken: _refreshToken, ...safeResponse } = authResponse;
-    return safeResponse;
+    void registerDto;
+    void response;
+    throw new ForbiddenException('Cadastro público desativado para o beta controlado.');
   }
 
   @Post('logout')

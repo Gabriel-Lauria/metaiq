@@ -17,17 +17,16 @@
 
   <section class="auth-card">
     <div class="auth-header">
-      <p class="kicker">{{ isLogin ? 'Acesso' : 'Nova conta' }}</p>
-      <h2>{{ isLogin ? 'Entrar no MetaIQ' : 'Criar conta' }}</h2>
-      <p>{{ isLogin ? 'Use a conta demo ou suas credenciais.' : 'Preencha os dados para começar.' }}</p>
+      <p class="kicker">Acesso beta</p>
+      <h2>Entrar no MetaIQ</h2>
+      <p>Acesse com suas credenciais liberadas para o beta controlado.</p>
     </div>
 
-    <div class="mode-switch" role="tablist" aria-label="Modo de autenticação">
-      <button type="button" [class.active]="isLogin" (click)="isLogin || toggleMode()">Entrar</button>
-      <button type="button" [class.active]="!isLogin" (click)="isLogin && toggleMode()">Criar conta</button>
+    <div class="mode-switch single-mode" role="tablist" aria-label="Modo de autenticação">
+      <button type="button" class="active">Entrar</button>
     </div>
 
-    <form *ngIf="isLogin" [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
+    <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
       <label class="form-field">
         <span>Email</span>
         <input
@@ -62,69 +61,9 @@
       </button>
     </form>
 
-    <form *ngIf="!isLogin" [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
-      <label class="form-field">
-        <span>Nome</span>
-        <input
-          type="text"
-          formControlName="name"
-          [class.error]="isInvalid(registerForm, 'name')"
-          placeholder="Seu nome"
-          autocomplete="name"
-        />
-        <small *ngIf="getFieldError(registerForm, 'name')">{{ getFieldError(registerForm, 'name') }}</small>
-      </label>
-
-      <label class="form-field">
-        <span>Email</span>
-        <input
-          type="email"
-          formControlName="email"
-          [class.error]="isInvalid(registerForm, 'email')"
-          placeholder="voce@exemplo.com"
-          autocomplete="email"
-        />
-        <small *ngIf="getFieldError(registerForm, 'email')">{{ getFieldError(registerForm, 'email') }}</small>
-      </label>
-
-      <label class="form-field">
-        <span>Senha</span>
-        <input
-          type="password"
-          formControlName="password"
-          [class.error]="isInvalid(registerForm, 'password')"
-          placeholder="Minimo 6 caracteres"
-          autocomplete="new-password"
-        />
-        <small *ngIf="getFieldError(registerForm, 'password')">{{ getFieldError(registerForm, 'password') }}</small>
-      </label>
-
-      <label class="form-field">
-        <span>Confirmar senha</span>
-        <input
-          type="password"
-          formControlName="confirmPassword"
-          [class.error]="isInvalid(registerForm, 'confirmPassword')"
-          placeholder="Repita a senha"
-          autocomplete="new-password"
-        />
-        <small *ngIf="getFieldError(registerForm, 'confirmPassword')">{{ getFieldError(registerForm, 'confirmPassword') }}</small>
-      </label>
-
-      <div class="message" *ngIf="message" [class.success]="messageType === 'success'" [class.error]="messageType === 'error'">
-        {{ message }}
-      </div>
-
-      <button type="submit" class="primary-action" [disabled]="loading || registerForm.invalid">
-        <span *ngIf="!loading">Criar conta</span>
-        <span *ngIf="loading" class="spinner"></span>
-      </button>
-    </form>
-
-    <div class="demo-hint" *ngIf="isLogin">
-      <span>Demo</span>
-      <strong>demo@metaiq.dev</strong>
-      <strong>Demo@1234</strong>
+    <div class="beta-actions">
+      <button type="button" class="secondary-action" (click)="requestBetaAccess()">Solicitar acesso beta</button>
+      <p class="beta-note">Sistema em fase beta. Algumas funcionalidades podem apresentar instabilidade.</p>
     </div>
   </section>
 </div>
