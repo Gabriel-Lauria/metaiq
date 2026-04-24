@@ -5,8 +5,10 @@
 export const environment = {
   production: true,
   apiUrl: 'https://api.metaiq.com/api',
+  enableDemoData: false,
   enableLogging: false,
   enableAnalytics: true,
+  enablePublicRegister: true,
   sentryDsn: '',
   enableServiceWorker: true,
   cacheExpiration: 3600000, // 1 hour

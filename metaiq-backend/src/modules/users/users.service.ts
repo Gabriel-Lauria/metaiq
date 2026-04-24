@@ -15,7 +15,8 @@ import * as bcrypt from 'bcryptjs';
 import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
-import { Role } from '../../common/enums';
+import { AccountType, Role } from '../../common/enums';
+import { UpdateMyCompanyDto } from './company-profile.dto';
 
 export class CreateUserDto {
   @IsEmail()
@@ -86,6 +87,28 @@ export class ResetUserPasswordDto {
   password: string;
 }
 
+export type UserResponseView = Omit<User, 'password'> & {
+  accountType: AccountType | null;
+  storeId: string | null;
+  businessName: string | null;
+  businessSegment: string | null;
+  defaultCity: string | null;
+  defaultState: string | null;
+  website: string | null;
+  instagram: string | null;
+  whatsapp: string | null;
+};
+
+export type CompanyProfileResponseView = {
+  businessName: string | null;
+  businessSegment: string | null;
+  defaultCity: string | null;
+  defaultState: string | null;
+  website: string | null;
+  instagram: string | null;
+  whatsapp: string | null;
+};
+
 @Injectable()
 export class UsersService {
   private readonly BCRYPT_ROUNDS = 12;
@@ -144,21 +167,6 @@ export class UsersService {
   /**
    * Busca usuário por ID
    */
-  async findOneUnsafeInternal(id: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id, deletedAt: IsNull() } });
-    if (!user) {
-      throw new NotFoundException(`Usuário ${id} não encontrado`);
-    }
-    return user;
-  }
-
-  /**
-   * Lista todos os usuários (admin/manager)
-   */
-  async findAllUnsafeInternal(): Promise<User[]> {
-    return this.userRepository.find({ where: { deletedAt: IsNull() } });
-  }
-
   async findAllForUser(requester: AuthenticatedUser): Promise<User[]> {
     if (this.accessScope.isPlatformAdmin(requester)) {
       return this.userRepository.find({ where: { deletedAt: IsNull() } });
@@ -180,32 +188,84 @@ export class UsersService {
   }
 
   async findAuthenticatedProfile(requester: AuthenticatedUser): Promise<User> {
-    return this.findOneForUser(requester.id, requester);
+    return this.findOneForUser(requester, requester.id);
   }
 
-  async findOneForUser(id: string, requester: AuthenticatedUser): Promise<User> {
-    const user = await this.findOneUnsafeInternal(id);
+  async toUserResponseView(user: User): Promise<UserResponseView> {
+    const { password: _password, ...userWithoutPassword } = user;
+    const tenantProfile = await this.resolveTenantProfile(user.tenantId);
+    const accountType = tenantProfile?.accountType ?? null;
+    return {
+      ...userWithoutPassword,
+      accountType,
+      storeId: await this.resolveStoreId(user.id, accountType),
+      businessName: tenantProfile?.businessName ?? null,
+      businessSegment: tenantProfile?.businessSegment ?? null,
+      defaultCity: tenantProfile?.defaultCity ?? null,
+      defaultState: tenantProfile?.defaultState ?? null,
+      website: tenantProfile?.website ?? null,
+      instagram: tenantProfile?.instagram ?? null,
+      whatsapp: tenantProfile?.whatsapp ?? null,
+    };
+  }
 
-    if (this.accessScope.isPlatformAdmin(requester) || requester.id === id) {
-      return user;
-    }
+  async getMyCompanyForUser(requester: AuthenticatedUser): Promise<CompanyProfileResponseView> {
+    const tenant = await this.loadIndividualTenantForUser(requester);
+    return this.toCompanyProfileResponseView(tenant);
+  }
 
-    if (this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
-      this.accessScope.validateTenantAccess(requester, user.tenantId);
-      if (this.accessScope.isManager(requester) && user.createdByUserId !== requester.id && user.id !== requester.id) {
-        throw new NotFoundException(`Usuário ${id} não encontrado`);
+  async updateMyCompanyForUser(
+    requester: AuthenticatedUser,
+    dto: UpdateMyCompanyDto,
+  ): Promise<CompanyProfileResponseView> {
+    const tenant = await this.loadIndividualTenantForUser(requester);
+
+    if (dto.businessName !== undefined) {
+      const businessName = this.cleanNullable(dto.businessName);
+      if (!businessName) {
+        throw new BadRequestException('businessName não pode ser vazio');
       }
-      return user;
+      tenant.businessName = businessName;
+      tenant.name = businessName;
     }
 
-    throw new NotFoundException(`Usuário ${id} não encontrado`);
+    if (dto.businessSegment !== undefined) {
+      tenant.businessSegment = this.cleanNullable(dto.businessSegment);
+    }
+
+    if (dto.defaultCity !== undefined) {
+      tenant.defaultCity = this.cleanNullable(dto.defaultCity);
+    }
+
+    if (dto.defaultState !== undefined) {
+      tenant.defaultState = this.cleanNullable(dto.defaultState)?.toUpperCase() ?? null;
+    }
+
+    if (dto.website !== undefined) {
+      tenant.website = this.cleanNullable(dto.website);
+    }
+
+    if (dto.instagram !== undefined) {
+      tenant.instagram = this.normalizeInstagram(dto.instagram);
+    }
+
+    if (dto.whatsapp !== undefined) {
+      tenant.whatsapp = this.cleanNullable(dto.whatsapp);
+    }
+
+    const updatedTenant = await this.tenantRepository.save(tenant);
+    return this.toCompanyProfileResponseView(updatedTenant);
+  }
+
+  async findOneForUser(requester: AuthenticatedUser, id: string): Promise<User> {
+    return this.accessScope.validateUserAccess(requester, id);
   }
 
   /**
    * Atualiza dados do usuário
    */
-  async updateMe(id: string, dto: UpdateMeDto): Promise<User> {
-    const user = await this.findOneUnsafeInternal(id);
+  async updateMe(requester: AuthenticatedUser, dto: UpdateMeDto): Promise<User> {
+    const user = await this.loadUserOrFail(requester.id);
     const safeDto: UpdateMeDto = {
       email: dto.email,
       name: dto.name,
@@ -216,8 +276,8 @@ export class UsersService {
   }
 
   async updateForUser(
-    id: string,
     requester: AuthenticatedUser,
+    id: string,
     dto: AdminUpdateUserDto,
   ): Promise<User> {
     if ('password' in (dto as Record<string, unknown>)) {
@@ -226,7 +286,8 @@ export class UsersService {
       );
     }
 
-    const user = await this.findOneForUser(id, requester);
+    const user = await this.findOneForUser(requester, id);
+    this.assertManagerCanManageTargetUser(requester, user);
 
     if (dto.managerId !== undefined) {
       if (!this.accessScope.isPlatformAdmin(requester)) {
@@ -261,15 +322,16 @@ export class UsersService {
   }
 
   async resetPasswordAsAdmin(
-    id: string,
     requester: AuthenticatedUser,
+    id: string,
     dto: ResetUserPasswordDto,
   ): Promise<User> {
     if (!(this.accessScope.isPlatformAdmin(requester) || this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester))) {
       throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN ou MANAGER podem alterar a senha de usuários no próprio escopo');
     }
 
-    const user = await this.findOneForUser(id, requester);
+    const user = await this.findOneForUser(requester, id);
+    this.assertManagerCanManageTargetUser(requester, user);
     if (this.accessScope.isManager(requester) && ![Role.OPERATIONAL, Role.CLIENT].includes(user.role)) {
       throw new ForbiddenException('MANAGER só pode alterar senha de OPERATIONAL ou CLIENT');
     }
@@ -277,6 +339,7 @@ export class UsersService {
   }
 
   private async applyUserProfileUpdate(user: User, dto: UpdateMeDto): Promise<User> {
+    let shouldInvalidateSession = false;
 
     // Se tentando mudar email, verifica se não existe outro com esse email
     if (dto.email && dto.email !== user.email) {
@@ -299,22 +362,25 @@ export class UsersService {
         throw new BadRequestException('Senha deve ter no mínimo 6 caracteres');
       }
       user.password = await bcrypt.hash(dto.password, this.BCRYPT_ROUNDS);
+      user.refreshToken = null;
+      user.sessionVersion = (user.sessionVersion ?? 0) + 1;
+      shouldInvalidateSession = true;
     }
 
-    return this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
+    if (shouldInvalidateSession) {
+      return savedUser;
+    }
+
+    return savedUser;
   }
 
   /**
    * Delete (soft delete — marca como inativo)
    */
-  async remove(id: string): Promise<void> {
-    const user = await this.findOneUnsafeInternal(id);
-    await this.ensureCanDeleteUser(user, user);
-    await this.softDeleteUser(user);
-  }
-
-  async removeForUser(id: string, requester: AuthenticatedUser): Promise<void> {
-    const user = await this.findOneForUser(id, requester);
+  async removeForUser(requester: AuthenticatedUser, id: string): Promise<void> {
+    const user = await this.findOneForUser(requester, id);
+    this.assertManagerCanManageTargetUser(requester, user);
     await this.ensureCanDeleteUser(user, requester);
     await this.softDeleteUser(user);
   }
@@ -323,6 +389,7 @@ export class UsersService {
     await this.userStoreRepository.delete({ userId: user.id });
     user.active = false;
     user.refreshToken = null;
+    user.sessionVersion = (user.sessionVersion ?? 0) + 1;
     user.deletedAt = new Date();
     await this.userRepository.save(user);
   }
@@ -402,6 +469,37 @@ export class UsersService {
     }
   }
 
+  private async resolveAccountType(tenantId?: string | null): Promise<AccountType | null> {
+    return (await this.resolveTenantProfile(tenantId))?.accountType ?? null;
+  }
+
+  private async resolveTenantProfile(tenantId?: string | null): Promise<Pick<Tenant, 'accountType' | 'businessName' | 'businessSegment' | 'defaultCity' | 'defaultState' | 'website' | 'instagram' | 'whatsapp'> | null> {
+    if (!tenantId) {
+      return null;
+    }
+
+    return this.tenantRepository.findOne({
+      where: { id: tenantId, deletedAt: IsNull() },
+      select: ['id', 'accountType', 'businessName', 'businessSegment', 'defaultCity', 'defaultState', 'website', 'instagram', 'whatsapp'],
+    });
+  }
+
+  private async resolveStoreId(
+    userId: string,
+    accountType?: AccountType | null,
+  ): Promise<string | null> {
+    if (accountType !== AccountType.INDIVIDUAL) {
+      return null;
+    }
+
+    const userStore = await this.userStoreRepository.findOne({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return userStore?.storeId ?? null;
+  }
+
   private async ensureCanDeleteUser(user: User, requester: AuthenticatedUser | User): Promise<void> {
     if (user.role === Role.PLATFORM_ADMIN) {
       throw new ForbiddenException('PLATFORM_ADMIN não pode ser excluído pelo fluxo comum');
@@ -429,5 +527,79 @@ export class UsersService {
 
   private isRequesterManager(requester: AuthenticatedUser | User): boolean {
     return requester.role === Role.MANAGER;
+  }
+
+  private assertManagerCanManageTargetUser(requester: AuthenticatedUser, user: User): void {
+    if (!this.accessScope.isManager(requester)) {
+      return;
+    }
+
+    if (user.id === requester.id) {
+      return;
+    }
+
+    if (![Role.OPERATIONAL, Role.CLIENT].includes(user.role)) {
+      throw new ForbiddenException('MANAGER só pode gerenciar usuários OPERATIONAL ou CLIENT');
+    }
+  }
+
+  private async loadUserOrFail(id: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id, deletedAt: IsNull() } });
+    if (!user) {
+      throw new NotFoundException(`Usuário ${id} não encontrado`);
+    }
+
+    return user;
+  }
+
+  private async loadIndividualTenantForUser(requester: AuthenticatedUser): Promise<Tenant> {
+    if (requester.accountType !== AccountType.INDIVIDUAL) {
+      throw new ForbiddenException('Este endpoint está disponível apenas para contas INDIVIDUAL');
+    }
+
+    if (!requester.tenantId) {
+      throw new ForbiddenException('Usuário sem tenant associado');
+    }
+
+    const tenant = await this.tenantRepository.findOne({
+      where: { id: requester.tenantId, deletedAt: IsNull() },
+    });
+
+    if (!tenant || !tenant.active) {
+      throw new NotFoundException('Empresa não encontrada');
+    }
+
+    this.accessScope.validateTenantAccess(requester, tenant.id);
+    return tenant;
+  }
+
+  private toCompanyProfileResponseView(tenant: Pick<Tenant, 'businessName' | 'businessSegment' | 'defaultCity' | 'defaultState' | 'website' | 'instagram' | 'whatsapp'>): CompanyProfileResponseView {
+    return {
+      businessName: tenant.businessName ?? null,
+      businessSegment: tenant.businessSegment ?? null,
+      defaultCity: tenant.defaultCity ?? null,
+      defaultState: tenant.defaultState ?? null,
+      website: tenant.website ?? null,
+      instagram: tenant.instagram ?? null,
+      whatsapp: tenant.whatsapp ?? null,
+    };
+  }
+
+  private cleanNullable(value?: string | null): string | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  private normalizeInstagram(value?: string | null): string | null {
+    const normalized = this.cleanNullable(value);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized.startsWith('@') ? normalized : `@${normalized}`;
   }
 }

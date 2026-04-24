@@ -16,7 +16,7 @@ export class CreateMetaCampaignCreations1776590000000 implements MigrationInterf
         "adAccountId" uuid NOT NULL,
         "campaignId" uuid,
         "idempotencyKey" character varying NOT NULL,
-        "status" character varying(32) NOT NULL DEFAULT 'CREATING',
+        "status" character varying(32) NOT NULL DEFAULT 'IN_PROGRESS',
         "campaignCreated" boolean NOT NULL DEFAULT false,
         "adSetCreated" boolean NOT NULL DEFAULT false,
         "creativeCreated" boolean NOT NULL DEFAULT false,
@@ -28,6 +28,7 @@ export class CreateMetaCampaignCreations1776590000000 implements MigrationInterf
         "errorStep" character varying,
         "errorMessage" text,
         "requestPayload" text,
+        "payloadHash" character varying,
         "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
         "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
         CONSTRAINT "PK_meta_campaign_creations" PRIMARY KEY ("id"),
@@ -44,6 +45,7 @@ export class CreateMetaCampaignCreations1776590000000 implements MigrationInterf
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_meta_campaign_creations_adAccountId" ON "meta_campaign_creations" ("adAccountId")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_meta_campaign_creations_status" ON "meta_campaign_creations" ("status")`);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_meta_campaign_creations_metaCampaignId" ON "meta_campaign_creations" ("metaCampaignId")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_meta_campaign_creations_payloadHash" ON "meta_campaign_creations" ("payloadHash")`);
   }
 
   async down(queryRunner: QueryRunner): Promise<void> {
@@ -52,6 +54,7 @@ export class CreateMetaCampaignCreations1776590000000 implements MigrationInterf
     }
 
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_meta_campaign_creations_metaCampaignId"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_meta_campaign_creations_payloadHash"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_meta_campaign_creations_status"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_meta_campaign_creations_adAccountId"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "IDX_meta_campaign_creations_requesterUserId"`);

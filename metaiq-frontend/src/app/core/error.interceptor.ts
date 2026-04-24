@@ -13,6 +13,10 @@ interface BackendErrorBody {
   error?: string;
   step?: string;
   executionId?: string;
+  executionStatus?: string;
+  partialIds?: Record<string, unknown>;
+  metaError?: Record<string, unknown>;
+  hint?: string;
   [key: string]: unknown;
 }
 
@@ -80,6 +84,10 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         error: backendError?.error,
         step: backendError?.step,
         executionId: backendError?.executionId,
+        executionStatus: backendError?.executionStatus,
+        partialIds: backendError?.partialIds,
+        metaError: backendError?.metaError,
+        hint: typeof backendError?.hint === 'string' ? backendError.hint : undefined,
         details: backendError,
         originalError: error
       }));

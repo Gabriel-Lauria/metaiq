@@ -35,11 +35,6 @@ export class StoresComponent implements OnInit {
   success = signal<string | null>(null);
   lastCreatedStoreName = signal<string | null>(null);
   name = '';
-  cnpj = '';
-  phone = '';
-  email = '';
-  active = true;
-  notes = '';
   managerId = '';
   userId = '';
   isAdmin = computed(() => this.auth.getCurrentRole() === Role.PLATFORM_ADMIN);
@@ -100,11 +95,6 @@ export class StoresComponent implements OnInit {
       .subscribe({
         next: () => {
           this.name = '';
-          this.cnpj = '';
-          this.phone = '';
-          this.email = '';
-          this.active = true;
-          this.notes = '';
           this.managerId = '';
           this.lastCreatedStoreName.set(trimmedName);
           this.success.set('Loja criada com sucesso.');
@@ -259,9 +249,5 @@ export class StoresComponent implements OnInit {
       .filter(user => user.role === role)
       .map(user => user.name);
     return names.length ? names.join(', ') : 'Nenhum vínculo';
-  }
-
-  hasPreparedStoreFields(): boolean {
-    return !!this.cnpj.trim() || !!this.phone.trim() || !!this.email.trim() || !!this.notes.trim() || !this.active;
   }
 }

@@ -6,6 +6,7 @@ import {
   CampaignObjective,
   CampaignPlacement,
 } from './campaign-builder.types';
+import { DEFAULT_CTA, MetaCallToActionType } from './cta.constants';
 
 export function normalizePromptText(value: string): string {
   return value
@@ -64,11 +65,15 @@ export function detectDestinationTypeFromPrompt(normalized: string): CampaignDes
   return 'site';
 }
 
-export function detectCtaFromPrompt(normalized: string): string {
-  if (/(whatsapp|falar|conversar|mensagens)/i.test(normalized)) return 'Fale conosco';
-  if (/(comprar|oferta|promo|promocao|promoção)/i.test(normalized)) return 'Comprar agora';
-  if (/(cadastro|lead|inscricao|inscrição)/i.test(normalized)) return 'Quero oferta';
-  return 'Saiba mais';
+export function detectCtaFromPrompt(normalized: string): MetaCallToActionType {
+  if (/(whatsapp|falar|conversar|mensagens)/i.test(normalized)) return 'MESSAGE_PAGE';
+  if (/(comprar|oferta|promo|promocao|promoção)/i.test(normalized)) return 'SHOP_NOW';
+  if (/(cadastro|lead|inscricao|inscrição|signup|sign up)/i.test(normalized)) return 'SIGN_UP';
+  if (/(agendar|marcar|reserva|booking)/i.test(normalized)) return 'BOOK_NOW';
+  if (/(contato|contact|fale)/i.test(normalized)) return 'CONTACT_US';
+  if (/(download|baixar)/i.test(normalized)) return 'DOWNLOAD';
+  if (/(oferta|promocao|promoção|cupom)/i.test(normalized)) return 'GET_OFFER';
+  return DEFAULT_CTA;
 }
 
 export function detectCountryFromPrompt(normalized: string, fallbackCountry: string): string {

@@ -6,12 +6,13 @@ import { Tenant } from '../tenants/tenant.entity';
 import { UserStore } from '../user-stores/user-store.entity';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
+import { MeController } from './me.controller';
 import { CommonModule } from '../../common/common.module';
 
 @Module({
   imports: [CommonModule, TypeOrmModule.forFeature([User, Manager, Tenant, UserStore])],
   providers: [UsersService],
-  controllers: [UsersController],
+  controllers: [UsersController, MeController],
   exports: [UsersService],
 })
 export class UsersModule {}

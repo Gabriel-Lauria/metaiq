@@ -34,7 +34,7 @@ export class MetricsService {
     return {
       end: (success: boolean = true, metadata?: Record<string, any>) => {
         const duration = Date.now() - startTime;
-        this.recordMetric(operation, duration, success, metadata);
+        this.record(operation, duration, success, metadata);
       },
     };
   }
@@ -42,7 +42,7 @@ export class MetricsService {
   /**
    * Registra uma métrica
    */
-  private recordMetric(
+  record(
     operation: string,
     durationMs: number,
     success: boolean,

@@ -35,7 +35,8 @@ export class AuthComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.authService.isAuthenticated()) {
-      queueMicrotask(() => this.router.navigate(['/dashboard']));
+      const user = this.authService.getCurrentUser();
+      queueMicrotask(() => this.router.navigate([user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard']));
     }
   }
 
@@ -85,7 +86,8 @@ export class AuthComponent implements OnInit {
         .subscribe({
           next: () => {
             this.uiService.showSuccess('Login realizado', 'Bem-vindo de volta!');
-            this.router.navigate(['/dashboard']);
+            const user = this.authService.getCurrentUser();
+            this.router.navigate([user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard']);
           },
           error: (err) => {
             this.deferAuthError(err, 'Erro ao fazer login. Verifique suas credenciais.');
@@ -94,7 +96,14 @@ export class AuthComponent implements OnInit {
     } else {
       const { name, email, password } = form.value;
       this.authService
-        .register({ name, email, password })
+        .register({
+          name,
+          email,
+          password,
+          businessName: name,
+          defaultCity: '',
+          defaultState: '',
+        })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: () => {

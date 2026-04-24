@@ -16,12 +16,21 @@ describe('app routes authorization', () => {
     }
   });
 
+  it('exposes public landing and register routes without authenticated roles', () => {
+    const landingRoute = routes.find((route) => route.path === '');
+    const registerRoute = routes.find((route) => route.path === 'register');
+
+    expect(landingRoute?.data?.['roles']).toEqual([]);
+    expect(registerRoute?.data?.['roles']).toEqual([]);
+  });
+
   it('restricts the global managers route to platform admins', () => {
     const managersRoute = routes.find((route) => route.path === 'admin/managers');
 
     expect(managersRoute).toBeTruthy();
     expect(managersRoute?.data?.['roles']).toEqual([Role.PLATFORM_ADMIN]);
     expect(managersRoute?.data?.['roles']).not.toContain(Role.ADMIN);
+    expect(managersRoute?.data?.['disallowedAccountTypes']).toEqual(['INDIVIDUAL']);
   });
 
   it('allows all authenticated roles to read campaigns, metrics and insights', () => {
@@ -44,5 +53,13 @@ describe('app routes authorization', () => {
     ]);
     expect(integrationsRoute?.data?.['roles']).not.toContain(Role.MANAGER);
     expect(integrationsRoute?.data?.['roles']).not.toContain(Role.CLIENT);
+  });
+
+  it('exposes my-company only for individual accounts', () => {
+    const companyRoute = routes.find((route) => route.path === 'my-company');
+
+    expect(companyRoute).toBeTruthy();
+    expect(companyRoute?.data?.['allowedAccountTypes']).toEqual(['INDIVIDUAL']);
+    expect(companyRoute?.data?.['roles']).toEqual(allAuthenticatedRoles);
   });
 });

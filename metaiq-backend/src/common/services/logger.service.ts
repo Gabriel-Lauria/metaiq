@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { RequestContextService } from './request-context.service';
 
 /**
  * LoggerService fornece logging estruturado e consistente em toda a aplicação.
@@ -24,46 +25,26 @@ export class LoggerService {
     'metaAccessToken',
   ];
 
-  /**
-   * Log de informação
-   */
+  constructor(private readonly requestContext: RequestContextService) {}
+
   info(message: string, metadata?: Record<string, any>) {
-    const log = {
-      timestamp: new Date().toISOString(),
-      level: 'INFO',
-      message,
-      ...(metadata && { metadata: this.sanitize(metadata) }),
-    };
+    const log = this.buildEntry('INFO', message, metadata);
     this.logger.log(JSON.stringify(log));
   }
 
-  /**
-   * Log de aviso
-   */
   warn(message: string, metadata?: Record<string, any>) {
-    const log = {
-      timestamp: new Date().toISOString(),
-      level: 'WARN',
-      message,
-      ...(metadata && { metadata: this.sanitize(metadata) }),
-    };
+    const log = this.buildEntry('WARN', message, metadata);
     this.logger.warn(JSON.stringify(log));
   }
 
-  /**
-   * Log de erro
-   */
   error(message: string, error?: Error | any, metadata?: Record<string, any>) {
     const log = {
-      timestamp: new Date().toISOString(),
-      level: 'ERROR',
-      message,
+      ...this.buildEntry('ERROR', message, metadata),
       error: error ? {
         name: error.name,
         message: error.message,
         ...(process.env.NODE_ENV === 'production' ? {} : { stack: error.stack }),
       } : undefined,
-      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.error(JSON.stringify(log));
   }
@@ -73,12 +54,7 @@ export class LoggerService {
    */
   debug(message: string, metadata?: Record<string, any>) {
     if (process.env.NODE_ENV !== 'production') {
-      const log = {
-        timestamp: new Date().toISOString(),
-        level: 'DEBUG',
-        message,
-        ...(metadata && { metadata: this.sanitize(metadata) }),
-      };
+      const log = this.buildEntry('DEBUG', message, metadata);
       this.logger.debug(JSON.stringify(log));
     }
   }
@@ -88,11 +64,9 @@ export class LoggerService {
    */
   metric(operation: string, durationMs: number, metadata?: Record<string, any>) {
     const log = {
-      timestamp: new Date().toISOString(),
-      level: 'METRIC',
+      ...this.buildEntry('METRIC', 'METRIC_EVENT', metadata),
       operation,
       durationMs,
-      ...(metadata && { metadata: this.sanitize(metadata) }),
     };
     this.logger.log(JSON.stringify(log));
   }
@@ -118,6 +92,38 @@ export class LoggerService {
         this.metric(operation, duration, { success, ...endMetadata });
       },
     };
+  }
+
+  private buildEntry(level: string, message: string, metadata?: Record<string, any>) {
+    const currentContext = this.requestContext?.get?.() ?? {};
+    const sanitizedMetadata = metadata ? this.sanitize(metadata) as Record<string, unknown> : undefined;
+    const context = {
+      requestId: sanitizedMetadata?.requestId ?? currentContext.requestId,
+      userId: sanitizedMetadata?.userId ?? currentContext.userId,
+      tenantId: sanitizedMetadata?.tenantId ?? currentContext.tenantId,
+      userRole: sanitizedMetadata?.userRole ?? currentContext.userRole,
+      method: sanitizedMetadata?.method ?? currentContext.method,
+      path: sanitizedMetadata?.path ?? currentContext.path,
+      module: sanitizedMetadata?.module ?? sanitizedMetadata?.context,
+      storeId: sanitizedMetadata?.storeId,
+      campaignId: sanitizedMetadata?.campaignId,
+      executionId: sanitizedMetadata?.executionId,
+      idempotencyKey: sanitizedMetadata?.idempotencyKey,
+    };
+
+    return {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      ...this.compact(context),
+      ...(sanitizedMetadata ? { metadata: sanitizedMetadata } : {}),
+    };
+  }
+
+  private compact(value: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, nestedValue]) => nestedValue !== undefined && nestedValue !== null),
+    );
   }
 
   private sanitize(value: unknown): unknown {

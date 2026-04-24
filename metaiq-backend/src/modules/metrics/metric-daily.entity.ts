@@ -39,7 +39,7 @@ export class MetricDaily {
   @Column({ type: 'decimal', precision: 6, scale: 2 })
   roas: number;
 
-  @ManyToOne(() => Campaign)
+  @ManyToOne(() => Campaign, { onDelete: 'NO ACTION' })
   @JoinColumn({ name: 'campaignId' })
   campaign: Campaign;
 

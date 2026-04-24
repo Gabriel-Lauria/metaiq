@@ -12,25 +12,6 @@
       <label for="storeName">Nome da Loja</label>
       <input id="storeName" class="form-input" name="name" [(ngModel)]="name" placeholder="Ex: Loja Centro" />
     </div>
-    <div class="form-field">
-      <label for="cnpj">CNPJ</label>
-      <input id="cnpj" class="form-input" name="cnpj" [(ngModel)]="cnpj" placeholder="00.000.000/0000-00" />
-    </div>
-    <div class="form-field">
-      <label for="phone">Telefone</label>
-      <input id="phone" class="form-input" name="phone" [(ngModel)]="phone" placeholder="(00) 00000-0000" />
-    </div>
-    <div class="form-field">
-      <label for="email">E-mail</label>
-      <input id="email" class="form-input" name="email" [(ngModel)]="email" placeholder="contato@loja.com" type="email" />
-    </div>
-    <div class="form-field">
-      <label for="active">Status</label>
-      <select id="active" class="form-select" name="active" [(ngModel)]="active">
-        <option [ngValue]="true">Ativa</option>
-        <option [ngValue]="false">Inativa</option>
-      </select>
-    </div>
     <div class="form-field" *ngIf="isAdmin()">
       <label for="managerId">Empresa</label>
       <select id="managerId" class="form-select" name="managerId" [(ngModel)]="managerId">
@@ -38,14 +19,7 @@
         <option *ngFor="let manager of managers(); trackBy: trackById" [value]="manager.id">{{ manager.name }}</option>
       </select>
     </div>
-    <div class="form-field notes-field">
-      <label for="notes">Observações</label>
-      <textarea id="notes" class="form-input textarea" name="notes" [(ngModel)]="notes" placeholder="Informações úteis para atendimento e operação"></textarea>
-    </div>
     <div class="form-actions">
-      <p class="muted" *ngIf="hasPreparedStoreFields()">
-        Estes dados comerciais estão preparados na tela. A persistência completa de CNPJ, telefone, e-mail e observações depende do backend.
-      </p>
       <button class="btn btn-primary" type="submit" [disabled]="saving() || !name.trim() || (isAdmin() && !managerId)">
         {{ saving() ? 'Salvando...' : 'Criar Loja' }}
       </button>
@@ -77,8 +51,8 @@
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando lojas"
-    message="Buscando lojas acessíveis no seu escopo."
+    title="Carregando dados..."
+    message="Carregando dados..."
   />
 
   <app-ui-state

@@ -11,6 +11,9 @@ export interface DatabaseConfig {
   ssl?: boolean | object;
   synchronize: boolean;
   migrationsRun: boolean;
+  connectTimeoutMs: number;
+  statementTimeoutMs: number;
+  poolMax: number;
 }
 
 const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
@@ -60,4 +63,7 @@ export default registerAs('database', () => ({
   ssl: getEnv('DB_SSL', 'POSTGRES_SSL') === 'true' ? { rejectUnauthorized: false } : false,
   synchronize,
   migrationsRun,
+  connectTimeoutMs: parseInt(getEnv('DB_CONNECT_TIMEOUT_MS') || '10000', 10),
+  statementTimeoutMs: parseInt(getEnv('DB_STATEMENT_TIMEOUT_MS') || '30000', 10),
+  poolMax: parseInt(getEnv('DB_POOL_MAX') || '10', 10),
 }));

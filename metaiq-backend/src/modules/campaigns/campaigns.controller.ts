@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { IsOptional, IsUUID } from 'class-validator';
 import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -12,6 +13,7 @@ import { Campaign } from './campaign.entity';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { CreateCampaignDto, UpdateCampaignDto } from './dto/campaign.dto';
+import { AuditService } from '../../common/services/audit.service';
 
 class CampaignQueryDto extends PaginationDto {
   @IsOptional()
@@ -23,14 +25,17 @@ class CampaignQueryDto extends PaginationDto {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
 export class CampaignsController {
-  constructor(private readonly campaignsService: CampaignsService) {}
+  constructor(
+    private readonly campaignsService: CampaignsService,
+    private readonly auditService: AuditService,
+  ) {}
 
   @Get()
   async findAll(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: CampaignQueryDto,
   ): Promise<PaginatedResponse<Campaign>> {
-    return this.campaignsService.findAllPaginated(user, query, { storeId: query.storeId });
+    return this.campaignsService.findAllPaginatedForUser(user, query, { storeId: query.storeId });
   }
 
   @Get(':id')
@@ -40,7 +45,7 @@ export class CampaignsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.campaignsService.findOne(id, user);
+    return this.campaignsService.findOneForUser(user, id);
   }
 
   @Post()
@@ -48,8 +53,24 @@ export class CampaignsController {
   async create(
     @Body() dto: CreateCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
   ): Promise<Campaign> {
-    return this.campaignsService.create(dto, user);
+    const campaign = await this.campaignsService.createForUser(user, dto);
+    this.auditService.record({
+      action: 'campaign.create',
+      status: 'success',
+      actorId: user.id,
+      actorRole: user.role,
+      tenantId: user.tenantId,
+      targetType: 'campaign',
+      targetId: campaign.id,
+      requestId: req.requestId,
+      metadata: {
+        storeId: campaign.storeId,
+        adAccountId: campaign.adAccountId,
+      },
+    });
+    return campaign;
   }
 
   @Patch(':id')
@@ -60,7 +81,24 @@ export class CampaignsController {
     @Param('id') id: string,
     @Body() dto: UpdateCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
   ): Promise<Campaign> {
-    return this.campaignsService.update(id, user, dto);
+    const campaign = await this.campaignsService.updateForUser(user, id, dto);
+    this.auditService.record({
+      action: 'campaign.update',
+      status: 'success',
+      actorId: user.id,
+      actorRole: user.role,
+      tenantId: user.tenantId,
+      targetType: 'campaign',
+      targetId: campaign.id,
+      requestId: req.requestId,
+      metadata: {
+        storeId: campaign.storeId,
+        adAccountId: campaign.adAccountId,
+        changedFields: Object.keys(dto),
+      },
+    });
+    return campaign;
   }
 }

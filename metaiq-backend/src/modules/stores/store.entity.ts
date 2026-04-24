@@ -15,6 +15,7 @@ import { UserStore } from '../user-stores/user-store.entity';
 import { AdAccount } from '../ad-accounts/ad-account.entity';
 import { Campaign } from '../campaigns/campaign.entity';
 import { StoreIntegration } from '../integrations/store-integration.entity';
+import { User } from '../users/user.entity';
 
 @Entity('stores')
 @Index(['managerId'])
@@ -49,6 +50,10 @@ export class Store {
   @ManyToOne(() => Tenant, (tenant) => tenant.stores)
   @JoinColumn({ name: 'tenantId' })
   tenant: Tenant;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdByUserId' })
+  createdBy: User | null;
 
   @OneToMany(() => UserStore, (userStore) => userStore.store)
   userStores: UserStore[];

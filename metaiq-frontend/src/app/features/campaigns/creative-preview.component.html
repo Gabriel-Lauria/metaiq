@@ -1,0 +1,175 @@
+<section class="creative-lab">
+  <header class="creative-lab-header">
+    <div>
+      <span class="eyebrow">Preview do anúncio</span>
+      <h4>Veja o criativo em placements principais</h4>
+      <p>Prévia aproximada do anúncio. A renderização final pode variar na Meta.</p>
+    </div>
+
+    <div class="placement-switcher" aria-label="Selecionar placement de preview">
+      <button
+        type="button"
+        class="placement-pill"
+        *ngFor="let tab of previewTabs()"
+        [class.active]="activePlacement === tab.id"
+        (click)="setActivePlacement(tab.id)"
+      >
+        <span>{{ tab.label }}</span>
+        <small>{{ tab.selected ? 'Selecionado no plano' : tab.subtitle }}</small>
+      </button>
+    </div>
+  </header>
+
+  <div class="creative-lab-body">
+    <div class="preview-stage" [class.story-stage]="activePlacement === 'instagram-story' || activePlacement === 'instagram-reels'">
+      <ng-container [ngSwitch]="activePlacement">
+        <article class="preview-card facebook-feed" *ngSwitchCase="'facebook-feed'">
+          <header class="feed-header">
+            <div class="avatar">{{ avatarLetter() }}</div>
+            <div class="identity-copy">
+              <strong>{{ identityName() }}</strong>
+              <span>Patrocinado · Facebook Feed</span>
+            </div>
+          </header>
+
+          <p class="primary-copy">{{ messagePreview() }}</p>
+
+          <div class="media-frame landscape" *ngIf="hasImage(); else imagePlaceholder">
+            <img [src]="imageUrl" alt="Prévia do anúncio no Facebook Feed" (error)="onPreviewImageError()" />
+          </div>
+
+          <div class="feed-link-card">
+            <span class="site">{{ websiteHost() }}</span>
+            <strong>{{ headlinePreview() }}</strong>
+            <p>{{ descriptionPreview() }}</p>
+            <button type="button">{{ ctaLabel }}</button>
+          </div>
+        </article>
+
+        <article class="preview-card instagram-feed" *ngSwitchCase="'instagram-feed'">
+          <header class="feed-header instagram">
+            <div class="avatar">{{ avatarLetter() }}</div>
+            <div class="identity-copy">
+              <strong>{{ identityName() }}</strong>
+              <span>{{ identityHandle() }}</span>
+            </div>
+          </header>
+
+          <div class="media-frame square" *ngIf="hasImage(); else imagePlaceholder">
+            <img [src]="imageUrl" alt="Prévia do anúncio no Instagram Feed" (error)="onPreviewImageError()" />
+          </div>
+
+          <div class="instagram-actions">
+            <span></span>
+            <span></span>
+            <span></span>
+            <i></i>
+          </div>
+
+          <div class="caption-block">
+            <p><strong>{{ identityName() }}</strong> {{ messagePreview() }}</p>
+            <strong class="headline-inline">{{ headlinePreview() }}</strong>
+            <div class="caption-footer">
+              <span>{{ websiteHost() }}</span>
+              <button type="button">{{ ctaLabel }}</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="preview-card instagram-story" *ngSwitchCase="'instagram-story'">
+          <div class="story-shell">
+            <div class="story-topbar">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+
+            <header class="story-header">
+              <div class="avatar">{{ avatarLetter() }}</div>
+              <div class="identity-copy">
+                <strong>{{ identityName() }}</strong>
+                <span>Story patrocinado</span>
+              </div>
+            </header>
+
+            <div class="story-media" *ngIf="hasImage(); else imagePlaceholder">
+              <img [src]="imageUrl" alt="Prévia do anúncio no Instagram Story" (error)="onPreviewImageError()" />
+              <div class="story-gradient"></div>
+            </div>
+
+            <div class="story-copy">
+              <p>{{ messagePreview() }}</p>
+              <strong>{{ headlinePreview() }}</strong>
+              <button type="button">{{ ctaLabel }}</button>
+            </div>
+          </div>
+        </article>
+
+        <article class="preview-card instagram-story reels" *ngSwitchCase="'instagram-reels'">
+          <div class="story-shell">
+            <header class="story-header reels-header">
+              <div class="identity-copy">
+                <span class="eyebrow-inline">Instagram Reels</span>
+                <strong>{{ identityName() }}</strong>
+              </div>
+            </header>
+
+            <div class="story-media" *ngIf="hasImage(); else imagePlaceholder">
+              <img [src]="imageUrl" alt="Prévia do anúncio no Instagram Reels" (error)="onPreviewImageError()" />
+              <div class="story-gradient"></div>
+            </div>
+
+            <div class="story-copy reels-copy">
+              <strong>{{ headlinePreview() }}</strong>
+              <p>{{ messagePreview() }}</p>
+              <button type="button">{{ ctaLabel }}</button>
+            </div>
+          </div>
+        </article>
+      </ng-container>
+
+      <ng-template #imagePlaceholder>
+        <div class="media-frame placeholder" [class.tall]="activePlacement === 'instagram-story' || activePlacement === 'instagram-reels'">
+          <div class="placeholder-art"></div>
+          <strong>{{ previewPlaceholderMessage() }}</strong>
+          <span>Use uma arte real para revisar enquadramento, impacto e equilíbrio do texto.</span>
+        </div>
+      </ng-template>
+    </div>
+
+    <aside class="preview-insights">
+      <div class="insight-card">
+        <span class="eyebrow">Placement ativo</span>
+        <strong>{{ selectedPlacementLabel() }}</strong>
+        <p>{{ siteLabel() }}</p>
+      </div>
+
+      <div class="insight-card">
+        <span class="eyebrow">Avisos de qualidade</span>
+        <div class="warning-list" *ngIf="placementWarnings().length; else noWarnings">
+          <article class="warning-item" *ngFor="let warning of placementWarnings()" [class]="warningToneClass(warning.tone)">
+            <strong>{{ warning.title }}</strong>
+            <p>{{ warning.detail }}</p>
+          </article>
+        </div>
+
+        <ng-template #noWarnings>
+          <article class="warning-item tone-info">
+            <strong>Criativo legível para revisão</strong>
+            <p>A composição atual já ajuda a validar mensagem, headline, imagem e CTA antes de publicar.</p>
+          </article>
+        </ng-template>
+      </div>
+
+      <div class="insight-card" *ngIf="interestsList().length || goalsList().length">
+        <span class="eyebrow">Contexto de campanha</span>
+        <div class="token-list" *ngIf="interestsList().length">
+          <span class="token" *ngFor="let interest of interestsList()">{{ interest }}</span>
+        </div>
+        <div class="token-list muted" *ngIf="goalsList().length">
+          <span class="token" *ngFor="let goal of goalsList()">{{ goal }}</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>

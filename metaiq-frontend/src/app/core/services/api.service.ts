@@ -26,9 +26,14 @@ import {
   ConnectMetaIntegrationRequest,
   CreateMetaCampaignRequest,
   CreateMetaCampaignResponse,
+  MetaCampaignRecoveryResponse,
+  MetaCampaignRecoveryStatusResponse,
   UpdateCampaignRequest,
   UpdateMetaPageRequest,
   UpdateMetaIntegrationStatusRequest,
+  IbgeCity,
+  IbgeState,
+  CompanyProfilePayload,
 } from '../models';
 import { environment } from '../environment';
 
@@ -55,6 +60,20 @@ export interface PaginatedResponse<T> {
   };
 }
 
+type ApiErrorShape = {
+  status?: number;
+  message?: string;
+  error?: string;
+  step?: string;
+  executionId?: string;
+  executionStatus?: string;
+  partialIds?: Record<string, unknown>;
+  metaError?: Record<string, unknown>;
+  hint?: string;
+  details?: unknown;
+  originalError?: unknown;
+};
+
 function dateRange(days = 30): { from: string; to: string } {
   const to   = new Date();
   const from = new Date();
@@ -70,19 +89,42 @@ export class ApiService {
   private http = inject(HttpClient);
 
   private handleError(error: HttpErrorResponse | unknown) {
-    const message =
-      error instanceof HttpErrorResponse
+    const apiErrorSource = this.extractApiError(error);
+    const message = apiErrorSource?.message
+      || (error instanceof HttpErrorResponse
         ? error.error?.message || error.message || 'Erro ao conectar ao servidor'
         : error instanceof Error
         ? error.message
-        : 'Erro ao conectar ao servidor';
+        : 'Erro ao conectar ao servidor');
 
-    const apiError = new Error(message) as Error & { status?: number };
+    const apiError = new Error(message) as Error & ApiErrorShape;
     if (error instanceof HttpErrorResponse) {
       apiError.status = error.status;
     }
+    if (apiErrorSource) {
+      Object.assign(apiError, apiErrorSource);
+    }
 
     return throwError(() => apiError);
+  }
+
+  private extractApiError(error: unknown): ApiErrorShape | null {
+    if (!error || typeof error !== 'object') {
+      return null;
+    }
+
+    const candidate = error as ApiErrorShape;
+    if (
+      typeof candidate.message === 'string'
+      || typeof candidate.step === 'string'
+      || typeof candidate.executionId === 'string'
+      || typeof candidate.executionStatus === 'string'
+      || typeof candidate.hint === 'string'
+    ) {
+      return candidate;
+    }
+
+    return null;
   }
 
   private request<T>(observable: Observable<T>, shouldRetry = false): Observable<T> {
@@ -280,6 +322,14 @@ export class ApiService {
     return this.get<User[]>('/users');
   }
 
+  getMyCompany(): Observable<CompanyProfilePayload> {
+    return this.get<CompanyProfilePayload>('/me/company');
+  }
+
+  updateMyCompany(body: CompanyProfilePayload): Observable<CompanyProfilePayload> {
+    return this.patch<CompanyProfilePayload>('/me/company', body);
+  }
+
   createUser(body: CreateUserRequest): Observable<User> {
     return this.post<User>('/users', body);
   }
@@ -345,5 +395,30 @@ export class ApiService {
 
   createMetaCampaign(storeId: string, body: CreateMetaCampaignRequest): Observable<CreateMetaCampaignResponse> {
     return this.post<CreateMetaCampaignResponse>(`/integrations/meta/stores/${storeId}/campaigns`, body);
+  }
+
+  getMetaCampaignRecoveryStatus(storeId: string, executionId: string): Observable<MetaCampaignRecoveryStatusResponse> {
+    return this.get<MetaCampaignRecoveryStatusResponse>(
+      `/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}`,
+    );
+  }
+
+  retryMetaCampaignRecovery(
+    storeId: string,
+    executionId: string,
+    body: Partial<CreateMetaCampaignRequest>,
+  ): Observable<MetaCampaignRecoveryResponse> {
+    return this.post<MetaCampaignRecoveryResponse>(
+      `/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/retry`,
+      body,
+    );
+  }
+
+  getIbgeStates(): Observable<IbgeState[]> {
+    return this.get<IbgeState[]>('/ibge/states');
+  }
+
+  getIbgeCities(uf: string): Observable<IbgeCity[]> {
+    return this.get<IbgeCity[]>(`/ibge/states/${encodeURIComponent((uf || '').trim().toUpperCase())}/cities`);
   }
 }

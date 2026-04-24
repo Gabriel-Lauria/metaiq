@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
-import { Role } from '../../common/enums';
+import { AccountType, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { Tenant } from '../tenants/tenant.entity';
 import { Manager } from './manager.entity';
@@ -58,6 +58,7 @@ export class ManagersService {
       this.tenantRepository.create({
         id: saved.id,
         name: saved.name,
+        accountType: AccountType.AGENCY,
         cnpj: saved.cnpj,
         phone: saved.phone,
         email: saved.email,

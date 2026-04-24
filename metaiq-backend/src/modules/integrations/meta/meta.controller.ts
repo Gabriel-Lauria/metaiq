@@ -6,6 +6,7 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { Role } from '../../../common/enums';
+import { AuditService } from '../../../common/services/audit.service';
 import { MetaIntegrationService } from './meta.service';
 import { MetaSyncService } from './meta-sync.service';
 import { MetaCampaignCreation, MetaCampaignCreationStatus } from './meta-campaign-creation.entity';
@@ -29,6 +30,7 @@ export class MetaIntegrationController {
   constructor(
     private readonly metaIntegrationService: MetaIntegrationService,
     private readonly metaSyncService: MetaSyncService,
+    private readonly auditService: AuditService,
   ) {}
 
   @Get('status')
@@ -37,7 +39,7 @@ export class MetaIntegrationController {
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<StoreIntegrationStatusDto> {
-    return this.metaIntegrationService.getStatus(storeId, user);
+    return this.metaIntegrationService.getStatusForUser(user, storeId);
   }
 
   @Get('oauth/start')
@@ -46,7 +48,7 @@ export class MetaIntegrationController {
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MetaOAuthStartResponseDto> {
-    return this.metaIntegrationService.startOAuth(storeId, user);
+    return this.metaIntegrationService.startOAuthForUser(user, storeId);
   }
 
   @Get('sync-plan')
@@ -55,7 +57,7 @@ export class MetaIntegrationController {
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MetaSyncPlan> {
-    return this.metaIntegrationService.buildSyncPlan(storeId, user);
+    return this.metaIntegrationService.buildSyncPlanForUser(user, storeId);
   }
 
   @Get('pages')
@@ -64,7 +66,7 @@ export class MetaIntegrationController {
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MetaPageDto[]> {
-    return this.metaIntegrationService.fetchPagesForStore(storeId, user);
+    return this.metaIntegrationService.fetchPagesForStoreForUser(user, storeId);
   }
 
   @Patch('page')
@@ -74,7 +76,7 @@ export class MetaIntegrationController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateMetaPageDto,
   ): Promise<StoreIntegrationStatusDto> {
-    return this.metaIntegrationService.updatePage(storeId, user, dto);
+    return this.metaIntegrationService.updatePageForUser(user, storeId, dto);
   }
 
   @Get('ad-accounts')
@@ -83,17 +85,19 @@ export class MetaIntegrationController {
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MetaAdAccountDto[]> {
-    return this.metaSyncService.fetchAdAccounts(storeId, user);
+    return this.metaSyncService.fetchAdAccountsForUser(user, storeId);
   }
 
   @Post('ad-accounts/sync')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  syncAdAccounts(
+  async syncAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
   ): Promise<MetaAdAccountDto[]> {
-    return this.metaSyncService.syncAdAccounts(storeId, user, req.requestId);
+    const result = await this.metaSyncService.syncAdAccountsForUser(user, storeId, req.requestId);
+    this.audit(user, req, 'meta.ad_accounts.sync', storeId, { count: result.length });
+    return result;
   }
 
   @Get('ad-accounts/:adAccountId/campaigns')
@@ -103,58 +107,93 @@ export class MetaIntegrationController {
     @Param('adAccountId') adAccountId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<MetaCampaignDto[]> {
-    return this.metaSyncService.fetchCampaigns(storeId, adAccountId, user);
+    return this.metaSyncService.fetchCampaignsForUser(user, storeId, adAccountId);
   }
 
   @Post('ad-accounts/:adAccountId/campaigns/sync')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  syncCampaigns(
+  async syncCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Req() req: Request,
   ): Promise<MetaCampaignDto[]> {
-    return this.metaSyncService.syncCampaigns(storeId, adAccountId, user, req.requestId);
+    const result = await this.metaSyncService.syncCampaignsForUser(user, storeId, adAccountId, req.requestId);
+    this.audit(user, req, 'meta.campaigns.sync', storeId, { adAccountId, count: result.length });
+    return result;
   }
 
   @Post('campaigns')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  createCampaign(
+  async createCampaign(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateMetaCampaignDto,
     @Req() req: Request,
   ): Promise<CreateMetaCampaignResponseDto> {
-    return this.metaIntegrationService.createCampaign(storeId, user, dto, req.requestId);
+    const result = await this.metaIntegrationService.createCampaignForUser(user, storeId, dto, req.requestId);
+    this.audit(user, req, 'meta.campaign.create', result.executionId ?? result.campaignId, {
+      storeId,
+      adAccountId: result.adAccountId,
+      executionId: result.executionId,
+      idempotencyKey: result.idempotencyKey,
+    });
+    return result;
   }
 
   @Post('connect')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  connect(
+  async connect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ConnectMetaIntegrationDto,
   ): Promise<StoreIntegrationStatusDto> {
-    return this.metaIntegrationService.connect(storeId, user, dto);
+    const result = await this.metaIntegrationService.connectForUser(user, storeId, dto);
+    this.audit(user, undefined, 'meta.integration.connect', storeId);
+    return result;
   }
 
   @Patch('status')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  updateStatus(
+  async updateStatus(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateMetaIntegrationStatusDto,
   ): Promise<StoreIntegrationStatusDto> {
-    return this.metaIntegrationService.updateStatus(storeId, user, dto);
+    const result = await this.metaIntegrationService.updateStatusForUser(user, storeId, dto);
+    this.audit(user, undefined, 'meta.integration.status_update', storeId, { status: dto.status });
+    return result;
   }
 
   @Delete()
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
-  disconnect(
+  async disconnect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<StoreIntegrationStatusDto> {
-    return this.metaIntegrationService.disconnect(storeId, user);
+    const result = await this.metaIntegrationService.disconnectForUser(user, storeId);
+    this.audit(user, undefined, 'meta.integration.disconnect', storeId);
+    return result;
+  }
+
+  private audit(
+    user: AuthenticatedUser,
+    req: Request | undefined,
+    action: string,
+    targetId: string | undefined,
+    metadata: Record<string, unknown> = {},
+  ): void {
+    this.auditService.record({
+      action,
+      status: 'success',
+      actorId: user.id,
+      actorRole: user.role,
+      tenantId: user.tenantId,
+      targetType: 'meta',
+      targetId: targetId ?? null,
+      requestId: req?.requestId,
+      metadata,
+    });
   }
 }
 

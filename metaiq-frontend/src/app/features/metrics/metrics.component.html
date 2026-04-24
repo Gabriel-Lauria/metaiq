@@ -24,12 +24,13 @@
 
     <label>
       Loja
-      <select [ngModel]="selectedStore()" (ngModelChange)="setStore($event)">
+      <select *ngIf="!isIndividualAccount()" [ngModel]="selectedStore()" (ngModelChange)="setStore($event)">
         <option value="">Todas as lojas</option>
         <option *ngFor="let store of storeContext.stores(); trackBy: trackById" [value]="store.id">
           {{ store.name }}
         </option>
       </select>
+      <input *ngIf="isIndividualAccount()" type="text" [ngModel]="selectedStoreName()" disabled />
     </label>
 
     <label>

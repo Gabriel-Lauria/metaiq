@@ -1,4 +1,4 @@
-import { Role } from '../enums';
+import { AccountType, Role } from '../enums';
 
 export interface AuthenticatedUser {
   id: string;
@@ -6,4 +6,5 @@ export interface AuthenticatedUser {
   role: Role;
   managerId?: string | null;
   tenantId?: string | null;
+  accountType?: AccountType | null;
 }

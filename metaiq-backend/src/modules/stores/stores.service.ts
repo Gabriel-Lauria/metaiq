@@ -42,7 +42,7 @@ export class StoresService {
     private readonly accessScope: AccessScopeService,
   ) {}
 
-  async create(requester: AuthenticatedUser, dto: CreateStoreDto): Promise<Store> {
+  async createForUser(requester: AuthenticatedUser, dto: CreateStoreDto): Promise<Store> {
     const tenantId = await this.resolveTenantIdForWrite(requester, dto.tenantId, dto.managerId);
     await this.ensureTenantExists(tenantId);
     const managerId = await this.resolveLegacyManagerIdForWrite(requester, dto.managerId, tenantId);
@@ -58,7 +58,7 @@ export class StoresService {
     return this.storeRepository.save(store);
   }
 
-  async findAll(requester: AuthenticatedUser): Promise<Store[]> {
+  async findAllForUser(requester: AuthenticatedUser): Promise<Store[]> {
     const query = this.storeRepository
       .createQueryBuilder('store')
       .leftJoinAndSelect('store.manager', 'manager')
@@ -68,7 +68,7 @@ export class StoresService {
     return query.getMany();
   }
 
-  async findAccessible(requester: AuthenticatedUser): Promise<Store[]> {
+  async findAccessibleForUser(requester: AuthenticatedUser): Promise<Store[]> {
     if (this.accessScope.isPlatformAdmin(requester) || this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) {
       const query = this.storeRepository
         .createQueryBuilder('store')
@@ -90,14 +90,12 @@ export class StoresService {
       .filter((store): store is Store => !!store && store.active && !store.deletedAt);
   }
 
-  async findOne(id: string, requester: AuthenticatedUser): Promise<Store> {
-    const store = await this.findOneUnsafeInternal(id);
-    await this.accessScope.validateStoreAccess(requester, store.id);
-    return store;
+  async findOneForUser(requester: AuthenticatedUser, id: string): Promise<Store> {
+    return this.accessScope.validateStoreAccess(requester, id);
   }
 
-  async update(id: string, requester: AuthenticatedUser, dto: UpdateStoreDto): Promise<Store> {
-    const store = await this.findOne(id, requester);
+  async updateForUser(requester: AuthenticatedUser, id: string, dto: UpdateStoreDto): Promise<Store> {
+    const store = await this.findOneForUser(requester, id);
 
     if (dto.name !== undefined) {
       store.name = dto.name.trim();
@@ -129,14 +127,14 @@ export class StoresService {
     return this.storeRepository.save(store);
   }
 
-  async toggleActive(id: string, requester: AuthenticatedUser): Promise<Store> {
-    const store = await this.findOne(id, requester);
+  async toggleActiveForUser(requester: AuthenticatedUser, id: string): Promise<Store> {
+    const store = await this.findOneForUser(requester, id);
     store.active = !store.active;
     return this.storeRepository.save(store);
   }
 
-  async remove(id: string, requester: AuthenticatedUser): Promise<void> {
-    const store = await this.findOne(id, requester);
+  async removeForUser(requester: AuthenticatedUser, id: string): Promise<void> {
+    const store = await this.findOneForUser(requester, id);
     const dependencies = await this.countBlockingDependencies(store.id);
     const totalDependencies = Object.values(dependencies).reduce((total, count) => total + count, 0);
 
@@ -152,8 +150,8 @@ export class StoresService {
     await this.storeRepository.save(store);
   }
 
-  async listUsers(storeId: string, requester: AuthenticatedUser): Promise<Omit<User, 'password'>[]> {
-    await this.findOne(storeId, requester);
+  async listUsersForUser(requester: AuthenticatedUser, storeId: string): Promise<Omit<User, 'password'>[]> {
+    await this.findOneForUser(requester, storeId);
 
     const links = await this.userStoreRepository.find({
       where: { storeId },
@@ -167,13 +165,13 @@ export class StoresService {
     }).filter((user) => user.active && !user.deletedAt);
   }
 
-  async linkUserToStore(
+  async linkUserToStoreForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     userId: string,
-    requester: AuthenticatedUser,
   ): Promise<UserStore> {
-    const store = await this.findOne(storeId, requester);
-    const user = await this.findUserForLink(userId);
+    const store = await this.findOneForUser(requester, storeId);
+    const user = await this.findUserForLink(userId, requester);
 
     this.validateLinkTenant(requester, store, user);
 
@@ -188,13 +186,13 @@ export class StoresService {
     return this.userStoreRepository.save(link);
   }
 
-  async unlinkUserFromStore(
+  async unlinkUserFromStoreForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     userId: string,
-    requester: AuthenticatedUser,
   ): Promise<void> {
-    const store = await this.findOne(storeId, requester);
-    const user = await this.findUserForLink(userId);
+    const store = await this.findOneForUser(requester, storeId);
+    const user = await this.findUserForLink(userId, requester);
 
     this.validateLinkTenant(requester, store, user);
 
@@ -204,23 +202,13 @@ export class StoresService {
     }
   }
 
-  private async findOneUnsafeInternal(id: string): Promise<Store> {
-    const store = await this.storeRepository.findOne({
-      where: { id, deletedAt: IsNull() },
-      relations: ['manager', 'tenant'],
-    });
-    if (!store) {
-      throw new NotFoundException('Store não encontrada');
-    }
-
-    return store;
-  }
-
-  private async findUserForLink(userId: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { id: userId, deletedAt: IsNull() } });
-    if (!user || !user.active) {
+  private async findUserForLink(userId: string, requester: AuthenticatedUser): Promise<User> {
+    const user = await this.accessScope.validateUserAccess(requester, userId);
+    if (!user.active) {
       throw new NotFoundException('Usuário não encontrado');
     }
+
+    this.assertRequesterCanManageStoreUserLink(requester, user);
 
     return user;
   }
@@ -293,6 +281,16 @@ export class StoresService {
 
     if ([Role.PLATFORM_ADMIN, Role.ADMIN].includes(user.role)) {
       throw new ForbiddenException('ADMIN não deve ser vinculado a stores');
+    }
+  }
+
+  private assertRequesterCanManageStoreUserLink(requester: AuthenticatedUser, user: User): void {
+    if (!this.accessScope.isManager(requester)) {
+      return;
+    }
+
+    if (![Role.OPERATIONAL, Role.CLIENT].includes(user.role)) {
+      throw new ForbiddenException('MANAGER só pode vincular usuários OPERATIONAL ou CLIENT a stores');
     }
   }
 

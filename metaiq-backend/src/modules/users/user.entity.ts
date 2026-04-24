@@ -43,6 +43,10 @@ export class User {
   @Column({ nullable: true })
   createdByUserId: string | null;
 
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdByUserId' })
+  createdBy: User | null;
+
   @ManyToOne(() => Manager, (manager) => manager.users, { nullable: true })
   @JoinColumn({ name: 'managerId' })
   manager: Manager | null;
@@ -56,6 +60,9 @@ export class User {
 
   @Column({ nullable: true })
   refreshToken: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  sessionVersion: number;
 
   @Column({ default: true })
   active: boolean;

@@ -5,6 +5,7 @@ import { ChartData, ChartOptions } from 'chart.js';
 import { ChartComponent } from '../../core/components/chart.component';
 import { UiKpiCardComponent } from '../../core/components/ui-kpi-card.component';
 import { AggregatedMetrics } from '../../core/models';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 
 interface CampaignMetricHistory {
@@ -40,6 +41,7 @@ interface InsightCard {
   styleUrls: ['./metrics.component.scss'],
 })
 export class MetricsComponent {
+  readonly accountContext = inject(AccountContextService);
   readonly storeContext = inject(StoreContextService);
 
   readonly fromDate = signal(this.formatDateOffset(-30));
@@ -362,6 +364,13 @@ export class MetricsComponent {
       if (this.selectedStore() || this.storeContext.selectedStoreId()) return;
       this.selectedStore.set('');
     });
+
+    effect(() => {
+      const selectedStoreId = this.storeContext.getValidSelectedStoreId();
+      if (this.accountContext.isIndividualAccount() && selectedStoreId && this.selectedStore() !== selectedStoreId) {
+        this.selectedStore.set(selectedStoreId);
+      }
+    });
   }
 
   setStore(storeId: string): void {
@@ -398,6 +407,10 @@ export class MetricsComponent {
 
   trackById(_: number, item: { id: string }): string {
     return item.id;
+  }
+
+  isIndividualAccount(): boolean {
+    return this.accountContext.isIndividualAccount();
   }
 
   private formatDateOffset(days: number): string {

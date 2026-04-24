@@ -1,27 +1,38 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, Index } from 'typeorm';
-import { User } from '../users/user.entity';
-import { Store } from '../stores/store.entity';
-import { CryptoTransformer } from '../../common/transformers/crypto.transformer';
-import { IntegrationProvider, SyncStatus } from '../../common/enums';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
+  Unique,
+} from "typeorm";
+import { User } from "../users/user.entity";
+import { Store } from "../stores/store.entity";
+import { CryptoTransformer } from "../../common/transformers/crypto.transformer";
+import { IntegrationProvider, SyncStatus } from "../../common/enums";
 
-@Entity('ad_accounts')
-@Index(['userId'])
-@Index(['storeId'])
-@Index(['metaId'])
+@Entity("ad_accounts")
+@Index(["userId"])
+@Index(["storeId"])
+@Index(["metaId"])
+@Unique("UQ_ad_accounts_id_storeId", ["id", "storeId"])
 export class AdAccount {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
   metaId: string; // ID da conta no Meta
 
-  @Column({ type: 'varchar', length: 32, default: IntegrationProvider.META })
+  @Column({ type: "varchar", length: 32, default: IntegrationProvider.META })
   provider: IntegrationProvider;
 
   @Column({ nullable: true })
   externalId: string | null;
 
-  @Column({ type: 'varchar', length: 32, default: SyncStatus.NEVER_SYNCED })
+  @Column({ type: "varchar", length: 32, default: SyncStatus.NEVER_SYNCED })
   syncStatus: SyncStatus;
 
   @Column({ nullable: true })
@@ -36,10 +47,14 @@ export class AdAccount {
   @Column({ nullable: true })
   currency: string; // USD, BRL, etc.
 
-  @Column({ nullable: true, select: false, transformer: new CryptoTransformer() })
+  @Column({
+    nullable: true,
+    select: false,
+    transformer: new CryptoTransformer(),
+  })
   accessToken: string; // Token de acesso da Meta API (criptografado no banco)
 
-  @Column({ type: 'date', nullable: true })
+  @Column({ type: "date", nullable: true })
   tokenExpiresAt: Date;
 
   @Column({ default: true })
@@ -52,11 +67,11 @@ export class AdAccount {
   storeId: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: "userId" })
   user: User;
 
   @ManyToOne(() => Store, (store) => store.adAccounts, { nullable: false })
-  @JoinColumn({ name: 'storeId' })
+  @JoinColumn({ name: "storeId" })
   store: Store;
 
   @CreateDateColumn()

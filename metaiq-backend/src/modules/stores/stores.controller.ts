@@ -21,20 +21,20 @@ export class StoresController {
 
   @Post()
   async create(@Request() req: any, @Body() dto: CreateStoreDto): Promise<Store> {
-    const store = await this.storesService.create(req.user, dto);
+    const store = await this.storesService.createForUser(req.user, dto);
     this.audit(req, 'store.create', store.id, 'store');
     return store;
   }
 
   @Get()
   findAll(@Request() req: any): Promise<Store[]> {
-    return this.storesService.findAll(req.user);
+    return this.storesService.findAllForUser(req.user);
   }
 
   @Get('accessible')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
   findAccessible(@Request() req: any): Promise<Store[]> {
-    return this.storesService.findAccessible(req.user);
+    return this.storesService.findAccessibleForUser(req.user);
   }
 
   @Get(':storeId/users')
@@ -42,7 +42,7 @@ export class StoresController {
     @Param('storeId') storeId: string,
     @Request() req: any,
   ): Promise<Omit<User, 'password'>[]> {
-    return this.storesService.listUsers(storeId, req.user);
+    return this.storesService.listUsersForUser(req.user, storeId);
   }
 
   @Post(':storeId/users/:userId')
@@ -51,7 +51,7 @@ export class StoresController {
     @Param('userId') userId: string,
     @Request() req: any,
   ): Promise<UserStore> {
-    return this.storesService.linkUserToStore(storeId, userId, req.user).then((link) => {
+    return this.storesService.linkUserToStoreForUser(req.user, storeId, userId).then((link) => {
       this.audit(req, 'store.user.link', storeId, 'store', { userId });
       return link;
     });
@@ -64,7 +64,7 @@ export class StoresController {
     @Request() req: any,
   ): Promise<{ message: string }> {
     return this.storesService
-      .unlinkUserFromStore(storeId, userId, req.user)
+      .unlinkUserFromStoreForUser(req.user, storeId, userId)
       .then(() => {
         this.audit(req, 'store.user.unlink', storeId, 'store', { userId });
         return { message: 'Vínculo removido' };
@@ -73,7 +73,7 @@ export class StoresController {
 
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: any): Promise<Store> {
-    return this.storesService.findOne(id, req.user);
+    return this.storesService.findOneForUser(req.user, id);
   }
 
   @Patch(':id')
@@ -82,7 +82,7 @@ export class StoresController {
     @Request() req: any,
     @Body() dto: UpdateStoreDto,
   ): Promise<Store> {
-    return this.storesService.update(id, req.user, dto).then((store) => {
+    return this.storesService.updateForUser(req.user, id, dto).then((store) => {
       this.audit(req, 'store.update', id, 'store');
       return store;
     });
@@ -90,7 +90,7 @@ export class StoresController {
 
   @Patch(':id/toggle-active')
   toggleActive(@Param('id') id: string, @Request() req: any): Promise<Store> {
-    return this.storesService.toggleActive(id, req.user).then((store) => {
+    return this.storesService.toggleActiveForUser(req.user, id).then((store) => {
       this.audit(req, 'store.toggle_active', id, 'store');
       return store;
     });
@@ -99,7 +99,7 @@ export class StoresController {
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: any): Promise<{ message: string }> {
     return this.storesService
-      .remove(id, req.user)
+      .removeForUser(req.user, id)
       .then(() => {
         this.audit(req, 'store.delete', id, 'store');
         return { message: 'Loja excluída com segurança' };

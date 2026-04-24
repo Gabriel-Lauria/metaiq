@@ -34,7 +34,7 @@ export class MetaSyncService {
     private readonly metaService: MetaIntegrationService,
   ) {}
 
-  async fetchAdAccounts(storeId: string, requester: AuthenticatedUser): Promise<MetaAdAccountDto[]> {
+  async fetchAdAccountsForUser(requester: AuthenticatedUser, storeId: string): Promise<MetaAdAccountDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
 
@@ -48,7 +48,7 @@ export class MetaSyncService {
     }
   }
 
-  async syncAdAccounts(storeId: string, requester: AuthenticatedUser, requestId?: string): Promise<MetaAdAccountDto[]> {
+  async syncAdAccountsForUser(requester: AuthenticatedUser, storeId: string, requestId?: string): Promise<MetaAdAccountDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
 
@@ -109,14 +109,14 @@ export class MetaSyncService {
     }
   }
 
-  async fetchCampaigns(
+  async fetchCampaignsForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     adAccountId: string,
-    requester: AuthenticatedUser,
   ): Promise<MetaCampaignDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
-    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId);
+    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId, requester);
 
     try {
       return this.metaService.normalizeCampaigns(
@@ -128,15 +128,15 @@ export class MetaSyncService {
     }
   }
 
-  async syncCampaigns(
+  async syncCampaignsForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     adAccountId: string,
-    requester: AuthenticatedUser,
     requestId?: string,
   ): Promise<MetaCampaignDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
-    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId);
+    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId, requester);
 
     await this.acquireSyncLock(integration);
     const startedAt = Date.now();
@@ -256,16 +256,13 @@ export class MetaSyncService {
     return integration;
   }
 
-  private async getMetaAdAccountInStore(adAccountId: string, storeId: string): Promise<AdAccount> {
-    const adAccount = await this.adAccountRepository.findOne({
-      where: {
-        id: adAccountId,
-        storeId,
-        provider: IntegrationProvider.META,
-      },
-    });
-
-    if (!adAccount) {
+  private async getMetaAdAccountInStore(
+    adAccountId: string,
+    storeId: string,
+    requester: AuthenticatedUser,
+  ): Promise<AdAccount> {
+    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
+    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 

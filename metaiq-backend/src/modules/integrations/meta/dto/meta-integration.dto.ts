@@ -1,6 +1,7 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
+import { META_CTA_TYPES, transformMetaCtaInput, type MetaCallToActionType } from '../meta-cta.constants';
 
 export class ConnectMetaIntegrationDto {
   @IsOptional()
@@ -126,6 +127,32 @@ export class CreateMetaCampaignDto {
   imageUrl: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  state?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  stateName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  city?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  cityId?: number;
+
+  @IsOptional()
   @IsUrl({ require_protocol: true })
   @MaxLength(1000)
   destinationUrl?: string;
@@ -141,9 +168,10 @@ export class CreateMetaCampaignDto {
   description?: string;
 
   @IsOptional()
+  @Transform(({ value }) => transformMetaCtaInput(value))
   @IsString()
-  @MaxLength(40)
-  cta?: string;
+  @IsIn(META_CTA_TYPES)
+  cta?: MetaCallToActionType;
 
   @IsOptional()
   @IsString()
@@ -164,11 +192,14 @@ export interface CreateMetaCampaignResponseDto {
   creativeId: string;
   adId: string;
   status: 'CREATED';
-  executionStatus?: 'ACTIVE';
+  executionStatus?: 'COMPLETED';
   initialStatus?: 'PAUSED' | 'ACTIVE';
   storeId: string;
   adAccountId: string;
   platform: 'META';
+  step?: 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
+  partialIds?: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
+  hint?: string;
 }
 
 export class UpdateMetaIntegrationStatusDto {
@@ -255,9 +286,11 @@ export class RetryPartialCampaignDto {
   message?: string;
 
   @IsOptional()
+  @Transform(({ value }) => transformMetaCtaInput(value))
   @IsString()
   @MaxLength(40)
-  cta?: string;
+  @IsIn(META_CTA_TYPES)
+  cta?: MetaCallToActionType;
 
   @IsOptional()
   @IsUrl({ require_protocol: true })

@@ -1,4 +1,5 @@
-import { CreateMetaCampaignResponse } from '../../core/models';
+import { CampaignCopilotAnalysisResponse, CampaignSuggestionResponse, CreateMetaCampaignResponse } from '../../core/models';
+import { MetaCallToActionType } from './cta.constants';
 
 export type CampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
 export type CampaignGender = 'ALL' | 'MALE' | 'FEMALE';
@@ -6,6 +7,8 @@ export type CampaignPlacement = 'feed' | 'stories' | 'reels' | 'explore' | 'mess
 export type CampaignInitialStatus = 'PAUSED' | 'ACTIVE';
 export type CampaignDestinationType = 'site' | 'messages' | 'form' | 'app' | 'catalog';
 export type CampaignBudgetType = 'daily' | 'lifetime';
+export type CampaignCreationMode = 'ai-entry' | 'ai-result' | 'edit-lite' | 'advanced';
+export type CampaignCreationEntryMode = 'manual' | 'ai';
 
 export interface CampaignBuilderState {
   campaign: {
@@ -29,8 +32,11 @@ export interface CampaignBuilderState {
   audience: {
     autoAudience: boolean;
     country: string;
+    state: string;
+    stateName: string;
     region: string;
     city: string;
+    cityId: number | null;
     zipCode: string;
     radiusKm: number;
     presenceType: string;
@@ -92,7 +98,7 @@ export interface CampaignBuilderState {
     message: string;
     headline: string;
     description: string;
-    cta: string;
+    cta: MetaCallToActionType;
     imageUrl: string;
     carousel: boolean;
   };
@@ -107,12 +113,51 @@ export interface CampaignBuilderState {
     notes: string;
   };
   ui: {
+    aiFlowMode: CampaignCreationMode;
+    builderMode: CampaignCreationEntryMode;
     aiPrompt: string;
+    aiGoal: string;
+    aiFunnelStage: 'top' | 'middle' | 'bottom' | 'remarketing' | 'retention' | '';
+    aiBudget: number | null;
+    aiDurationDays: number | null;
+    aiDestinationType: 'whatsapp' | 'website' | 'instagram' | 'leads' | 'messages' | '';
+    aiPrimaryOffer: string;
+    aiRegion: string;
+    aiExtraContext: string;
     aiApplied: boolean;
     aiDetectedFields: string[];
     aiLastSummary: string;
     aiCreativeIdeas: string[];
+    aiConfidence: number | null;
+    aiStrengths: string[];
+    aiAssumptions: string[];
+    aiMissingInputs: string[];
+    aiRiskWarnings: string[];
+    aiRecommendations: string[];
+    aiValidationReady: boolean | null;
+    aiQualityScore: number | null;
+    aiBlockingIssues: string[];
+    aiValidationWarnings: string[];
+    aiValidationRecommendations: string[];
+    aiValidationStale: boolean;
+    aiCopilotAnalysis: CampaignCopilotAnalysisResponse | null;
+    aiCopilotStale: boolean;
+    aiCopilotAppliedImprovementIds: string[];
+    aiCopilotIgnoredImprovementIds: string[];
+    aiCopilotLastAppliedMessage: string | null;
+    aiCopilotApplyError: string | null;
+    aiCopilotUndoSnapshot: CampaignBuilderUndoSnapshot | null;
+    aiGeoPendingNotice: string | null;
+    aiIgnoredFields: string[];
+    aiUsedFallback: boolean;
+    aiLastSuggestion: CampaignSuggestionResponse | null;
   };
+}
+
+export interface CampaignBuilderUndoSnapshot {
+  improvementId: string;
+  label: string;
+  previousState: CampaignBuilderState;
 }
 
 export interface CreationReadinessItem {
@@ -152,4 +197,49 @@ export interface CampaignCreateSuccessEvent {
   name: string;
   storeName: string;
   response: CreateMetaCampaignResponse;
+}
+
+/**
+ * FASE 7.1: STEP-BY-STEP CAMPAIGN CREATION FLOW
+ * 
+ * Novo sistema de criação de campanhas com fluxo guiado, inspirado em Meta Ads / Google Ads.
+ * 
+ * Modo Manual: Configuração → Público → Criativo → Revisão
+ * Modo IA:     Briefing IA → Configuração → Público → Criativo → Revisão
+ */
+
+export type StepId = 'briefing-ia' | 'configuration' | 'audience' | 'creative' | 'review';
+
+export interface StepValidation {
+  /** Erros que bloqueiam o avanço */
+  errors: string[];
+  /** Avisos que não bloqueiam, mas devem ser considerados */
+  warnings: string[];
+  /** Se a etapa está completa o suficiente para avançar */
+  isComplete: boolean;
+}
+
+export interface CampaignBuilderStepState {
+  /** Etapa atual no fluxo */
+  currentStep: StepId;
+  /** Modo de entrada (manual ou IA) */
+  entryMode: CampaignCreationEntryMode;
+  /** Se está no modo IA ou manual */
+  isAiMode: boolean;
+  /** Validação da etapa atual */
+  currentStepValidation: StepValidation;
+  /** Map de validações por etapa */
+  stepValidations: Record<StepId, StepValidation>;
+  /** Etapas completadas (que podem voltar) */
+  completedSteps: StepId[];
+  /** Se o usuário já tentou submeter */
+  submitAttempted: boolean;
+}
+
+export interface StepMetadata {
+  id: StepId;
+  label: string;
+  description: string;
+  order: number;
+  requiresAiMode?: boolean; // true apenas para 'briefing-ia'
 }

@@ -8,30 +8,44 @@ import {
   PrimaryGeneratedColumn,
   Unique,
   UpdateDateColumn,
-} from 'typeorm';
-import { Store } from '../../stores/store.entity';
-import { User } from '../../users/user.entity';
-import { AdAccount } from '../../ad-accounts/ad-account.entity';
-import { Campaign } from '../../campaigns/campaign.entity';
+} from "typeorm";
+import { Store } from "../../stores/store.entity";
+import { User } from "../../users/user.entity";
+import { AdAccount } from "../../ad-accounts/ad-account.entity";
+import { Campaign } from "../../campaigns/campaign.entity";
 
 export enum MetaCampaignCreationStatus {
-  CREATING = 'CREATING',
-  PARTIAL = 'PARTIAL',
-  FAILED = 'FAILED',
-  ACTIVE = 'ACTIVE',
+  PENDING = "PENDING",
+  IN_PROGRESS = "IN_PROGRESS",
+  PARTIAL = "PARTIAL",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  CANCELLED = "CANCELLED",
+  CREATING = "CREATING",
+  ACTIVE = "ACTIVE",
 }
 
-export type MetaCampaignCreationStep = 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
+export type MetaCampaignCreationStep =
+  | "campaign"
+  | "adset"
+  | "creative"
+  | "ad"
+  | "persist";
 
-@Entity('meta_campaign_creations')
-@Unique('UQ_meta_campaign_creations_store_idempotency', ['storeId', 'idempotencyKey'])
-@Index(['storeId'])
-@Index(['requesterUserId'])
-@Index(['adAccountId'])
-@Index(['status'])
-@Index(['metaCampaignId'])
+@Entity("meta_campaign_creations")
+@Unique("UQ_meta_campaign_creations_store_idempotency", [
+  "storeId",
+  "idempotencyKey",
+])
+@Index(["storeId"])
+@Index(["requesterUserId"])
+@Index(["adAccountId"])
+@Index(["storeId", "adAccountId"])
+@Index(["status"])
+@Index(["metaCampaignId"])
+@Index(["payloadHash"])
 export class MetaCampaignCreation {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
@@ -49,7 +63,11 @@ export class MetaCampaignCreation {
   @Column()
   idempotencyKey: string;
 
-  @Column({ type: 'varchar', length: 32, default: MetaCampaignCreationStatus.CREATING })
+  @Column({
+    type: "varchar",
+    length: 32,
+    default: MetaCampaignCreationStatus.IN_PROGRESS,
+  })
   status: MetaCampaignCreationStatus;
 
   @Column({ default: false })
@@ -79,26 +97,29 @@ export class MetaCampaignCreation {
   @Column({ nullable: true })
   errorStep: string | null;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   errorMessage: string | null;
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: "simple-json", nullable: true })
   requestPayload: Record<string, unknown> | null;
 
-  @ManyToOne(() => Store, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'storeId' })
+  @Column({ nullable: true })
+  payloadHash: string | null;
+
+  @ManyToOne(() => Store, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "storeId" })
   store: Store;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'requesterUserId' })
+  @JoinColumn({ name: "requesterUserId" })
   requester: User;
 
   @ManyToOne(() => AdAccount)
-  @JoinColumn({ name: 'adAccountId' })
+  @JoinColumn({ name: "adAccountId" })
   adAccount: AdAccount;
 
   @ManyToOne(() => Campaign, { nullable: true })
-  @JoinColumn({ name: 'campaignId' })
+  @JoinColumn({ name: "campaignId" })
   campaign: Campaign | null;
 
   @CreateDateColumn()

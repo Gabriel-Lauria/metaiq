@@ -32,7 +32,7 @@ export class Insight {
   @Column()
   campaignId: string;
 
-  @ManyToOne(() => Campaign, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Campaign, { onDelete: 'NO ACTION' })
   @JoinColumn({ name: 'campaignId' })
   campaign: Campaign;
 

@@ -8,17 +8,23 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
+import { AccountType, Role } from '../../common/enums';
 import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../users/user.entity';
-import { Role } from '../../common/enums';
+import { Tenant } from '../tenants/tenant.entity';
 import { AuditService } from '../../common/services/audit.service';
+import { RegisterDto } from './dto/auth.dto';
+import { Manager } from '../managers/manager.entity';
+import { Store } from '../stores/store.entity';
+import { UserStore } from '../user-stores/user-store.entity';
 
 interface JwtPayload {
   sub: string;
   email: string;
   role: Role;
+  sessionVersion: number;
   jti?: string;
 }
 
@@ -27,6 +33,11 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Tenant)
+    private tenantRepository: Repository<Tenant>,
+    @InjectRepository(UserStore)
+    private userStoreRepository: Repository<UserStore>,
+    private dataSource: DataSource,
     private jwtService: JwtService,
     private configService: ConfigService,
     private auditService: AuditService,
@@ -59,30 +70,25 @@ export class AuthService {
     return this.buildAuthResponse(user, tokens);
   }
 
-  async register(email: string, password: string, name: string) {
+  async register(registerDto: RegisterDto) {
     if (!this.isPublicRegisterEnabled()) {
       throw new ForbiddenException('Registro público desabilitado');
     }
 
-    const existing = await this.userRepository.findOne({ where: { email } });
-    if (existing) {
-      throw new ConflictException('Email já cadastrado');
+    const requestedAccountType = registerDto.accountType ?? AccountType.INDIVIDUAL;
+    if (requestedAccountType !== AccountType.INDIVIDUAL) {
+      throw new ForbiddenException('Cadastro público permite apenas contas INDIVIDUAL');
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const user = this.userRepository.create({
-      email,
-      name,
-      password: hashedPassword,
-      active: true,
-    });
-
-    await this.userRepository.save(user);
+    const { user, storeId } = await this.registerIndividual(registerDto);
     const tokens = await this.generateTokens(user);
     await this.updateRefreshToken(user.id, tokens.refreshToken);
     this.auditAuth('auth.register', 'success', user);
 
-    return this.buildAuthResponse(user, tokens);
+    return this.buildAuthResponse(user, tokens, {
+      accountType: AccountType.INDIVIDUAL,
+      storeId,
+    });
   }
 
   async refreshTokens(refreshToken: string) {
@@ -114,7 +120,7 @@ export class AuthService {
 
     try {
       const payload = await this.validateRefreshToken(refreshToken);
-      await this.updateRefreshToken(payload.sub, null);
+      await this.invalidateUserSession(payload.sub);
       this.auditService.record({
         action: 'auth.logout',
         status: 'success',
@@ -127,6 +133,28 @@ export class AuthService {
         reason: 'stale_or_invalid_refresh_token',
       });
       // Logout should still succeed from the client perspective even if the token is stale.
+    }
+  }
+
+  async logoutByAccessToken(accessToken?: string): Promise<void> {
+    if (!accessToken) {
+      return;
+    }
+
+    try {
+      const payload = await this.validateAccessToken(accessToken);
+      await this.invalidateUserSession(payload.sub);
+      this.auditService.record({
+        action: 'auth.logout',
+        status: 'success',
+        actorId: payload.sub,
+      });
+    } catch {
+      this.auditService.record({
+        action: 'auth.logout',
+        status: 'failure',
+        reason: 'stale_or_invalid_access_token',
+      });
     }
   }
 
@@ -154,12 +182,36 @@ export class AuthService {
       throw new UnauthorizedException('Usuário inativo');
     }
     this.assertValidRole(user);
+    this.assertSessionVersion(payload, user);
 
     if (!this.isRefreshTokenValid(refreshToken, user.refreshToken)) {
       await this.updateRefreshToken(user.id, null);
       throw new UnauthorizedException('Refresh token inválido - sessão comprometida');
     }
 
+    return payload;
+  }
+
+  private async validateAccessToken(accessToken: string): Promise<JwtPayload> {
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwtService.verifyAsync(accessToken, {
+        secret: this.configService.get<string>('jwt.secret'),
+      });
+    } catch {
+      throw new UnauthorizedException('Access token inválido ou expirado');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: payload.sub, deletedAt: IsNull() } });
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+
+    if (!user.active) {
+      throw new UnauthorizedException('Usuário inativo');
+    }
+    this.assertValidRole(user);
+    this.assertSessionVersion(payload, user);
     return payload;
   }
 
@@ -196,7 +248,15 @@ export class AuthService {
     return tokens;
   }
 
-  private buildAuthResponse(user: User, tokens: { accessToken: string; refreshToken: string }) {
+  private async buildAuthResponse(
+    user: User,
+    tokens: { accessToken: string; refreshToken: string },
+    context?: { accountType?: AccountType | null; storeId?: string | null },
+  ) {
+    const tenantProfile = await this.resolveTenantProfile(user.tenantId);
+    const accountType = context?.accountType ?? tenantProfile?.accountType ?? null;
+    const storeId = context?.storeId ?? await this.resolveStoreId(user.id, accountType);
+
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
@@ -207,12 +267,133 @@ export class AuthService {
         role: user.role,
         managerId: user.managerId,
         tenantId: user.tenantId,
+        accountType,
+        storeId,
+        businessName: tenantProfile?.businessName ?? null,
+        businessSegment: tenantProfile?.businessSegment ?? null,
+        defaultCity: tenantProfile?.defaultCity ?? null,
+        defaultState: tenantProfile?.defaultState ?? null,
+        website: tenantProfile?.website ?? null,
+        instagram: tenantProfile?.instagram ?? null,
+        whatsapp: tenantProfile?.whatsapp ?? null,
       },
     };
   }
 
   private buildPayload(user: User): JwtPayload {
-    return { sub: user.id, email: user.email, role: user.role };
+    return {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      sessionVersion: user.sessionVersion ?? 0,
+    };
+  }
+
+  private async resolveAccountType(tenantId?: string | null): Promise<AccountType | null> {
+    return (await this.resolveTenantProfile(tenantId))?.accountType ?? null;
+  }
+
+  private async resolveTenantProfile(tenantId?: string | null): Promise<Pick<Tenant, 'accountType' | 'businessName' | 'businessSegment' | 'defaultCity' | 'defaultState' | 'website' | 'instagram' | 'whatsapp'> | null> {
+    if (!tenantId) {
+      return null;
+    }
+
+    return this.tenantRepository.findOne({
+      where: { id: tenantId, deletedAt: IsNull() },
+      select: ['id', 'accountType', 'businessName', 'businessSegment', 'defaultCity', 'defaultState', 'website', 'instagram', 'whatsapp'],
+    });
+  }
+
+  private async resolveStoreId(
+    userId: string,
+    accountType?: AccountType | null,
+  ): Promise<string | null> {
+    if (accountType !== AccountType.INDIVIDUAL) {
+      return null;
+    }
+
+    const userStore = await this.userStoreRepository.findOne({
+      where: { userId },
+      order: { createdAt: 'ASC' },
+    });
+
+    return userStore?.storeId ?? null;
+  }
+
+  private async registerIndividual(registerDto: RegisterDto): Promise<{ user: User; storeId: string }> {
+    const email = registerDto.email.trim().toLowerCase();
+    const name = registerDto.name.trim();
+    const businessName = registerDto.businessName.trim();
+    const businessSegment = this.cleanNullable(registerDto.businessSegment);
+    const defaultCity = this.cleanNullable(registerDto.defaultCity ?? registerDto.city);
+    const defaultState = this.cleanNullable(registerDto.defaultState ?? registerDto.state)?.toUpperCase() ?? null;
+    const website = this.cleanNullable(registerDto.website);
+    const instagram = this.normalizeInstagram(registerDto.instagram);
+    const whatsapp = this.cleanNullable(registerDto.whatsapp);
+    const hashedPassword = await bcrypt.hash(registerDto.password, 12);
+
+    return this.dataSource.transaction(async (manager) => {
+      const existing = await manager.findOne(User, { where: { email } });
+      if (existing) {
+        throw new ConflictException('Email já cadastrado');
+      }
+
+      const tenant = manager.create(Tenant, {
+        name: businessName,
+        accountType: AccountType.INDIVIDUAL,
+        businessName,
+        businessSegment,
+        defaultCity,
+        defaultState,
+        website,
+        instagram,
+        whatsapp,
+        email,
+        contactName: name,
+        active: true,
+      });
+      const savedTenant = await manager.save(Tenant, tenant);
+
+      const internalManager = manager.create(Manager, {
+        name: businessName,
+        email,
+        contactName: name,
+        active: true,
+        notes: 'Internal individual account bootstrap manager',
+      });
+      const savedManager = await manager.save(Manager, internalManager);
+
+      const user = manager.create(User, {
+        email,
+        name,
+        password: hashedPassword,
+        role: Role.ADMIN,
+        managerId: savedManager.id,
+        tenantId: savedTenant.id,
+        active: true,
+      });
+      const savedUser = await manager.save(User, user);
+
+      const store = manager.create(Store, {
+        name: businessName,
+        managerId: savedManager.id,
+        tenantId: savedTenant.id,
+        createdByUserId: savedUser.id,
+        active: true,
+      });
+      const savedStore = await manager.save(Store, store);
+
+      const userStore = manager.create(UserStore, {
+        userId: savedUser.id,
+        storeId: savedStore.id,
+      });
+      await manager.save(UserStore, userStore);
+
+      return {
+        user: savedUser,
+        storeId: savedStore.id,
+      };
+    });
   }
 
   private isPublicRegisterEnabled(): boolean {
@@ -231,6 +412,17 @@ export class AuthService {
     }
   }
 
+  private assertSessionVersion(payload: JwtPayload, user: User): void {
+    if (payload.sessionVersion !== user.sessionVersion) {
+      throw new UnauthorizedException('Sessão inválida ou expirada');
+    }
+  }
+
+  private async invalidateUserSession(userId: string): Promise<void> {
+    await this.userRepository.increment({ id: userId, deletedAt: IsNull() }, 'sessionVersion', 1);
+    await this.updateRefreshToken(userId, null);
+  }
+
   private async updateRefreshToken(userId: string, refreshToken: string | null) {
     const hashedToken = refreshToken ? this.hashRefreshToken(refreshToken) : null;
     await this.userRepository.update(userId, { refreshToken: hashedToken });
@@ -245,6 +437,15 @@ export class AuthService {
 
   private hashRefreshToken(refreshToken: string) {
     return createHash('sha256').update(refreshToken).digest('hex');
+  }
+
+  private cleanNullable(value?: string | null): string | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
   }
 
   private auditAuth(
@@ -265,5 +466,14 @@ export class AuthService {
         email: userOrPayload.email,
       },
     });
+  }
+
+  private normalizeInstagram(value?: string | null): string | null {
+    const normalized = this.cleanNullable(value);
+    if (!normalized) {
+      return null;
+    }
+
+    return normalized.startsWith('@') ? normalized : `@${normalized}`;
   }
 }

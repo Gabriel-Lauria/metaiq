@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   HttpCode,
   HttpStatus,
   Post,
@@ -55,9 +54,10 @@ export class AuthController {
     @Body() registerDto: RegisterDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    void registerDto;
-    void response;
-    throw new ForbiddenException('Cadastro público desativado para o beta controlado.');
+    const authResponse = await this.authService.register(registerDto);
+    this.setRefreshTokenCookie(response, authResponse.refreshToken);
+    const { refreshToken: _refreshToken, ...safeResponse } = authResponse;
+    return safeResponse;
   }
 
   @Post('logout')
@@ -67,7 +67,11 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const refreshToken = this.extractRefreshTokenFromCookies(request);
+    const accessToken = this.extractAccessToken(request);
     await this.authService.logoutByRefreshToken(refreshToken);
+    if (!refreshToken) {
+      await this.authService.logoutByAccessToken(accessToken);
+    }
     response.clearCookie('metaiq_refresh_token', this.cookieOptions());
     return { success: true };
   }
@@ -90,6 +94,15 @@ export class AuthController {
       .map((entry) => entry.trim())
       .find((entry) => entry.startsWith('metaiq_refresh_token='))
       ?.slice('metaiq_refresh_token='.length);
+  }
+
+  private extractAccessToken(request: Request): string | undefined {
+    const authorization = request.headers.authorization;
+    if (!authorization?.startsWith('Bearer ')) {
+      return undefined;
+    }
+
+    return authorization.slice('Bearer '.length).trim();
   }
 
   private cookieOptions() {

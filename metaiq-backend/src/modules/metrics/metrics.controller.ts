@@ -50,9 +50,9 @@ export class MetricsController {
     @Query() query: MetricsQueryDto,
   ): Promise<PaginatedResponse<MetricDaily>> {
     if (query.campaignId) {
-      return this.metricsService.findByCampaignPaginated(user, query.campaignId, query);
+      return this.metricsService.findByCampaignPaginatedForUser(user, query.campaignId, query);
     }
-    return this.metricsService.findAllPaginated(user, query, { storeId: query.storeId });
+    return this.metricsService.findAllPaginatedForUser(user, query, { storeId: query.storeId });
   }
 
   @Get('summary')
@@ -61,7 +61,7 @@ export class MetricsController {
     @Query() query: MetricsSummaryQueryDto,
   ) {
     const { fromDate, toDate } = this.resolveDateRange(query);
-    return this.metricsService.getSummary(user, fromDate, toDate, query.storeId);
+    return this.metricsService.getSummaryForUser(user, fromDate, toDate, query.storeId);
   }
 
   @Get('campaigns/:campaignId')

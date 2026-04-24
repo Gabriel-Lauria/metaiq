@@ -1,5 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
@@ -17,6 +17,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { MetaIntegrationModule } from './modules/integrations/meta/meta.module';
+import { IbgeModule } from './modules/ibge/ibge.module';
 import { SyncCron } from './infrastructure/sync.cron';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import appConfig from './config/app.config';
@@ -36,6 +37,8 @@ import { StoreIntegration } from './modules/integrations/store-integration.entit
 import { OAuthState } from './modules/integrations/oauth-state.entity';
 import { MetaCampaignCreation } from './modules/integrations/meta/meta-campaign-creation.entity';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { AuditLog } from './common/entities/audit-log.entity';
+import { ObservabilityInterceptor } from './common/interceptors/observability.interceptor';
 
 @Module({
   imports: [
@@ -65,9 +68,10 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
         const baseConfig = {
           synchronize: config.get<boolean>('database.synchronize'),
           logging: appEnv !== 'production' && appEnv !== 'test',
-          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation],
-          migrations: [__dirname + '/migrations/*{.ts,.js}'],
+          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation, AuditLog],
+          migrations: [__dirname + '/migrations/[0-9]*-*.{js,ts}'],
           migrationsRun: config.get<boolean>('database.migrationsRun'),
+          migrationsTransactionMode: 'all' as const,
         } as any;
 
         if (dbType === 'postgres') {
@@ -85,6 +89,11 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
                   database: config.get<string>('database.database'),
                 }),
             ssl: config.get<any>('database.ssl'),
+            extra: {
+              max: config.get<number>('database.poolMax'),
+              connectionTimeoutMillis: config.get<number>('database.connectTimeoutMs'),
+              statement_timeout: config.get<number>('database.statementTimeoutMs'),
+            },
           };
         }
 
@@ -106,6 +115,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     InsightsModule,
     DashboardModule,
     MetaIntegrationModule,
+    IbgeModule,
   ],
   controllers: [AppController],
   providers: [
@@ -116,6 +126,10 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ObservabilityInterceptor,
     },
     SyncCron,
   ],

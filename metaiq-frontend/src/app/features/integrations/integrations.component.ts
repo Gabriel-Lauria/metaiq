@@ -6,6 +6,7 @@ import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '../../core/services/api.service';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 import {
@@ -30,6 +31,7 @@ import { UiStateComponent } from '../../core/components/ui-state.component';
 export class IntegrationsComponent implements OnInit {
   private api = inject(ApiService);
   private authService = inject(AuthService);
+  readonly accountContext = inject(AccountContextService);
   private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
   private route = inject(ActivatedRoute);
@@ -68,7 +70,7 @@ export class IntegrationsComponent implements OnInit {
     this.error.set(null);
 
     const currentRole = this.authService.getCurrentRole();
-    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(currentRole)
+    const storeRequest = currentRole && [Role.PLATFORM_ADMIN, Role.ADMIN].includes(currentRole)
       ? this.api.getStores()
       : this.api.getAccessibleStores();
 
@@ -213,8 +215,8 @@ export class IntegrationsComponent implements OnInit {
     return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
 
-  isManager(): boolean {
-    return this.authService.getCurrentRole() === Role.MANAGER;
+  isIndividualAccount(): boolean {
+    return this.accountContext.isIndividualAccount();
   }
 
   isClient(): boolean {
@@ -236,12 +238,12 @@ export class IntegrationsComponent implements OnInit {
 
   integrationSummaryMessage(): string {
     const integration = this.selectedIntegration();
-    if (this.isManager()) {
-      return 'Operação realizada pelo time.';
-    }
-
     if (this.isClient()) {
       return 'Dados conectados automaticamente.';
+    }
+
+    if (this.isIndividualAccount() && (!integration || integration.status === IntegrationStatus.NOT_CONNECTED)) {
+      return 'Conecte sua conta Meta para escolher página, sincronizar conta de anúncio e começar a criar campanhas.';
     }
 
     if (!integration || integration.status === IntegrationStatus.NOT_CONNECTED) {
@@ -411,7 +413,7 @@ export class IntegrationsComponent implements OnInit {
     }
 
     if (result === 'success') {
-      this.ui.showSuccess('Meta conectada', message || 'A loja foi conectada com sucesso.');
+      this.ui.showSuccess('Meta conectada', message || (this.isIndividualAccount() ? 'Sua conta Meta foi conectada com sucesso.' : 'A loja foi conectada com sucesso.'));
       this.clearOAuthQueryParams();
     }
 

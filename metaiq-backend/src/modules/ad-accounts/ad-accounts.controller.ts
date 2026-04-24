@@ -39,7 +39,7 @@ export class AdAccountsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('storeId') storeId?: string,
   ): Promise<AdAccount[]> {
-    return this.adAccountsService.findByUser(user, storeId);
+    return this.adAccountsService.findAllForUser(user, storeId);
   }
 
   /**
@@ -54,7 +54,7 @@ export class AdAccountsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.findOne(id, user);
+    return this.adAccountsService.findOneForUser(user, id);
   }
 
   /**
@@ -67,7 +67,7 @@ export class AdAccountsController {
     @Body() dto: CreateAdAccountDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.create(dto, user);
+    return this.adAccountsService.createForUser(user, dto);
   }
 
   /**
@@ -83,7 +83,7 @@ export class AdAccountsController {
     @Body() dto: UpdateAdAccountDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AdAccount> {
-    return this.adAccountsService.update(id, user, dto);
+    return this.adAccountsService.updateForUser(user, id, dto);
   }
 
   /**
@@ -98,7 +98,7 @@ export class AdAccountsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<{ message: string }> {
-    await this.adAccountsService.remove(id, user);
+    await this.adAccountsService.removeForUser(user, id);
     this.logger.log(`Conta de anúncios ${id} desativada por usuário ${user.id}`);
     return { message: 'Conta desativada' };
   }

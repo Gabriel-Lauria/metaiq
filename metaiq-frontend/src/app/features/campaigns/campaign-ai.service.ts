@@ -1,7 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { CampaignSuggestionResponse } from '../../core/models';
+import {
+  CampaignCopilotAnalysisRequest,
+  CampaignCopilotAnalysisResponse,
+  CampaignSuggestionRequest,
+  CampaignSuggestionResponse,
+} from '../../core/models';
 import { environment } from '../../core/environment';
 
 const API = environment.apiUrl;
@@ -10,7 +15,11 @@ const API = environment.apiUrl;
 export class CampaignAiService {
   private http = inject(HttpClient);
 
-  suggest(prompt: string, storeId: string): Observable<CampaignSuggestionResponse> {
-    return this.http.post<CampaignSuggestionResponse>(`${API}/ai/campaign-suggestions`, { prompt, storeId });
+  suggest(request: CampaignSuggestionRequest): Observable<CampaignSuggestionResponse> {
+    return this.http.post<CampaignSuggestionResponse>(`${API}/ai/campaign-suggestions`, request);
+  }
+
+  analyze(request: CampaignCopilotAnalysisRequest): Observable<CampaignCopilotAnalysisResponse> {
+    return this.http.post<CampaignCopilotAnalysisResponse>(`${API}/ai/campaign-analysis`, request);
   }
 }

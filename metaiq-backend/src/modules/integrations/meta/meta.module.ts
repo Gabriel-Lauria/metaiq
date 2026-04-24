@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '../../../common/common.module';
+import { IbgeModule } from '../../ibge/ibge.module';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
 import { OAuthState } from '../oauth-state.entity';
@@ -9,15 +10,16 @@ import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaCampaignCreation } from './meta-campaign-creation.entity';
 import { MetaGraphApiClient } from './meta-graph-api.client';
 import { MetaCampaignRecoveryService } from './meta-campaign-recovery.service';
+import { MetaImageUploadService } from './meta-image-upload.service';
 import { MetaCampaignCreationAuditController, MetaIntegrationController, MetaOAuthCallbackController } from './meta.controller';
 import { MetaCampaignRecoveryController } from './meta-campaign-recovery.controller';
 import { MetaIntegrationService } from './meta.service';
 import { MetaSyncService } from './meta-sync.service';
 
 @Module({
-  imports: [CommonModule, TypeOrmModule.forFeature([StoreIntegration, OAuthState, AdAccount, Campaign, MetaCampaignCreation])],
+  imports: [CommonModule, IbgeModule, TypeOrmModule.forFeature([StoreIntegration, OAuthState, AdAccount, Campaign, MetaCampaignCreation])],
   controllers: [MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignCreationAuditController, MetaCampaignRecoveryController],
-  providers: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
-  exports: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
+  providers: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaImageUploadService, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
+  exports: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaImageUploadService, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
 })
 export class MetaIntegrationModule {}

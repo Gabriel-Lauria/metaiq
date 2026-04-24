@@ -1,4 +1,6 @@
 import { AdAccount, CreateMetaCampaignRequest, IntegrationStatus, StoreIntegration } from '../../core/models';
+import { getCtaLabelByValue, normalizeCtaValue } from './cta.constants';
+import { isLikelyDirectImageUrl, isSecureHttpUrl, isValidHttpUrl, normalizeCreativeText } from './creative-validation.util';
 import {
   CampaignBuilderState,
   CampaignDestinationType,
@@ -45,30 +47,11 @@ export function isValidCountry(value: string): boolean {
   return /^[A-Z]{2}$/i.test((value || '').trim());
 }
 
-export function isValidImageUrl(value: string): boolean {
-  const trimmed = (value || '').trim();
-  if (!trimmed) return false;
-  try {
-    const parsed = new URL(trimmed);
-    return ['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
-
-export function isValidHttpUrl(value: string): boolean {
-  const trimmed = (value || '').trim();
-  if (!trimmed) return false;
-  try {
-    const parsed = new URL(trimmed);
-    return ['http:', 'https:'].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
+export const isValidImageUrl = isValidHttpUrl;
+export { isLikelyDirectImageUrl, isSecureHttpUrl, isValidHttpUrl };
 
 export function resolveDestinationUrl(state: CampaignBuilderState): string {
-  if (state.destination.type === 'site' && isValidHttpUrl(state.destination.websiteUrl)) {
+  if (state.destination.type === 'site' && isSecureHttpUrl(state.destination.websiteUrl)) {
     return state.destination.websiteUrl.trim();
   }
 
@@ -77,18 +60,30 @@ export function resolveDestinationUrl(state: CampaignBuilderState): string {
 
 export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaignRequest {
   const destinationUrl = resolveDestinationUrl(state);
+  const normalizedCta = normalizeCtaValue(state.creative.cta);
+  const stateCode = state.audience.state.trim().toUpperCase();
+  const stateName = state.audience.stateName.trim() || state.audience.region.trim();
+  const city = state.audience.city.trim();
+  const cityId = typeof state.audience.cityId === 'number' && state.audience.cityId > 0
+    ? state.audience.cityId
+    : undefined;
+
   return {
     name: state.campaign.name.trim(),
     objective: state.campaign.objective,
     dailyBudget: Number(state.budget.value),
     country: state.audience.country.trim().toUpperCase(),
     adAccountId: state.identity.adAccountId,
-    message: state.creative.message.trim(),
-    imageUrl: state.creative.imageUrl.trim(),
+    message: normalizeCreativeText(state.creative.message),
+    imageUrl: normalizeCreativeText(state.creative.imageUrl),
+    state: stateCode || undefined,
+    stateName: stateName || undefined,
+    city: city || undefined,
+    cityId,
     destinationUrl: destinationUrl || undefined,
-    headline: state.creative.headline.trim() || undefined,
-    description: state.creative.description.trim() || undefined,
-    cta: state.creative.cta.trim() || undefined,
+    headline: normalizeCreativeText(state.creative.headline) || undefined,
+    description: normalizeCreativeText(state.creative.description) || undefined,
+    cta: normalizedCta,
     initialStatus: state.campaign.initialStatus,
   };
 }
@@ -102,11 +97,13 @@ export function realPayloadComplete(state: CampaignBuilderState): boolean {
     && !!state.campaign.objective.trim()
     && Number(state.budget.value) > 0
     && isValidCountry(state.audience.country)
+    && hasConsistentAudienceLocation(state)
     && !!state.identity.adAccountId
     && state.destination.type === 'site'
-    && isValidHttpUrl(state.destination.websiteUrl)
+    && isSecureHttpUrl(state.destination.websiteUrl)
     && !!state.creative.message.trim()
-    && isValidImageUrl(state.creative.imageUrl);
+    && !!state.creative.headline.trim()
+    && isLikelyDirectImageUrl(state.creative.imageUrl);
 }
 
 export function generalSectionComplete(state: CampaignBuilderState): boolean {
@@ -122,6 +119,7 @@ export function identitySectionComplete(context: CampaignBuilderReviewContext): 
 
 export function audienceSectionComplete(state: CampaignBuilderState): boolean {
   return isValidCountry(state.audience.country)
+    && hasConsistentAudienceLocation(state)
     && Number(state.audience.ageMin) > 0
     && Number(state.audience.ageMax) >= Number(state.audience.ageMin);
 }
@@ -140,13 +138,15 @@ export function placementSectionComplete(state: CampaignBuilderState): boolean {
 
 export function destinationSectionComplete(state: CampaignBuilderState): boolean {
   if (state.destination.type === 'site') {
-    return isValidHttpUrl(state.destination.websiteUrl);
+    return isSecureHttpUrl(state.destination.websiteUrl);
   }
   return false;
 }
 
 export function creativeSectionComplete(state: CampaignBuilderState): boolean {
-  return !!state.creative.message.trim() && isValidImageUrl(state.creative.imageUrl);
+  return !!state.creative.message.trim()
+    && !!state.creative.headline.trim()
+    && isLikelyDirectImageUrl(state.creative.imageUrl);
 }
 
 export function trackingSectionComplete(state: CampaignBuilderState): boolean {
@@ -174,7 +174,10 @@ export function audienceSummary(state: CampaignBuilderState, genderOptions: Gend
   const country = state.audience.country.trim().toUpperCase() || '--';
   const ageRange = `${state.audience.ageMin}-${state.audience.ageMax}`;
   const gender = genderOptions.find((option) => option.value === state.audience.gender)?.label || 'Todos';
-  const location = state.audience.city.trim() || state.audience.region.trim() || 'cidade aberta';
+  const location = [
+    state.audience.city.trim(),
+    state.audience.stateName.trim() || state.audience.region.trim(),
+  ].filter(Boolean).join(' · ') || 'cidade aberta';
   return `${country} · ${location} · ${ageRange} anos · ${gender}`;
 }
 
@@ -237,7 +240,7 @@ export function buildSummaryRows(context: CampaignBuilderReviewContext, formatCu
     { label: 'Página', value: selectedPageName(context.integration) },
     { label: 'Orçamento', value: `${formatCurrency(context.state.budget.value)}/${context.state.budget.budgetType === 'daily' ? 'dia' : 'campanha'}` },
     { label: 'Público', value: audienceSummary(context.state, context.genderOptions) },
-    { label: 'CTA / destino', value: `${context.state.creative.cta} · ${destinationSummary(context.state)}` },
+    { label: 'CTA / destino', value: `${getCtaLabelByValue(context.state.creative.cta)} · ${destinationSummary(context.state)}` },
     { label: 'Rastreamento', value: trackingSummary(context.state) },
   ];
 }
@@ -269,36 +272,92 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
   const signals: ReviewSignal[] = [];
 
   if (!realPayloadComplete(state)) {
-    signals.push({ id: 'required', label: 'Campos reais obrigatórios ainda não estão completos.', tone: 'warning' });
+    signals.push({ id: 'required', label: `Payload real incompleto: ${missingRealPayloadFields(state).join(', ')}.`, tone: 'warning' });
   } else {
     signals.push({ id: 'required-ok', label: 'Payload real pronto para o backend atual.', tone: 'success' });
   }
 
   if (!isValidImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-url', label: 'URL da imagem inválida ou incompleta.', tone: 'danger' });
+    signals.push({ id: 'image-url', label: 'URL da imagem do criativo precisa ser http(s).', tone: 'danger' });
+  }
+
+  if (state.creative.imageUrl.trim() && !isLikelyDirectImageUrl(state.creative.imageUrl)) {
+    signals.push({ id: 'image-direct', label: 'A URL da imagem parece ser preview, redirect ou página HTML. Use uma imagem direta.', tone: 'danger' });
   }
 
   if (!isValidCountry(state.audience.country)) {
     signals.push({ id: 'country', label: 'País deve usar código ISO de 2 letras.', tone: 'warning' });
   }
 
+  if (!hasConsistentAudienceLocation(state)) {
+    signals.push({ id: 'location', label: 'Estado e cidade precisam estar consistentes. Se houver cidade, selecione uma UF válida antes de enviar.', tone: 'danger' });
+  }
+
   if (state.budget.value < 20) {
     signals.push({ id: 'budget-low', label: 'Orçamento baixo pode limitar entrega e aprendizado.', tone: 'info' });
   }
 
-  if (!state.tracking.pixel.trim()) {
-    signals.push({ id: 'pixel', label: 'Pixel ainda não informado para mensuração.', tone: 'warning' });
+  if (state.destination.type === 'site' && !state.destination.websiteUrl.trim()) {
+    signals.push({ id: 'destination', label: 'URL de destino do site é obrigatória para criar na Meta.', tone: 'danger' });
   }
 
-  if (state.destination.type === 'site' && !state.destination.websiteUrl.trim()) {
-    signals.push({ id: 'destination', label: 'Destino de site exige URL de destino.', tone: 'danger' });
+  if (state.destination.type === 'site' && state.destination.websiteUrl.trim() && !isValidHttpUrl(state.destination.websiteUrl)) {
+    signals.push({ id: 'destination-invalid', label: 'URL de destino precisa ser absoluta e começar com http:// ou https://.', tone: 'danger' });
+  }
+
+  if (state.destination.type === 'site' && isValidHttpUrl(state.destination.websiteUrl) && !isSecureHttpUrl(state.destination.websiteUrl)) {
+    signals.push({ id: 'destination-https', label: 'Use uma URL final segura começando com https://.', tone: 'danger' });
+  }
+
+  if (!state.creative.headline.trim()) {
+    signals.push({ id: 'headline-required', label: 'Headline do criativo é obrigatória para criar a campanha na Meta.', tone: 'danger' });
   }
 
   if (state.destination.type !== 'site') {
     signals.push({ id: 'destination-type', label: 'O backend atual só cria campanhas com destino de site.', tone: 'danger' });
   }
 
+  if (state.creative.headline.trim().length > 45) {
+    signals.push({ id: 'headline-length', label: 'Headline longa demais pode perder impacto no feed e ser comprimida em placements menores.', tone: 'warning' });
+  }
+
+  if (state.creative.message.trim().length > 220) {
+    signals.push({ id: 'message-length', label: 'Texto principal extenso pode reduzir clareza no primeiro olhar.', tone: 'info' });
+  }
+
+  if (!state.tracking.pixel.trim()) {
+    signals.push({ id: 'pixel-missing', label: 'Pixel não configurado. Algumas campanhas podem não otimizar conversões corretamente.', tone: 'warning' });
+  }
+
+  if (state.creative.carousel) {
+    signals.push({ id: 'carousel', label: 'Carousel ainda não é enviado no payload real da Meta. O creative será tratado como peça simples.', tone: 'warning' });
+  }
+
+  if (isLikelyDirectImageUrl(state.creative.imageUrl)) {
+    signals.push({ id: 'image-hash-flow', label: 'A imagem será preparada no backend e enviada à Meta como asset com image_hash.', tone: 'info' });
+  }
+
+  signals.push({
+    id: 'cta-format',
+    label: `CTA será enviado no formato técnico compatível com a Meta: ${normalizeCtaValue(state.creative.cta)}.`,
+    tone: 'info',
+  });
+
   return signals;
+}
+
+export function missingRealPayloadFields(state: CampaignBuilderState): string[] {
+  return [
+    !state.campaign.name.trim() ? 'nome' : '',
+    !state.campaign.objective.trim() ? 'objetivo' : '',
+    !(Number(state.budget.value) > 0) ? 'orçamento' : '',
+    !isValidCountry(state.audience.country) ? 'país' : '',
+    !state.identity.adAccountId ? 'conta de anúncio' : '',
+    state.destination.type !== 'site' || !isSecureHttpUrl(state.destination.websiteUrl) ? 'URL de destino https' : '',
+    !state.creative.message.trim() ? 'mensagem' : '',
+    !state.creative.headline.trim() ? 'headline' : '',
+    !isLikelyDirectImageUrl(state.creative.imageUrl) ? 'URL da imagem' : '',
+  ].filter(Boolean);
 }
 
 export function fieldInvalid(state: CampaignBuilderState, field: string): boolean {
@@ -309,14 +368,18 @@ export function fieldInvalid(state: CampaignBuilderState, field: string): boolea
       return !state.identity.adAccountId;
     case 'audience.country':
       return !isValidCountry(state.audience.country);
+    case 'audience.location':
+      return !hasConsistentAudienceLocation(state);
     case 'budget.value':
       return !(Number(state.budget.value) > 0);
     case 'creative.message':
       return !state.creative.message.trim();
+    case 'creative.headline':
+      return !state.creative.headline.trim();
     case 'creative.imageUrl':
-      return !isValidImageUrl(state.creative.imageUrl);
+      return !isLikelyDirectImageUrl(state.creative.imageUrl);
     case 'destination.websiteUrl':
-      return state.destination.type === 'site' && !isValidHttpUrl(state.destination.websiteUrl);
+      return state.destination.type === 'site' && !isSecureHttpUrl(state.destination.websiteUrl);
     default:
       return false;
   }
@@ -326,6 +389,7 @@ export function canSubmit(context: CampaignBuilderReviewContext): boolean {
   return !context.loadingContext
     && !context.submitting
     && buildReadinessItems(context).every((item) => item.done)
+    && !fieldInvalid(context.state, 'creative.headline')
     && !fieldInvalid(context.state, 'creative.imageUrl')
     && !fieldInvalid(context.state, 'destination.websiteUrl');
 }
@@ -338,9 +402,16 @@ export function firstBlockingSectionId(context: CampaignBuilderReviewContext): s
   if (fieldInvalid(context.state, 'campaign.name')) return 'builder-general';
   if (fieldInvalid(context.state, 'identity.adAccountId')) return 'builder-identity';
   if (fieldInvalid(context.state, 'audience.country')) return 'builder-audience';
+  if (fieldInvalid(context.state, 'audience.location')) return 'builder-audience';
   if (fieldInvalid(context.state, 'budget.value')) return 'builder-budget';
   if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'builder-destination';
-  if (fieldInvalid(context.state, 'creative.message') || fieldInvalid(context.state, 'creative.imageUrl')) return 'builder-creative';
+  if (
+    fieldInvalid(context.state, 'creative.message')
+    || fieldInvalid(context.state, 'creative.headline')
+    || fieldInvalid(context.state, 'creative.imageUrl')
+  ) {
+    return 'builder-creative';
+  }
 
   return 'builder-review';
 }
@@ -351,9 +422,44 @@ export function blockerMessage(context: CampaignBuilderReviewContext): string {
   if (!context.selectedStoreId) return 'Selecione uma store para iniciar a criação da campanha.';
   if (!context.validStoreId) return 'A store escolhida não pertence ao usuário atual. Selecione uma store válida.';
   if (!isIntegrationConnected(context.integration)) return 'Esta store ainda não está pronta para criação de campanhas. Conecte a Meta e configure a página primeiro.';
-  if (!hasConfiguredPage(context.integration)) return 'A store está conectada, mas ainda precisa de uma página Meta configurada antes do envio.';
+  if (!hasConfiguredPage(context.integration)) return 'Configure a Página do Facebook da loja antes de criar campanhas.';
   if (!hasSyncedAdAccounts(context.adAccounts)) return 'Sincronize as contas da store em Integrações para liberar a criação de campanhas.';
-  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Defina uma URL de destino válida para campanhas com destino em site.';
-  if (!realPayloadComplete(context.state)) return 'Complete nome, objetivo, orçamento, país, conta, mensagem e imagem antes do envio.';
+  if (fieldInvalid(context.state, 'audience.location')) return 'Selecione estado e cidade de forma consistente para evitar combinações geográficas inválidas.';
+  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Use uma URL final segura começando com https://.';
+  if (fieldInvalid(context.state, 'creative.headline')) return 'Preencha a headline do criativo antes de enviar para a Meta.';
+  if (!realPayloadComplete(context.state)) return `Complete os campos reais antes do envio: ${missingRealPayloadFields(context.state).join(', ')}.`;
   return 'Tudo pronto para revisar e enviar.';
+}
+
+export function hasConsistentAudienceLocation(state: CampaignBuilderState): boolean {
+  if (state.ui.aiGeoPendingNotice) {
+    return false;
+  }
+
+  const stateCode = state.audience.state.trim().toUpperCase();
+  const stateName = state.audience.stateName.trim() || state.audience.region.trim();
+  const city = state.audience.city.trim();
+  const cityId = state.audience.cityId;
+
+  if (!city && !cityId && !stateCode && !stateName) {
+    return true;
+  }
+
+  if ((city || cityId) && !stateCode) {
+    return false;
+  }
+
+  if (stateCode && !/^[A-Z]{2}$/.test(stateCode)) {
+    return false;
+  }
+
+  if (cityId != null && !(Number(cityId) > 0)) {
+    return false;
+  }
+
+  if (stateCode && !stateName) {
+    return false;
+  }
+
+  return true;
 }

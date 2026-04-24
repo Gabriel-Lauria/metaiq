@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, effect, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { DashboardSummary } from '../../core/models';
 import { UiKpiCardComponent } from '../../core/components/ui-kpi-card.component';
@@ -16,6 +17,7 @@ import { UiStateComponent } from '../../core/components/ui-state.component';
 })
 export class ResultsComponent implements OnInit {
   private api = inject(ApiService);
+  readonly accountContext = inject(AccountContextService);
   storeContext = inject(StoreContextService);
 
   loading = signal(true);
@@ -66,6 +68,10 @@ export class ResultsComponent implements OnInit {
   setPeriod(days: number): void {
     this.period.set(days);
     this.load();
+  }
+
+  isIndividualAccount(): boolean {
+    return this.accountContext.isIndividualAccount();
   }
 
   fmt(value: number): string {

@@ -1,0 +1,57 @@
+<section class="company-page">
+  <div class="page-header">
+    <div>
+      <p class="page-kicker">Minha empresa</p>
+      <h1>Contexto usado pela IA</h1>
+      <p>Mantenha esses dados atualizados para acelerar a criação de campanhas e reduzir perguntas desnecessárias.</p>
+    </div>
+
+    <button class="btn btn-primary" type="button" (click)="save()" [disabled]="loading() || saving()">
+      {{ saving() ? 'Salvando...' : 'Salvar' }}
+    </button>
+  </div>
+
+  <div class="status-message error" *ngIf="loadError()">{{ loadError() }}</div>
+  <div class="status-message loading" *ngIf="loading()">Carregando dados da sua empresa...</div>
+
+  <div class="company-grid" *ngIf="!loading()">
+    <label [class.invalid]="!!fieldErrors().businessName">
+      Nome da empresa
+      <input type="text" [ngModel]="form().businessName" (ngModelChange)="updateField('businessName', $event)" />
+      <small *ngIf="fieldErrors().businessName">{{ fieldErrors().businessName }}</small>
+    </label>
+
+    <label>
+      Segmento
+      <input type="text" [ngModel]="form().businessSegment" (ngModelChange)="updateField('businessSegment', $event)" placeholder="Ex.: odontologia, moda, pet shop" />
+    </label>
+
+    <label>
+      Cidade
+      <input type="text" [ngModel]="form().city" (ngModelChange)="updateField('city', $event)" />
+    </label>
+
+    <label>
+      UF
+      <input type="text" maxlength="2" [ngModel]="form().state" (ngModelChange)="updateField('state', $event)" />
+    </label>
+
+    <label [class.invalid]="!!fieldErrors().website">
+      Website
+      <input type="url" [ngModel]="form().website" (ngModelChange)="updateField('website', $event)" placeholder="https://suaempresa.com.br" />
+      <small *ngIf="fieldErrors().website">{{ fieldErrors().website }}</small>
+    </label>
+
+    <label [class.invalid]="!!fieldErrors().instagram">
+      Instagram
+      <input type="text" [ngModel]="form().instagram" (ngModelChange)="updateField('instagram', $event)" placeholder="@suaempresa" />
+      <small *ngIf="fieldErrors().instagram">{{ fieldErrors().instagram }}</small>
+    </label>
+
+    <label class="full-width" [class.invalid]="!!fieldErrors().whatsapp">
+      WhatsApp
+      <input type="text" [ngModel]="form().whatsapp" (ngModelChange)="updateField('whatsapp', $event)" placeholder="(41) 99999-9999" />
+      <small *ngIf="fieldErrors().whatsapp">{{ fieldErrors().whatsapp }}</small>
+    </label>
+  </div>
+</section>

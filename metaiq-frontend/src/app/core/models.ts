@@ -1,3 +1,5 @@
+import { type MetaCallToActionType } from './meta-cta';
+
 /**
  * Modelos de dados compartilhados entre frontend e backend
  */
@@ -9,6 +11,8 @@ export enum Role {
   OPERATIONAL = 'OPERATIONAL',
   CLIENT = 'CLIENT',
 }
+
+export type AccountType = 'AGENCY' | 'INDIVIDUAL';
 
 export enum IntegrationProvider {
   META = 'META',
@@ -36,10 +40,39 @@ export interface User {
   role: Role;
   managerId?: string | null;
   tenantId?: string | null;
+  accountType?: AccountType | null;
+  storeId?: string | null;
+  businessName?: string | null;
+  businessSegment?: string | null;
+  defaultCity?: string | null;
+  defaultState?: string | null;
+  website?: string | null;
+  instagram?: string | null;
+  whatsapp?: string | null;
   active?: boolean;
   deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface CompanyProfile {
+  businessName: string;
+  businessSegment: string;
+  city: string;
+  state: string;
+  website: string;
+  instagram: string;
+  whatsapp: string;
+}
+
+export interface CompanyProfilePayload {
+  businessName: string;
+  businessSegment: string;
+  defaultCity: string;
+  defaultState: string;
+  website: string;
+  instagram: string;
+  whatsapp: string;
 }
 
 export interface Manager {
@@ -151,6 +184,17 @@ export interface MetaPage {
   category?: string | null;
 }
 
+export interface IbgeState {
+  code: string;
+  name: string;
+  ibgeId: number;
+}
+
+export interface IbgeCity {
+  id: number;
+  name: string;
+}
+
 export interface UpdateMetaPageRequest {
   pageId: string;
   pageName?: string;
@@ -164,11 +208,49 @@ export interface CreateMetaCampaignRequest {
   adAccountId: string;
   message: string;
   imageUrl: string;
+  state?: string;
+  stateName?: string;
+  city?: string;
+  cityId?: number;
   destinationUrl?: string;
   headline?: string;
   description?: string;
-  cta?: string;
+  cta?: MetaCallToActionType;
   initialStatus?: 'PAUSED' | 'ACTIVE';
+}
+
+export type MetaCampaignExecutionStep = 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
+export type MetaCampaignExecutionStatus = 'PARTIAL' | 'FAILED' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface MetaCampaignPartialIds {
+  campaignId?: string;
+  adSetId?: string;
+  creativeId?: string;
+  adId?: string;
+}
+
+export interface MetaCampaignRecoveryPartialIds {
+  campaign?: string | null;
+  adset?: string | null;
+  creative?: string | null;
+  ad?: string | null;
+}
+
+export interface MetaCampaignErrorDetails {
+  message?: string;
+  code?: string | number;
+  subcode?: string | number;
+  userTitle?: string;
+  userMessage?: string;
+}
+
+export interface MetaCampaignExecutionContext {
+  step?: MetaCampaignExecutionStep;
+  executionId?: string;
+  executionStatus?: MetaCampaignExecutionStatus;
+  partialIds?: MetaCampaignPartialIds;
+  hint?: string;
+  metaError?: MetaCampaignErrorDetails;
 }
 
 export interface CreateMetaCampaignResponse {
@@ -179,11 +261,32 @@ export interface CreateMetaCampaignResponse {
   creativeId: string;
   adId: string;
   status: 'CREATED';
-  executionStatus?: 'ACTIVE';
+  executionStatus?: 'COMPLETED';
   initialStatus?: 'PAUSED' | 'ACTIVE';
   storeId: string;
   adAccountId: string;
   platform: 'META';
+  step?: MetaCampaignExecutionStep;
+  partialIds?: MetaCampaignPartialIds;
+  hint?: string;
+}
+
+export interface MetaCampaignCreationError extends MetaCampaignExecutionContext {
+  message: string;
+}
+
+export interface MetaCampaignRecoveryStatusResponse {
+  id: string;
+  status: MetaCampaignExecutionStatus;
+  step?: MetaCampaignExecutionStep;
+  message?: string;
+  partialIds?: MetaCampaignRecoveryPartialIds;
+}
+
+export interface MetaCampaignRecoveryResponse extends MetaCampaignExecutionContext {
+  success: boolean;
+  message: string;
+  ids?: MetaCampaignPartialIds;
 }
 
 export interface UpdateCampaignRequest {
@@ -196,48 +299,160 @@ export interface UpdateCampaignRequest {
   adAccountId?: string;
 }
 
-export interface CampaignAiSuggestions {
+export type AiFunnelStage = 'top' | 'middle' | 'bottom';
+export type AiGender = 'all' | 'male' | 'female';
+export type AiBudgetType = 'daily' | 'lifetime';
+export type AiCampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
+export type AiPlacement = 'feed' | 'stories' | 'reels' | 'explore' | 'messenger' | 'audience_network';
+
+export interface AiPlannerOutput {
+  businessType: string | null;
+  goal: string | null;
+  funnelStage: AiFunnelStage | null;
+  offer: string | null;
+  audienceIntent: string | null;
+  missingInputs: string[];
+  assumptions: string[];
+}
+
+export interface AiCampaignBudgetOutput {
+  type: AiBudgetType | null;
+  amount: number | null;
+  currency: 'BRL';
+}
+
+export interface AiCampaignOutput {
   campaignName: string | null;
-  objective: 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH' | null;
-  budget: number | null;
-  budgetType: 'daily' | 'lifetime' | null;
+  objective: AiCampaignObjective | null;
+  buyingType: 'AUCTION';
+  status: 'PAUSED';
+  budget: AiCampaignBudgetOutput;
+}
+
+export interface AiTargetingOutput {
   country: string | null;
-  region: string | null;
+  state: string | null;
+  stateCode: string | null;
   city: string | null;
   ageMin: number | null;
   ageMax: number | null;
-  gender: 'ALL' | 'MALE' | 'FEMALE' | null;
-  destinationType: 'site' | 'messages' | 'form' | 'app' | 'catalog' | null;
-  websiteUrl: string | null;
-  message: string | null;
+  gender: AiGender | null;
+  interests: string[];
+  excludedInterests: string[];
+  placements: AiPlacement[];
+}
+
+export interface AiAdSetOutput {
+  name: string | null;
+  optimizationGoal: string | null;
+  billingEvent: string | null;
+  targeting: AiTargetingOutput;
+}
+
+export interface AiCreativeOutput {
+  name: string | null;
+  primaryText: string | null;
   headline: string | null;
   description: string | null;
-  cta: string | null;
-  interests: string | null;
-  utmSource: string | null;
-  utmMedium: string | null;
-  utmCampaign: string | null;
+  cta: MetaCallToActionType | null;
+  imageSuggestion: string | null;
+  destinationUrl: string | null;
 }
 
-export interface CampaignAiSuggestResponse {
+export interface AiReviewOutput {
   summary: string;
-  detectedFields: string[];
-  suggestions: CampaignAiSuggestions;
+  strengths: string[];
+  risks: string[];
+  recommendations: string[];
+  confidence: number;
 }
 
-export interface CampaignSuggestionRequest {
+export interface AiValidationOutput {
+  isReadyToPublish: boolean;
+  qualityScore: number;
+  blockingIssues: string[];
+  warnings: string[];
+  recommendations: string[];
+}
+
+export interface CampaignAiStructuredResponse {
+  planner: AiPlannerOutput;
+  campaign: AiCampaignOutput;
+  adSet: AiAdSetOutput;
+  creative: AiCreativeOutput;
+  review: AiReviewOutput;
+  validation: AiValidationOutput;
+  meta: {
+    promptVersion: string;
+    model: string;
+    usedFallback: boolean;
+    responseValid: boolean;
+  };
+}
+
+export interface AiCampaignCopilotAnalysis {
+  summary: string;
+  strengths: string[];
+  issues: string[];
+  improvements: AiCampaignCopilotImprovement[];
+  confidence: number;
+}
+
+export type AiCampaignCopilotImprovementType =
+  | 'headline'
+  | 'primaryText'
+  | 'targeting'
+  | 'cta'
+  | 'budget'
+  | 'url';
+
+export interface AiCampaignCopilotImprovement {
+  id: string;
+  type: AiCampaignCopilotImprovementType;
+  label: string;
+  description: string;
+  suggestedValue: string | number | Record<string, unknown>;
+  confidence: number;
+}
+
+export interface CampaignCopilotAnalysisResponse {
+  analysis: AiCampaignCopilotAnalysis;
+  meta: {
+    promptVersion: string;
+    model: string;
+    usedFallback: boolean;
+    responseValid: boolean;
+  };
+}
+
+export interface CampaignCopilotAnalysisRequest {
+  storeId: string;
+  campaign: Record<string, unknown>;
+  adSet?: Record<string, unknown>;
+  creative?: Record<string, unknown>;
+  targeting?: Record<string, unknown>;
+  budget?: Record<string, unknown>;
+  location?: Record<string, unknown>;
+  objective?: string;
+  cta?: MetaCallToActionType;
+  destinationUrl?: string;
+}
+
+export interface CampaignAiRequest {
   prompt: string;
   storeId: string;
+  goal?: string;
+  funnelStage?: 'top' | 'middle' | 'bottom' | 'remarketing' | 'retention';
+  budget?: number;
+  durationDays?: number;
+  primaryOffer?: string;
+  destinationType?: 'whatsapp' | 'website' | 'instagram' | 'leads' | 'messages';
+  region?: string;
+  extraContext?: string;
 }
 
-export interface CampaignSuggestionResponse {
-  name: string;
-  audience: string;
-  strategy: string;
-  copy: string;
-  budgetSuggestion: string;
-  creativeIdeas: string[];
-}
+export type CampaignSuggestionRequest = CampaignAiRequest;
+export type CampaignSuggestionResponse = CampaignAiStructuredResponse;
 
 export interface ConnectMetaIntegrationRequest {
   externalBusinessId?: string;
@@ -349,6 +564,14 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name: string;
+  accountType?: AccountType;
+  businessName: string;
+  businessSegment?: string;
+  defaultCity: string;
+  defaultState: string;
+  website?: string;
+  instagram?: string;
+  whatsapp?: string;
 }
 
 export interface CreateManagerRequest {

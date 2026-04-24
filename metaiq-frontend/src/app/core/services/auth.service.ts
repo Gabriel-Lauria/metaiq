@@ -126,6 +126,17 @@ export class AuthService {
     return !!currentRole && roles.includes(currentRole);
   }
 
+  updateCurrentUserContext(partial: Partial<User>): void {
+    const currentUser = this.currentUserSubject.value;
+    if (!currentUser) {
+      return;
+    }
+
+    const nextUser = { ...currentUser, ...partial };
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    this.currentUserSubject.next(nextUser);
+  }
+
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.removeItem('accessToken');
     const role = this.normalizeRole(response.user.role);

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Insight } from './insight.entity';
@@ -65,7 +65,7 @@ export class InsightsService {
       .toISOString()
       .split('T')[0];
 
-    const summary = await this.metricsService.getCampaignSummaryUnsafeInternal(
+    const summary = await this.metricsService.getCampaignSummaryForSystemJob(
       campaign.id,
       from,
       to,
@@ -151,51 +151,14 @@ export class InsightsService {
     return newInsights;
   }
 
-  async resolveInsightUnsafeInternal(id: string): Promise<Insight> {
-    const insight = await this.insightRepo.findOneOrFail({ where: { id } });
+  async resolveForUser(user: AuthenticatedUser, id: string): Promise<Insight> {
+    const insight = await this.accessScope.validateInsightAccess(user, id);
     insight.resolved = true;
     return this.insightRepo.save(insight);
   }
 
-  /**
-   * Resolve insight com validação de ownership
-   */
-  async resolveInsightByUser(id: string, user: AuthenticatedUser): Promise<Insight> {
-    const query = this.insightRepo
-      .createQueryBuilder('insight')
-      .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('insight.id = :id', { id });
-    await this.accessScope.applyInsightScope(query, 'campaign', user);
-    const insight = await query.getOne();
-
-    if (!insight) {
-      throw new NotFoundException(`Insight ${id} não encontrado`);
-    }
-
-    insight.resolved = true;
-    return this.insightRepo.save(insight);
-  }
-
-  async findOneUnsafeInternal(id: string): Promise<Insight> {
-    return this.insightRepo.findOneOrFail({ where: { id } });
-  }
-
-  /**
-   * Find insight com validação de ownership
-   */
-  async findOneByUser(id: string, user: AuthenticatedUser): Promise<Insight> {
-    const query = this.insightRepo
-      .createQueryBuilder('insight')
-      .innerJoinAndSelect('insight.campaign', 'campaign')
-      .where('insight.id = :id', { id });
-    await this.accessScope.applyInsightScope(query, 'campaign', user);
-    const insight = await query.getOne();
-
-    if (!insight) {
-      throw new NotFoundException(`Insight ${id} não encontrado`);
-    }
-
-    return insight;
+  async findOneForUser(user: AuthenticatedUser, id: string): Promise<Insight> {
+    return this.accessScope.validateInsightAccess(user, id);
   }
 
   async deleteOldResolved(days: number): Promise<void> {
@@ -211,55 +174,7 @@ export class InsightsService {
       .execute();
   }
 
-  async findAllUnsafeInternal(filters: {
-    campaignId?: string;
-    storeId?: string;
-    type?: string;
-    severity?: string;
-    resolved?: boolean;
-  }): Promise<Insight[]> {
-    const query = this.insightRepo.createQueryBuilder('insight');
-
-    if (filters.storeId) {
-      query
-        .innerJoin('insight.campaign', 'campaign')
-        .andWhere('campaign.storeId = :filterStoreId', {
-          filterStoreId: filters.storeId,
-        });
-    }
-
-    if (filters.campaignId) {
-      query.andWhere('insight.campaignId = :campaignId', {
-        campaignId: filters.campaignId,
-      });
-    }
-
-    if (filters.type) {
-      query.andWhere('insight.type = :type', { type: filters.type });
-    }
-
-    if (filters.severity) {
-      query.andWhere('insight.severity = :severity', {
-        severity: filters.severity,
-      });
-    }
-
-    if (filters.resolved !== undefined) {
-      query.andWhere('insight.resolved = :resolved', {
-        resolved: filters.resolved,
-      });
-    }
-
-    query.orderBy('insight.detectedAt', 'DESC');
-
-    return query.getMany();
-  }
-
-  /**
-   * Find all insights para um usuário específico
-   * SEGURANÇA: usa JOIN com Campaign para validar ownership
-   */
-  async findAllByUser(
+  async findAllForUser(
     user: AuthenticatedUser,
     filters: {
       campaignId?: string;
@@ -282,6 +197,7 @@ export class InsightsService {
     }
 
     if (filters.campaignId) {
+      await this.accessScope.validateCampaignAccess(user, filters.campaignId);
       query.andWhere('insight.campaignId = :campaignId', {
         campaignId: filters.campaignId,
       });

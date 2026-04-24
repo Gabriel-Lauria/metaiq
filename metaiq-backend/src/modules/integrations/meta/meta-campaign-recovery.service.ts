@@ -5,6 +5,8 @@ import { MetaCampaignCreation, MetaCampaignCreationStatus } from './meta-campaig
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { MetaGraphApiClient } from './meta-graph-api.client';
 import { CreateMetaCampaignDto, RetryPartialCampaignDto } from './dto/meta-integration.dto';
+import { normalizeMetaCtaType } from './meta-cta.constants';
+import { isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from './meta-creative.validation';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
 import { IntegrationProvider, IntegrationStatus, Role } from '../../../common/enums';
@@ -47,16 +49,16 @@ export class MetaCampaignRecoveryService {
    * - AdSet falhou ❌
    * - Chama retry() → tenta criar AdSet, Creative, Ad a partir de onde parou
    */
-  async retryPartialCampaignCreation(
+  async retryPartialCampaignCreationForUser(
+    user: AuthenticatedUser,
+    storeId: string,
     executionId: string,
     dto: RetryPartialCampaignDto,
-    storeId: string,
-    user: AuthenticatedUser,
   ): Promise<{ success: boolean; message: string; ids?: Record<string, string> }> {
     await this.validateCanManage(storeId, user);
     const execution = await this.getScopedExecution(executionId, storeId, user);
 
-    if (execution.status === MetaCampaignCreationStatus.ACTIVE) {
+    if (this.isCompletedExecution(execution.status)) {
       return {
         success: true,
         message: 'Campanha já foi completada com sucesso',
@@ -69,7 +71,7 @@ export class MetaCampaignRecoveryService {
       };
     }
 
-    if (execution.status === MetaCampaignCreationStatus.CREATING) {
+    if (this.isInProgressExecution(execution.status)) {
       throw new HttpException(
         {
           message: 'Execução ainda está em andamento. Aguarde alguns minutos.',
@@ -90,6 +92,16 @@ export class MetaCampaignRecoveryService {
 
     // Status = PARTIAL - vamos tentar recuperar
     const context = await this.getRecoveryContext(execution, dto);
+    this.logRecovery('META_CAMPAIGN_RECOVERY_START', {
+      executionId: execution.id,
+      storeId: execution.storeId,
+      userId: user.id,
+      tenantId: user.tenantId,
+      idempotencyKey: execution.idempotencyKey,
+      step: execution.errorStep,
+      partialIds: this.executionPartialIds(execution),
+      payload: this.buildRecoveryPayloadLog(context.dto, context.pageId, context.destinationUrl),
+    });
     return this.resumeFromPartialFailure(execution, context.accessToken, context.adAccountExternalId, context.dto, context.pageId, context.destinationUrl, context.objective);
   }
 
@@ -101,10 +113,10 @@ export class MetaCampaignRecoveryService {
    * - Quer tentar novamente com configuração diferente
    * - Recursos parciais devem ser removidos antes de tentar de novo
    */
-  async cleanupPartialResources(
-    executionId: string,
-    storeId: string,
+  async cleanupPartialResourcesForUser(
     user: AuthenticatedUser,
+    storeId: string,
+    executionId: string,
   ): Promise<{ success: boolean; message: string; cleaned: Record<string, boolean> }> {
     await this.validateCanManage(storeId, user);
     const execution = await this.getScopedExecution(executionId, storeId, user);
@@ -194,7 +206,7 @@ export class MetaCampaignRecoveryService {
   /**
    * Retorna informações sobre uma execução de criação de campanha
    */
-  async getExecutionStatus(executionId: string, storeId: string, user: AuthenticatedUser) {
+  async getExecutionStatusForUser(user: AuthenticatedUser, storeId: string, executionId: string) {
     await this.validateCanManage(storeId, user);
     const execution = await this.campaignCreationRepository.findOne({
       where: { id: executionId, storeId },
@@ -207,7 +219,7 @@ export class MetaCampaignRecoveryService {
 
     return {
       id: execution.id,
-      status: execution.status,
+      status: this.normalizeExecutionStatus(execution.status),
       idempotencyKey: execution.idempotencyKey,
       step: execution.errorStep,
       message: execution.errorMessage,
@@ -235,6 +247,26 @@ export class MetaCampaignRecoveryService {
   // Private Methods
   // ─────────────────────────────────────────
 
+  private normalizeExecutionStatus(status: MetaCampaignCreationStatus): MetaCampaignCreationStatus {
+    if (status === MetaCampaignCreationStatus.CREATING) {
+      return MetaCampaignCreationStatus.IN_PROGRESS;
+    }
+
+    if (status === MetaCampaignCreationStatus.ACTIVE) {
+      return MetaCampaignCreationStatus.COMPLETED;
+    }
+
+    return status;
+  }
+
+  private isCompletedExecution(status: MetaCampaignCreationStatus): boolean {
+    return this.normalizeExecutionStatus(status) === MetaCampaignCreationStatus.COMPLETED;
+  }
+
+  private isInProgressExecution(status: MetaCampaignCreationStatus): boolean {
+    return this.normalizeExecutionStatus(status) === MetaCampaignCreationStatus.IN_PROGRESS;
+  }
+
   private async resumeFromPartialFailure(
     execution: MetaCampaignCreation,
     accessToken: string,
@@ -253,7 +285,7 @@ export class MetaCampaignRecoveryService {
       adId: execution.metaAdId || undefined,
     };
 
-    execution.status = MetaCampaignCreationStatus.CREATING;
+    execution.status = MetaCampaignCreationStatus.IN_PROGRESS;
     execution.errorStep = null;
     execution.errorMessage = null;
     await this.campaignCreationRepository.save(execution);
@@ -268,6 +300,8 @@ export class MetaCampaignRecoveryService {
         destinationUrl,
         objective,
         startingIds: createdIds as any,
+        executionId: execution.id,
+        storeId: execution.storeId,
         onStepCreated: async (step, ids) => {
           Object.assign(createdIds, ids);
           this.applyCreatedIdsToExecution(execution, createdIds);
@@ -278,11 +312,18 @@ export class MetaCampaignRecoveryService {
 
       Object.assign(createdIds, resumedIds);
 
-      execution.status = MetaCampaignCreationStatus.ACTIVE;
+      execution.status = MetaCampaignCreationStatus.COMPLETED;
       this.applyCreatedIdsToExecution(execution, createdIds);
       const localCampaign = await this.recordRecoveredCampaign(execution, dto);
       execution.campaignId = localCampaign.id;
       await this.campaignCreationRepository.save(execution);
+      this.logRecovery('META_CAMPAIGN_RECOVERY_COMPLETED', {
+        executionId: execution.id,
+        storeId: execution.storeId,
+        idempotencyKey: execution.idempotencyKey,
+        partialIds: createdIds,
+        localCampaignId: localCampaign.id,
+      });
 
       return {
         success: true,
@@ -295,14 +336,26 @@ export class MetaCampaignRecoveryService {
       execution.errorMessage = (error as Error).message;
       this.applyCreatedIdsToExecution(execution, createdIds);
       await this.campaignCreationRepository.save(execution);
+      const hint = this.buildRecoveryHint(execution.errorStep, dto, pageId, destinationUrl);
+      this.logRecovery('META_CAMPAIGN_RECOVERY_FAILED', {
+        executionId: execution.id,
+        storeId: execution.storeId,
+        idempotencyKey: execution.idempotencyKey,
+        step: execution.errorStep,
+        partialIds: createdIds,
+        error: (error as Error).message,
+        hint,
+      });
 
       throw new HttpException(
         {
-          message: `Falha ao retomar em ${execution.errorStep}`,
+          message: `Erro ao retomar ${this.describeStep(execution.errorStep)}: ${(error as Error).message}`,
           executionId: execution.id,
+          executionStatus: execution.status,
           step: execution.errorStep,
           partialIds: createdIds,
           error: (error as Error).message,
+          hint,
         },
         HttpStatus.BAD_GATEWAY,
       );
@@ -385,13 +438,14 @@ export class MetaCampaignRecoveryService {
       throw new BadRequestException('imageUrl é obrigatório para recuperar a criação da campanha');
     }
 
-    if (!this.isValidHttpUrl(destinationUrl)) {
-      throw new BadRequestException('destinationUrl http(s) é obrigatório para recuperar a criação da campanha');
+    if (!isValidMetaHttpUrl(imageUrl) || !isLikelyDirectImageUrl(imageUrl)) {
+      throw new BadRequestException('imageUrl inválido para recuperar a criação da campanha');
     }
 
     const initialStatus = this.stringValue(dto?.initialStatus)
       || this.stringValue(requestPayload.initialStatus)
       || 'PAUSED';
+    const rawCta = this.stringValue(dto?.cta) || this.stringValue(requestPayload.cta);
 
     const createDto: CreateMetaCampaignDto = {
       name: this.stringValue(dto?.name) || this.stringValue(requestPayload.name),
@@ -404,12 +458,24 @@ export class MetaCampaignRecoveryService {
       destinationUrl,
       headline: this.stringValue(dto?.headline) || this.stringValue(requestPayload.headline) || undefined,
       description: this.stringValue(dto?.description) || this.stringValue(requestPayload.description) || undefined,
-      cta: this.stringValue(dto?.cta) || this.stringValue(requestPayload.cta) || undefined,
+      cta: rawCta ? normalizeMetaCtaType(rawCta) : undefined,
       initialStatus: initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
     };
 
     if (!createDto.name || !createDto.message || !Number.isFinite(createDto.dailyBudget) || createDto.dailyBudget <= 0) {
       throw new BadRequestException('Payload de recuperação incompleto para retomar a campanha');
+    }
+
+    if (!isValidMetaHttpsUrl(destinationUrl)) {
+      throw new BadRequestException('destination_url inválido para recuperar a criação da campanha');
+    }
+
+    if (createDto.headline && createDto.headline.length > 80) {
+      throw new BadRequestException('headline excede o limite permitido para recuperar a campanha');
+    }
+
+    if (createDto.description && createDto.description.length > 120) {
+      throw new BadRequestException('description excede o limite permitido para recuperar a campanha');
     }
 
     return {
@@ -532,16 +598,75 @@ export class MetaCampaignRecoveryService {
     return 'TRAFFIC';
   }
 
-  private isValidHttpUrl(value?: string | null): boolean {
-    if (!value) {
-      return false;
+  private buildRecoveryHint(
+    step: string | null | undefined,
+    dto: CreateMetaCampaignDto,
+    pageId: string,
+    destinationUrl: string,
+  ): string {
+    if (step === 'creative') {
+      if (!pageId) {
+        return 'Configure o pageId da store antes de retomar a criação do criativo.';
+      }
+
+      if (!isValidMetaHttpsUrl(destinationUrl)) {
+        return 'Verifique se o destination_url está preenchido com uma URL https válida.';
+      }
+
+      return 'Revise pageId, destination_url https, texto do anúncio e imagem do criativo antes de retomar.';
     }
 
-    try {
-      const url = new URL(value);
-      return url.protocol === 'http:' || url.protocol === 'https:';
-    } catch {
-      return false;
+    if (step === 'adset') {
+      return 'Revise daily_budget e segmentação mínima antes de retomar o conjunto de anúncios.';
     }
+
+    if (step === 'campaign') {
+      return 'Revise nome, objetivo e permissões da conta de anúncios antes de retomar a campanha.';
+    }
+
+    if (step === 'ad') {
+      return 'Confirme que o creative e o adset foram criados corretamente antes de retomar o anúncio.';
+    }
+
+    return `Revise os dados obrigatórios da campanha "${dto.name}" antes de tentar novamente.`;
+  }
+
+  private describeStep(step: string | null | undefined): string {
+    if (step === 'campaign') return 'a criação da campanha';
+    if (step === 'adset') return 'a criação do conjunto de anúncios';
+    if (step === 'creative') return 'a criação do criativo';
+    if (step === 'ad') return 'a criação do anúncio';
+    return 'a execução parcial';
+  }
+
+  private executionPartialIds(execution: MetaCampaignCreation): Record<string, string | null> {
+    return {
+      campaignId: execution.metaCampaignId ?? null,
+      adSetId: execution.metaAdSetId ?? null,
+      creativeId: execution.metaCreativeId ?? null,
+      adId: execution.metaAdId ?? null,
+    };
+  }
+
+  private buildRecoveryPayloadLog(dto: CreateMetaCampaignDto, pageId: string, destinationUrl: string): Record<string, unknown> {
+    return {
+      name: dto.name,
+      objective: dto.objective,
+      dailyBudget: dto.dailyBudget,
+      country: dto.country,
+      adAccountId: dto.adAccountId,
+      pageId,
+      destinationUrl,
+      hasMessage: Boolean(dto.message),
+      headline: dto.headline ?? null,
+      description: dto.description ?? null,
+      imageUrl: dto.imageUrl,
+      cta: dto.cta ?? null,
+      initialStatus: dto.initialStatus ?? 'PAUSED',
+    };
+  }
+
+  private logRecovery(event: string, payload: Record<string, unknown>): void {
+    this.logger.log(JSON.stringify({ event, ...payload }));
   }
 }

@@ -9,6 +9,7 @@ import { AuthenticatedUser } from '../../../common/interfaces';
 import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../../common/enums';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
+import { IbgeService } from '../../ibge/ibge.service';
 import { OAuthState } from '../oauth-state.entity';
 import { StoreIntegration } from '../store-integration.entity';
 import {
@@ -17,7 +18,10 @@ import {
   MetaCampaignCreationStep,
 } from './meta-campaign-creation.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
+import { normalizeCampaignLocation } from './meta-audience-location.util';
+import { isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from './meta-creative.validation';
 import { MetaGraphApiClient } from './meta-graph-api.client';
+import { normalizeMetaCtaType } from './meta-cta.constants';
 import {
   ConnectMetaIntegrationDto,
   CreateMetaCampaignDto,
@@ -31,6 +35,16 @@ import {
   UpdateMetaPageDto,
   UpdateMetaIntegrationStatusDto,
 } from './dto/meta-integration.dto';
+
+type MetaCampaignCreationIds = Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
+
+interface ValidatedMetaCampaignContext {
+  adAccount: AdAccount;
+  adAccountExternalId: string;
+  pageId: string;
+  destinationUrl: string;
+  objective: string;
+}
 
 @Injectable()
 export class MetaIntegrationService {
@@ -52,14 +66,15 @@ export class MetaIntegrationService {
     private readonly config: ConfigService,
     private readonly graphApi: MetaGraphApiClient,
     private readonly campaignOrchestrator: MetaCampaignOrchestrator,
+    private readonly ibgeService: IbgeService,
   ) {}
 
-  async getStatus(storeId: string, user: AuthenticatedUser): Promise<StoreIntegrationStatusDto> {
+  async getStatusForUser(user: AuthenticatedUser, storeId: string): Promise<StoreIntegrationStatusDto> {
     await this.accessScope.validateStoreAccess(user, storeId);
     return this.toStatusDto(await this.getOrCreate(storeId));
   }
 
-  async startOAuth(storeId: string, user: AuthenticatedUser): Promise<MetaOAuthStartResponseDto> {
+  async startOAuthForUser(user: AuthenticatedUser, storeId: string): Promise<MetaOAuthStartResponseDto> {
     await this.validateCanManage(storeId, user);
     const appId = this.assertMetaOAuthConfigured();
 
@@ -161,9 +176,9 @@ export class MetaIntegrationService {
     }
   }
 
-  async connect(
-    storeId: string,
+  async connectForUser(
     user: AuthenticatedUser,
+    storeId: string,
     dto: ConnectMetaIntegrationDto,
   ): Promise<StoreIntegrationStatusDto> {
     this.assertDevConnectEnabled();
@@ -188,7 +203,7 @@ export class MetaIntegrationService {
     return this.toStatusDto(await this.integrationRepository.save(integration));
   }
 
-  async disconnect(storeId: string, user: AuthenticatedUser): Promise<StoreIntegrationStatusDto> {
+  async disconnectForUser(user: AuthenticatedUser, storeId: string): Promise<StoreIntegrationStatusDto> {
     await this.validateCanManage(storeId, user);
     const integration = await this.getOrCreate(storeId, true);
 
@@ -205,9 +220,9 @@ export class MetaIntegrationService {
     return this.toStatusDto(await this.integrationRepository.save(integration));
   }
 
-  async updateStatus(
-    storeId: string,
+  async updateStatusForUser(
     user: AuthenticatedUser,
+    storeId: string,
     dto: UpdateMetaIntegrationStatusDto,
   ): Promise<StoreIntegrationStatusDto> {
     await this.validateCanManage(storeId, user);
@@ -225,7 +240,7 @@ export class MetaIntegrationService {
     return this.toStatusDto(await this.integrationRepository.save(integration));
   }
 
-  async buildSyncPlan(storeId: string, user: AuthenticatedUser): Promise<MetaSyncPlan> {
+  async buildSyncPlanForUser(user: AuthenticatedUser, storeId: string): Promise<MetaSyncPlan> {
     await this.validateCanManage(storeId, user);
     return {
       storeId,
@@ -241,9 +256,9 @@ export class MetaIntegrationService {
     };
   }
 
-  async fetchPagesForStore(
-    storeId: string,
+  async fetchPagesForStoreForUser(
     requester: AuthenticatedUser,
+    storeId: string,
   ): Promise<MetaPageDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getConnectedIntegrationWithToken(storeId);
@@ -268,14 +283,14 @@ export class MetaIntegrationService {
     }
   }
 
-  async updatePage(
-    storeId: string,
+  async updatePageForUser(
     requester: AuthenticatedUser,
+    storeId: string,
     dto: UpdateMetaPageDto,
   ): Promise<StoreIntegrationStatusDto> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getConnectedIntegrationWithToken(storeId);
-    const pages = await this.fetchPagesForStore(storeId, requester);
+    const pages = await this.fetchPagesForStoreForUser(requester, storeId);
     const page = pages.find((item) => item.id === dto.pageId);
 
     if (!page) {
@@ -291,9 +306,9 @@ export class MetaIntegrationService {
     return this.toStatusDto(await this.integrationRepository.save(integration));
   }
 
-  async fetchAdAccountsForStore(
-    storeId: string,
+  async fetchAdAccountsForStoreForUser(
     requester: AuthenticatedUser,
+    storeId: string,
   ): Promise<MetaAdAccountDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getConnectedIntegrationWithToken(storeId);
@@ -319,11 +334,11 @@ export class MetaIntegrationService {
     }
   }
 
-  async syncAdAccountsForStore(
-    storeId: string,
+  async syncAdAccountsForStoreForUser(
     requester: AuthenticatedUser,
+    storeId: string,
   ): Promise<MetaAdAccountDto[]> {
-    const accounts = await this.fetchAdAccountsForStore(storeId, requester);
+    const accounts = await this.fetchAdAccountsForStoreForUser(requester, storeId);
     const now = new Date();
 
     for (const account of accounts) {
@@ -368,14 +383,14 @@ export class MetaIntegrationService {
     return accounts;
   }
 
-  async fetchCampaignsForAdAccount(
+  async fetchCampaignsForAdAccountForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     adAccountId: string,
-    requester: AuthenticatedUser,
   ): Promise<MetaCampaignDto[]> {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getConnectedIntegrationWithToken(storeId);
-    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId);
+    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId, requester);
 
     try {
       const campaigns = await this.fetchAllMetaCampaignPages(adAccount.externalId || adAccount.metaId, integration.accessToken);
@@ -398,13 +413,13 @@ export class MetaIntegrationService {
     }
   }
 
-  async syncCampaignsForAdAccount(
+  async syncCampaignsForAdAccountForUser(
+    requester: AuthenticatedUser,
     storeId: string,
     adAccountId: string,
-    requester: AuthenticatedUser,
   ): Promise<MetaCampaignDto[]> {
-    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId);
-    const campaigns = await this.fetchCampaignsForAdAccount(storeId, adAccountId, requester);
+    const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId, requester);
+    const campaigns = await this.fetchCampaignsForAdAccountForUser(requester, storeId, adAccountId);
     const now = new Date();
 
     for (const campaign of campaigns) {
@@ -456,42 +471,37 @@ export class MetaIntegrationService {
     return campaigns;
   }
 
-  async createCampaign(
-    storeId: string,
+  async createCampaignForUser(
     requester: AuthenticatedUser,
+    storeId: string,
     dto: CreateMetaCampaignDto,
     requestId?: string,
   ): Promise<CreateMetaCampaignResponseDto> {
     await this.validateCanManage(storeId, requester);
-    const idempotencyKey = this.resolveIdempotencyKey(storeId, requester.id, dto);
+    const normalizedDto = this.normalizeCreateCampaignDto(dto);
+    const requestPayload = this.buildCampaignCreationPayload(storeId, requester.id, normalizedDto);
+    const payloadHash = this.hashPayload(requestPayload);
+    const idempotencyKey = this.resolveIdempotencyKey(payloadHash, normalizedDto);
     const existingExecution = await this.findCampaignCreationByIdempotencyKey(storeId, idempotencyKey);
 
     if (existingExecution) {
+      this.assertSameCampaignCreationPayload(existingExecution, payloadHash);
       return this.resolveExistingCampaignCreation(existingExecution);
     }
 
     const integration = await this.getConnectedIntegrationWithToken(storeId);
     await this.validateMetaToken(storeId, integration.accessToken);
     this.assertRequiredMetaScopes(integration, ['ads_management']);
-
-    const adAccount = await this.getMetaAdAccountForCampaign(dto.adAccountId, storeId);
-    const adAccountExternalId = this.normalizeAdAccountExternalId(adAccount.externalId || adAccount.metaId);
-    const pageId = this.getMetadataString(integration.metadata, ['pageId', 'metaPageId', 'facebookPageId']);
-    if (!pageId) {
-      throw new BadRequestException('Meta pageId é obrigatório para criar o criativo da campanha. Reconecte ou configure a página da store.');
-    }
-
-    const objective = this.normalizeCreateObjective(dto.objective);
-    this.assertValidCampaignPayload(dto, objective);
-    const destinationUrl =
-      dto.destinationUrl?.trim()
-      || this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl'])
-      || '';
-    if (!this.isValidHttpUrl(destinationUrl)) {
-      throw new BadRequestException('destinationUrl é obrigatório para criar campanha Meta com destino de site');
-    }
-    const execution = await this.createCampaignCreationExecution(storeId, requester, adAccount, dto, idempotencyKey);
-    const createdIds: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>> = {};
+    const validation = await this.validateCampaignCreationPrerequisites(storeId, requester, normalizedDto, integration);
+    const execution = await this.createCampaignCreationExecution(
+      storeId,
+      requester,
+      validation.adAccount,
+      requestPayload,
+      payloadHash,
+      idempotencyKey,
+    );
+    const createdIds: MetaCampaignCreationIds = {};
     const startedAt = Date.now();
 
     this.logCampaignCreation('campaign creation started', {
@@ -500,19 +510,23 @@ export class MetaIntegrationService {
       requesterId: requester.id,
       idempotencyKey,
       executionId: execution.id,
-      adAccountId: adAccount.id,
+      adAccountId: validation.adAccount.id,
       step: 'start',
-      status: MetaCampaignCreationStatus.CREATING,
+      status: MetaCampaignCreationStatus.IN_PROGRESS,
+      payload: this.buildMetaValidationPayloadLog(normalizedDto, validation),
     });
 
     try {
       const ids = await this.campaignOrchestrator.createResources({
-        adAccountExternalId,
+        adAccountExternalId: validation.adAccountExternalId,
         accessToken: integration.accessToken as string,
-        dto,
-        pageId,
-        destinationUrl,
-        objective,
+        dto: normalizedDto,
+        pageId: validation.pageId,
+        destinationUrl: validation.destinationUrl,
+        objective: validation.objective,
+        requestId,
+        executionId: execution.id,
+        storeId,
         onStepCreated: async (step, idsFromStep) => {
           Object.assign(createdIds, idsFromStep);
           await this.markCampaignCreationStep(execution, step, createdIds);
@@ -523,7 +537,7 @@ export class MetaIntegrationService {
             idempotencyKey,
             executionId: execution.id,
             step,
-            status: MetaCampaignCreationStatus.CREATING,
+            status: MetaCampaignCreationStatus.IN_PROGRESS,
             ids: createdIds,
             duration: Date.now() - startedAt,
           });
@@ -541,11 +555,19 @@ export class MetaIntegrationService {
         idempotencyKey,
         requestId,
         startedAt,
+        normalizedDto,
+        validation,
       );
     }
 
     try {
-      const localCampaign = await this.recordCreatedCampaign(storeId, requester, dto, createdIds.campaignId as string, adAccount);
+      const localCampaign = await this.recordCreatedCampaign(
+        storeId,
+        requester,
+        normalizedDto,
+        createdIds.campaignId as string,
+        validation.adAccount,
+      );
       await this.finishCampaignCreationExecution(execution, localCampaign.id, createdIds);
       this.logCampaignCreation('campaign creation finished', {
         requestId,
@@ -554,7 +576,7 @@ export class MetaIntegrationService {
         idempotencyKey,
         executionId: execution.id,
         step: 'finish',
-        status: MetaCampaignCreationStatus.ACTIVE,
+        status: MetaCampaignCreationStatus.COMPLETED,
         ids: createdIds,
         localCampaignId: localCampaign.id,
         duration: Date.now() - startedAt,
@@ -568,10 +590,10 @@ export class MetaIntegrationService {
         creativeId: createdIds.creativeId as string,
         adId: createdIds.adId as string,
         status: 'CREATED',
-        executionStatus: 'ACTIVE',
-        initialStatus: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+        executionStatus: 'COMPLETED',
+        initialStatus: normalizedDto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         storeId,
-        adAccountId: adAccount.id,
+        adAccountId: validation.adAccount.id,
         platform: 'META',
       };
     } catch (err) {
@@ -585,6 +607,8 @@ export class MetaIntegrationService {
         idempotencyKey,
         requestId,
         startedAt,
+        normalizedDto,
+        validation,
       );
     }
   }
@@ -707,14 +731,22 @@ export class MetaIntegrationService {
     }
   }
 
-  private assertValidCampaignPayload(dto: CreateMetaCampaignDto, objective: string): void {
+  private assertValidCampaignPayload(dto: CreateMetaCampaignDto, objective: string, destinationUrl: string): void {
     const allowedObjectives = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH', 'OUTCOME_SALES']);
     if (!allowedObjectives.has(objective)) {
       throw new BadRequestException(`Objetivo Meta não suportado no MVP: ${dto.objective}`);
     }
 
+    if (!dto.name?.trim()) {
+      throw new BadRequestException('name é obrigatório para criar campaign, adset, creative e ad.');
+    }
+
+    if (dto.name.trim().length > 120) {
+      throw new BadRequestException('name excede o limite de 120 caracteres.');
+    }
+
     if (!Number.isFinite(Number(dto.dailyBudget)) || Number(dto.dailyBudget) <= 0) {
-      throw new BadRequestException('dailyBudget deve ser maior que zero');
+      throw new BadRequestException('dailyBudget deve ser maior que zero para criar o adset.');
     }
 
     if (!/^[A-Z]{2}$/.test(dto.country.trim().toUpperCase())) {
@@ -722,28 +754,41 @@ export class MetaIntegrationService {
     }
 
     if (!dto.message.trim()) {
-      throw new BadRequestException('message é obrigatório');
+      throw new BadRequestException('message é obrigatório para criar o criativo.');
     }
 
-    if (!this.isValidHttpUrl(dto.imageUrl)) {
+    if (dto.message.trim().length > 500) {
+      throw new BadRequestException('message excede o limite de 500 caracteres.');
+    }
+
+    if (dto.headline && dto.headline.trim().length > 80) {
+      throw new BadRequestException('headline excede o limite de 80 caracteres.');
+    }
+
+    if (dto.description && dto.description.trim().length > 120) {
+      throw new BadRequestException('description excede o limite de 120 caracteres.');
+    }
+
+    if (!isValidMetaHttpUrl(dto.imageUrl)) {
       throw new BadRequestException('imageUrl deve ser uma URL http(s) válida');
     }
 
-    if (dto.destinationUrl && !this.isValidHttpUrl(dto.destinationUrl)) {
-      throw new BadRequestException('destinationUrl deve ser uma URL http(s) válida');
+    if (!isLikelyDirectImageUrl(dto.imageUrl)) {
+      throw new BadRequestException('imageUrl deve apontar para uma imagem direta válida');
+    }
+
+    if (!isValidMetaHttpsUrl(destinationUrl)) {
+      throw new BadRequestException('destination_url inválido. Use uma URL https válida para o criativo.');
     }
   }
 
-  private async getMetaAdAccountInStore(adAccountId: string, storeId: string): Promise<AdAccount> {
-    const adAccount = await this.adAccountRepository.findOne({
-      where: {
-        id: adAccountId,
-        storeId,
-        provider: IntegrationProvider.META,
-      },
-    });
-
-    if (!adAccount) {
+  private async getMetaAdAccountInStore(
+    adAccountId: string,
+    storeId: string,
+    requester: AuthenticatedUser,
+  ): Promise<AdAccount> {
+    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
+    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 
@@ -754,16 +799,13 @@ export class MetaIntegrationService {
     return adAccount;
   }
 
-  private async getMetaAdAccountForCampaign(adAccountId: string, storeId: string): Promise<AdAccount> {
-    const adAccount = await this.adAccountRepository.findOne({
-      where: {
-        id: adAccountId,
-        storeId,
-        provider: IntegrationProvider.META,
-      },
-    });
-
-    if (!adAccount) {
+  private async getMetaAdAccountForCampaign(
+    adAccountId: string,
+    storeId: string,
+    requester: AuthenticatedUser,
+  ): Promise<AdAccount> {
+    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
+    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 
@@ -780,6 +822,45 @@ export class MetaIntegrationService {
     }
 
     return adAccount;
+  }
+
+  private async validateCampaignCreationPrerequisites(
+    storeId: string,
+    requester: AuthenticatedUser,
+    dto: CreateMetaCampaignDto,
+    integration: StoreIntegration,
+  ): Promise<ValidatedMetaCampaignContext> {
+    const adAccount = await this.getMetaAdAccountForCampaign(dto.adAccountId, storeId, requester);
+    const adAccountExternalId = this.normalizeAdAccountExternalId(adAccount.externalId || adAccount.metaId);
+    const pageId = this.getMetadataString(integration.metadata, ['pageId', 'metaPageId', 'facebookPageId']);
+    if (!pageId) {
+      throw new BadRequestException({
+        message: 'pageId é obrigatório para criar o criativo',
+        step: 'creative',
+        hint: 'Configure a página da store na integração Meta antes de criar a campanha.',
+      });
+    }
+
+    const objective = this.normalizeCreateObjective(dto.objective);
+    const destinationUrl = this.resolveDestinationUrl(dto, integration);
+    this.assertValidCampaignPayload(dto, objective, destinationUrl);
+    await this.assertValidCampaignLocation(dto);
+
+    return {
+      adAccount,
+      adAccountExternalId,
+      pageId,
+      destinationUrl,
+      objective,
+    };
+  }
+
+  private resolveDestinationUrl(dto: CreateMetaCampaignDto, integration: StoreIntegration): string {
+    return (
+      dto.destinationUrl?.trim()
+      || this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl'])
+      || ''
+    );
   }
 
   private normalizeMetaAdAccounts(rawAccounts: any[]): MetaAdAccountDto[] {
@@ -1007,30 +1088,74 @@ export class MetaIntegrationService {
     );
   }
 
-  private resolveIdempotencyKey(storeId: string, requesterId: string, dto: CreateMetaCampaignDto): string {
+  private buildCampaignCreationPayload(
+    storeId: string,
+    requesterId: string,
+    dto: CreateMetaCampaignDto,
+  ): Record<string, unknown> {
+    return {
+      storeId,
+      requesterId,
+      name: dto.name.trim(),
+      objective: dto.objective.trim().toUpperCase(),
+      dailyBudget: Number(dto.dailyBudget),
+      country: dto.country.trim().toUpperCase(),
+      adAccountId: dto.adAccountId,
+      message: dto.message.trim(),
+      imageUrl: dto.imageUrl.trim(),
+      state: dto.state?.trim().toUpperCase() || null,
+      stateName: dto.stateName?.trim() || null,
+      region: dto.region?.trim() || null,
+      city: dto.city?.trim() || null,
+      cityId: dto.cityId ? Number(dto.cityId) : null,
+      destinationUrl: dto.destinationUrl?.trim() || null,
+      headline: dto.headline?.trim() || null,
+      description: dto.description?.trim() || null,
+      cta: dto.cta ? normalizeMetaCtaType(dto.cta) : null,
+      initialStatus: dto.initialStatus || 'PAUSED',
+    };
+  }
+
+  private normalizeCreateCampaignDto(dto: CreateMetaCampaignDto): CreateMetaCampaignDto {
+    return {
+      ...dto,
+      cta: dto.cta ? normalizeMetaCtaType(dto.cta) : undefined,
+      state: dto.state?.trim().toUpperCase() || undefined,
+      stateName: dto.stateName?.trim() || undefined,
+      region: dto.region?.trim() || undefined,
+      city: dto.city?.trim() || undefined,
+      cityId: dto.cityId ? Number(dto.cityId) : undefined,
+    };
+  }
+
+  private async assertValidCampaignLocation(dto: CreateMetaCampaignDto): Promise<void> {
+    const location = normalizeCampaignLocation(dto);
+
+    if (!location.state && !location.city && !location.cityId && !location.stateName && !location.region) {
+      return;
+    }
+
+    if (location.state && location.cityId) {
+      const validLocation = await this.ibgeService.validateCityForState(location.state, location.cityId, location.city || null);
+      if (!validLocation) {
+        throw new BadRequestException('cityId informado não pertence ao estado selecionado.');
+      }
+    }
+  }
+
+  private hashPayload(payload: Record<string, unknown>): string {
+    return createHash('sha256')
+      .update(JSON.stringify(payload))
+      .digest('hex');
+  }
+
+  private resolveIdempotencyKey(payloadHash: string, dto: CreateMetaCampaignDto): string {
     const normalized = dto.idempotencyKey?.trim();
     if (normalized) {
       return normalized;
     }
 
-    return createHash('sha256')
-      .update(JSON.stringify({
-        storeId,
-        requesterId,
-        name: dto.name.trim(),
-        objective: dto.objective.trim().toUpperCase(),
-        dailyBudget: Number(dto.dailyBudget),
-        country: dto.country.trim().toUpperCase(),
-        adAccountId: dto.adAccountId,
-        message: dto.message.trim(),
-        imageUrl: dto.imageUrl.trim(),
-        destinationUrl: dto.destinationUrl?.trim() || null,
-        headline: dto.headline?.trim() || null,
-        description: dto.description?.trim() || null,
-        cta: dto.cta?.trim() || null,
-        initialStatus: dto.initialStatus || 'PAUSED',
-      }))
-      .digest('hex');
+    return payloadHash;
   }
 
   private async findCampaignCreationByIdempotencyKey(
@@ -1045,13 +1170,51 @@ export class MetaIntegrationService {
     });
   }
 
+  private assertSameCampaignCreationPayload(execution: MetaCampaignCreation, payloadHash: string): void {
+    if (!execution.payloadHash || execution.payloadHash === payloadHash) {
+      return;
+    }
+
+    throw new BadRequestException({
+      message: 'idempotencyKey reutilizada com payload incompatível.',
+      executionId: execution.id,
+      executionStatus: this.normalizeCampaignCreationStatus(execution.status),
+      idempotencyKey: execution.idempotencyKey,
+    });
+  }
+
+  private normalizeCampaignCreationStatus(status: MetaCampaignCreationStatus): MetaCampaignCreationStatus {
+    if (status === MetaCampaignCreationStatus.CREATING) {
+      return MetaCampaignCreationStatus.IN_PROGRESS;
+    }
+
+    if (status === MetaCampaignCreationStatus.ACTIVE) {
+      return MetaCampaignCreationStatus.COMPLETED;
+    }
+
+    return status;
+  }
+
+  private isCompletedCampaignCreation(status: MetaCampaignCreationStatus): boolean {
+    return this.normalizeCampaignCreationStatus(status) === MetaCampaignCreationStatus.COMPLETED;
+  }
+
+  private isInProgressCampaignCreation(status: MetaCampaignCreationStatus): boolean {
+    return this.normalizeCampaignCreationStatus(status) === MetaCampaignCreationStatus.IN_PROGRESS;
+  }
+
   private resolveExistingCampaignCreation(execution: MetaCampaignCreation): CreateMetaCampaignResponseDto {
-    if (execution.status === MetaCampaignCreationStatus.ACTIVE) {
+    const executionStatus = this.normalizeCampaignCreationStatus(execution.status);
+    const partialIds = this.executionIds(execution);
+    const step = this.normalizeExecutionStep(execution.errorStep);
+    const hint = this.buildMetaCreationHint(step, undefined, execution.requestPayload || {});
+
+    if (this.isCompletedCampaignCreation(execution.status)) {
       if (!execution.metaCampaignId || !execution.metaAdSetId || !execution.metaCreativeId || !execution.metaAdId) {
         throw new ConflictException({
           message: 'Execução idempotente concluída sem todos os IDs externos. Verifique o histórico da campanha.',
           executionId: execution.id,
-          executionStatus: execution.status,
+          executionStatus,
           idempotencyKey: execution.idempotencyKey,
         });
       }
@@ -1064,31 +1227,36 @@ export class MetaIntegrationService {
         creativeId: execution.metaCreativeId,
         adId: execution.metaAdId,
         status: 'CREATED',
-        executionStatus: 'ACTIVE',
+        executionStatus: 'COMPLETED',
         initialStatus: execution.requestPayload?.['initialStatus'] === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         storeId: execution.storeId,
         adAccountId: execution.adAccountId,
         platform: 'META',
+        hint,
       };
     }
 
-    if (execution.status === MetaCampaignCreationStatus.CREATING) {
+    if (this.isInProgressCampaignCreation(execution.status)) {
       throw new ConflictException({
         message: 'Criação de campanha já está em andamento para esta idempotencyKey.',
         executionId: execution.id,
-        executionStatus: execution.status,
+        executionStatus,
         idempotencyKey: execution.idempotencyKey,
+        step,
+        partialIds,
+        hint: 'Aguarde a finalização desta execução ou consulte o status da execução existente antes de reenviar a campanha.',
       });
     }
 
     throw new BadRequestException({
-      message: 'Já existe uma execução anterior não concluída para esta idempotencyKey. Use outra chave após validar os recursos parciais na Meta.',
+      message: 'Já existe uma execução parcial para esta idempotencyKey. Use o endpoint de recovery para continuar sem duplicar recursos na Meta.',
       executionId: execution.id,
-      executionStatus: execution.status,
+      executionStatus,
       idempotencyKey: execution.idempotencyKey,
-      step: execution.errorStep,
-      partialIds: this.executionIds(execution),
+      step,
+      partialIds,
       errorMessage: execution.errorMessage,
+      hint,
     });
   }
 
@@ -1096,7 +1264,8 @@ export class MetaIntegrationService {
     storeId: string,
     requester: AuthenticatedUser,
     adAccount: AdAccount,
-    dto: CreateMetaCampaignDto,
+    requestPayload: Record<string, unknown>,
+    payloadHash: string,
     idempotencyKey: string,
   ): Promise<MetaCampaignCreation> {
     try {
@@ -1106,31 +1275,20 @@ export class MetaIntegrationService {
           requesterUserId: requester.id,
           adAccountId: adAccount.id,
           idempotencyKey,
-          status: MetaCampaignCreationStatus.CREATING,
-          requestPayload: {
-            name: dto.name,
-            objective: dto.objective,
-            dailyBudget: dto.dailyBudget,
-            country: dto.country,
-            adAccountId: dto.adAccountId,
-            message: dto.message,
-            imageUrl: dto.imageUrl,
-            destinationUrl: dto.destinationUrl,
-            headline: dto.headline,
-            description: dto.description,
-            cta: dto.cta,
-            initialStatus: dto.initialStatus || 'PAUSED',
-          },
+          status: MetaCampaignCreationStatus.IN_PROGRESS,
+          requestPayload,
+          payloadHash,
         }),
       );
     } catch (err) {
       if (idempotencyKey && this.isUniqueConstraintError(err)) {
         const existing = await this.findCampaignCreationByIdempotencyKey(storeId, idempotencyKey);
         if (existing) {
+          this.assertSameCampaignCreationPayload(existing, payloadHash);
           throw new ConflictException({
             message: 'Criação de campanha já registrada para esta idempotencyKey. Repita a requisição para obter o resultado atual.',
             executionId: existing.id,
-            executionStatus: existing.status,
+            executionStatus: this.normalizeCampaignCreationStatus(existing.status),
             idempotencyKey,
           });
         }
@@ -1170,7 +1328,7 @@ export class MetaIntegrationService {
     campaignId: string,
     ids: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>,
   ): Promise<void> {
-    execution.status = MetaCampaignCreationStatus.ACTIVE;
+    execution.status = MetaCampaignCreationStatus.COMPLETED;
     execution.campaignId = campaignId;
     execution.campaignCreated = true;
     execution.adSetCreated = true;
@@ -1219,6 +1377,123 @@ export class MetaIntegrationService {
     };
   }
 
+  private normalizeExecutionStep(step: string | null | undefined): MetaCampaignCreationStep | undefined {
+    if (step === 'campaign' || step === 'adset' || step === 'creative' || step === 'ad' || step === 'persist') {
+      return step;
+    }
+
+    return undefined;
+  }
+
+  private describeCampaignCreationStep(step: MetaCampaignCreationStep): string {
+    if (step === 'campaign') return 'criação da campanha';
+    if (step === 'adset') return 'criação do conjunto de anúncios';
+    if (step === 'creative') return 'criação do criativo';
+    if (step === 'ad') return 'criação do anúncio';
+    return 'persistência local da campanha';
+  }
+
+  private buildMetaCreationHint(
+    step: MetaCampaignCreationStep | undefined,
+    metaError?: {
+      message: string;
+      code: number | null;
+      subcode: number | null;
+      userTitle: string | null;
+      userMessage: string | null;
+    },
+    payload?: Record<string, unknown>,
+  ): string {
+    const destinationUrl = typeof payload?.['destinationUrl'] === 'string' ? payload.destinationUrl : null;
+    const pageId = typeof payload?.['pageId'] === 'string' ? payload.pageId : null;
+
+    if (!step) {
+      return 'Revise a configuração da store e os campos obrigatórios antes de tentar novamente.';
+    }
+
+    if (step === 'creative') {
+      if (!pageId) {
+        return 'Verifique se o pageId está configurado na integração da store.';
+      }
+      if (!isValidMetaHttpsUrl(destinationUrl)) {
+        return 'Verifique se o destination_url está preenchido com uma URL https válida.';
+      }
+      if (metaError?.userMessage) {
+        return this.sanitizeError(metaError.userMessage);
+      }
+      return 'Verifique pageId, destination_url https, texto do anúncio e imagem usada no criativo.';
+    }
+
+    if (step === 'adset') {
+      return 'Verifique daily_budget, país e segmentação mínima antes de repetir a criação do conjunto.';
+    }
+
+    if (step === 'campaign') {
+      return 'Verifique objective, nome da campanha e permissões da conta de anúncios.';
+    }
+
+    if (step === 'ad') {
+      return 'Verifique se o adset e o creative já foram criados corretamente antes de publicar o anúncio.';
+    }
+
+    return 'A Meta criou os recursos, mas houve falha ao persistir localmente. Revise o banco e reconcilie a execução usando o executionId.';
+  }
+
+  private buildMetaValidationPayloadLog(
+    dto: CreateMetaCampaignDto,
+    validation?: Partial<ValidatedMetaCampaignContext>,
+  ): Record<string, unknown> {
+    return {
+      name: dto.name?.trim() || null,
+      objective: dto.objective?.trim().toUpperCase() || null,
+      dailyBudget: Number(dto.dailyBudget),
+      country: dto.country?.trim().toUpperCase() || null,
+      adAccountId: dto.adAccountId,
+      adAccountExternalId: validation?.adAccountExternalId ?? null,
+      pageId: validation?.pageId ?? null,
+      destinationUrl: validation?.destinationUrl ?? dto.destinationUrl?.trim() ?? null,
+      hasMessage: Boolean(dto.message?.trim()),
+      headline: dto.headline?.trim() || null,
+      description: dto.description?.trim() || null,
+      cta: dto.cta ? normalizeMetaCtaType(dto.cta) : null,
+      initialStatus: dto.initialStatus || 'PAUSED',
+      targeting: {
+        country: dto.country?.trim().toUpperCase() || null,
+        state: dto.state?.trim().toUpperCase() || null,
+        stateName: dto.stateName?.trim() || null,
+        region: dto.region?.trim() || null,
+        city: dto.city?.trim() || null,
+        cityId: dto.cityId ? Number(dto.cityId) : null,
+      },
+      imageUrl: dto.imageUrl?.trim() || null,
+    };
+  }
+
+  private sanitizeForLog<T>(value: T): T {
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    try {
+      return JSON.parse(
+        JSON.stringify(value, (key, currentValue) => {
+          const normalizedKey = key.toLowerCase();
+          if (normalizedKey.includes('access_token') || normalizedKey.includes('client_secret')) {
+            return '[redacted]';
+          }
+
+          if (typeof currentValue === 'string') {
+            return this.sanitizeError(currentValue);
+          }
+
+          return currentValue;
+        }),
+      ) as T;
+    } catch {
+      return '[unserializable]' as T;
+    }
+  }
+
   private isUniqueConstraintError(err: unknown): boolean {
     const code = (err as any)?.code;
     return code === '23505' || code === 'SQLITE_CONSTRAINT';
@@ -1232,20 +1507,31 @@ export class MetaIntegrationService {
     storeId: string,
     err: unknown,
     step: MetaCampaignCreationStep,
-    createdIds: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>,
+    createdIds: MetaCampaignCreationIds,
     execution: MetaCampaignCreation,
     requesterId: string,
     idempotencyKey: string,
     requestId?: string,
     startedAt?: number,
+    dto?: CreateMetaCampaignDto,
+    validation?: Partial<ValidatedMetaCampaignContext>,
   ): Promise<never> {
-    const errorCode = (err as any)?.response?.data?.error?.code;
+    const metaError = this.extractMetaErrorDetails(err);
     const status = (err as any)?.response?.status;
-    const subcode = (err as any)?.response?.data?.error?.error_subcode;
-    const fbtraceId = (err as any)?.response?.data?.error?.fbtrace_id;
-    const metaMessage = (err as any)?.response?.data?.error?.message;
-    const message = this.sanitizeError(metaMessage || (err as Error)?.message || `Erro ao criar campanha na Meta`);
+    const message = metaError.summary;
     await this.failCampaignCreationExecution(execution, step, message, createdIds);
+    const executionStatus = this.normalizeCampaignCreationStatus(execution.status);
+    const payloadForHint = dto
+      ? this.buildMetaValidationPayloadLog(dto, validation)
+      : this.sanitizeForLog(execution.requestPayload || {});
+    const hint = this.buildMetaCreationHint(step, metaError, {
+      ...(payloadForHint as Record<string, unknown>),
+      destinationUrl: validation?.destinationUrl
+        ?? (typeof execution.requestPayload?.['destinationUrl'] === 'string' ? execution.requestPayload.destinationUrl : null),
+      pageId: validation?.pageId
+        ?? (typeof execution.requestPayload?.['pageId'] === 'string' ? execution.requestPayload.pageId : null),
+    });
+    const sanitizedMetaResponse = this.sanitizeForLog((err as any)?.response?.data);
 
     this.logger.warn(
       JSON.stringify({
@@ -1256,46 +1542,57 @@ export class MetaIntegrationService {
         idempotencyKey,
         executionId: execution.id,
         step,
-        status: execution.status,
-        metaCode: errorCode ?? null,
-        metaSubcode: subcode ?? null,
-        fbtraceId: fbtraceId ?? null,
+        status: executionStatus,
+        metaCode: metaError.code,
+        metaSubcode: metaError.subcode,
+        fbtraceId: metaError.fbtraceId,
+        metaType: metaError.type,
+        metaUserTitle: metaError.userTitle,
+        metaUserMessage: metaError.userMessage,
         partialIds: createdIds,
+        payload: payloadForHint,
+        metaResponse: sanitizedMetaResponse,
         error: message,
+        hint,
         duration: startedAt ? Date.now() - startedAt : undefined,
       }),
     );
 
-    if (status === 401 || errorCode === 190 || message === 'TOKEN_INVALID') {
+    if (status === 401 || metaError.code === 190 || message === 'TOKEN_INVALID') {
       await this.markIntegrationError(storeId, 'TOKEN_INVALID');
       throw new HttpException({
         message: 'Token Meta inválido ou expirado. Reconecte a store.',
         executionId: execution.id,
-        executionStatus: execution.status,
+        executionStatus,
         step,
         partialIds: createdIds,
+        hint: 'Reconecte a store na Meta e repita a operação depois de validar as permissões ads_management.',
       }, HttpStatus.UNAUTHORIZED);
     }
 
     await this.recordCampaignCreationFailure(storeId, step, message, createdIds);
 
-    if (status === 429 || errorCode === 4) {
+    if (status === 429 || metaError.code === 4) {
       throw new HttpException({
         message: 'A Meta limitou temporariamente as requisições. Tente novamente em alguns minutos.',
         executionId: execution.id,
-        executionStatus: execution.status,
+        executionStatus,
         step,
         partialIds: createdIds,
+        hint: 'Aguarde o rate limit da Meta liberar antes de repetir a criação.',
       }, HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    const isMetaValidationError = status === 400 || errorCode === 100;
+    const isMetaValidationError = status === 400 || metaError.code === 100;
+    const stepLabel = this.describeCampaignCreationStep(step);
     const response = {
-      message: `Não foi possível criar campanha na Meta na etapa ${step}: ${message}`,
+      message: `Erro na ${stepLabel}: ${message}`,
       executionId: execution.id,
-      executionStatus: execution.status,
+      executionStatus,
       step,
       partialIds: createdIds,
+      metaError,
+      hint,
     };
 
     if (isMetaValidationError) {
@@ -1658,6 +1955,39 @@ export class MetaIntegrationService {
 
   private sanitizeError(message: string): string {
     return message.replace(/[?&](access_token|client_secret|code)=[^&\s]+/gi, '$1=[redacted]').slice(0, 500);
+  }
+
+  private extractMetaErrorDetails(err: unknown): {
+    message: string;
+    summary: string;
+    code: number | null;
+    subcode: number | null;
+    type: string | null;
+    userTitle: string | null;
+    userMessage: string | null;
+    fbtraceId: string | null;
+  } {
+    const meta = (err as any)?.response?.data?.error;
+    const message = this.sanitizeError(meta?.message || (err as Error)?.message || 'Erro ao criar campanha na Meta');
+    const details = [
+      meta?.error_subcode ? `subcode=${meta.error_subcode}` : null,
+      meta?.error_user_title ? `userTitle=${this.sanitizeError(meta.error_user_title)}` : null,
+      meta?.error_user_msg ? `userMessage=${this.sanitizeError(meta.error_user_msg)}` : null,
+      meta?.type ? `type=${this.sanitizeError(meta.type)}` : null,
+      meta?.fbtrace_id ? `fbtraceId=${this.sanitizeError(meta.fbtrace_id)}` : null,
+      meta?.code ? `code=${meta.code}` : null,
+    ].filter(Boolean);
+
+    return {
+      message,
+      summary: details.length ? `${message} | ${details.join(' | ')}` : message,
+      code: meta?.code ?? null,
+      subcode: meta?.error_subcode ?? null,
+      type: meta?.type ?? null,
+      userTitle: meta?.error_user_title ?? null,
+      userMessage: meta?.error_user_msg ?? null,
+      fbtraceId: meta?.fbtrace_id ?? null,
+    };
   }
 
   private sleep(ms: number): Promise<void> {

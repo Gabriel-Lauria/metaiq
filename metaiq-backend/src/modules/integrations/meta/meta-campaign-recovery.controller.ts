@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { Role } from '../../../common/enums';
+import { AuditService } from '../../../common/services/audit.service';
 import { MetaCampaignRecoveryService } from './meta-campaign-recovery.service';
 import { RetryPartialCampaignDto, CleanupPartialResourcesDto } from './dto/meta-integration.dto';
 
@@ -22,7 +24,10 @@ import { RetryPartialCampaignDto, CleanupPartialResourcesDto } from './dto/meta-
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
 export class MetaCampaignRecoveryController {
-  constructor(private readonly recoveryService: MetaCampaignRecoveryService) {}
+  constructor(
+    private readonly recoveryService: MetaCampaignRecoveryService,
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
    * GET /recovery/:executionId
@@ -50,7 +55,7 @@ export class MetaCampaignRecoveryController {
     @Param('executionId') executionId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.recoveryService.getExecutionStatus(executionId, storeId, user);
+    return this.recoveryService.getExecutionStatusForUser(user, storeId, executionId);
   }
 
   /**
@@ -95,8 +100,11 @@ export class MetaCampaignRecoveryController {
     @Param('executionId') executionId: string,
     @Body() dto: RetryPartialCampaignDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
   ) {
-    return this.recoveryService.retryPartialCampaignCreation(executionId, dto, storeId, user);
+    const result = await this.recoveryService.retryPartialCampaignCreationForUser(user, storeId, executionId, dto);
+    this.audit(user, req, 'meta.campaign.retry', executionId, storeId, { success: result.success });
+    return result;
   }
 
   /**
@@ -133,7 +141,35 @@ export class MetaCampaignRecoveryController {
     @Param('executionId') executionId: string,
     @Body() dto: CleanupPartialResourcesDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
   ) {
-    return this.recoveryService.cleanupPartialResources(executionId, storeId, user);
+    const result = await this.recoveryService.cleanupPartialResourcesForUser(user, storeId, executionId);
+    this.audit(user, req, 'meta.campaign.cleanup', executionId, storeId, { cleaned: result.cleaned });
+    return result;
+  }
+
+  private audit(
+    user: AuthenticatedUser,
+    req: Request,
+    action: string,
+    executionId: string,
+    storeId: string,
+    metadata: Record<string, unknown>,
+  ): void {
+    this.auditService.record({
+      action,
+      status: 'success',
+      actorId: user.id,
+      actorRole: user.role,
+      tenantId: user.tenantId,
+      targetType: 'meta_campaign_creation',
+      targetId: executionId,
+      requestId: req.requestId,
+      metadata: {
+        storeId,
+        executionId,
+        ...metadata,
+      },
+    });
   }
 }

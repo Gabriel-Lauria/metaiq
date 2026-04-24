@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, effect, inject, OnInit, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { Insight, Role } from '../../core/models';
@@ -17,6 +18,7 @@ import { UiStateComponent } from '../../core/components/ui-state.component';
 export class InsightsComponent implements OnInit {
   private api = inject(ApiService);
   private auth = inject(AuthService);
+  readonly accountContext = inject(AccountContextService);
   storeContext = inject(StoreContextService);
 
   loading = signal(true);
@@ -81,6 +83,10 @@ export class InsightsComponent implements OnInit {
 
   canResolveInsights(): boolean {
     return this.auth.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL]);
+  }
+
+  isIndividualAccount(): boolean {
+    return this.accountContext.isIndividualAccount();
   }
 
   resolveInsight(insight: Insight): void {

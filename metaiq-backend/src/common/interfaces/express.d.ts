@@ -6,6 +6,7 @@ declare global {
     interface User extends AuthenticatedUser {}
     interface Request {
       requestId?: string;
+      startTime?: number;
     }
   }
 }

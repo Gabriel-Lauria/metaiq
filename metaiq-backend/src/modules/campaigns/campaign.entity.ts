@@ -1,16 +1,27 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { User } from '../users/user.entity';
-import { AdAccount } from '../ad-accounts/ad-account.entity';
-import { Store } from '../stores/store.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
+} from "typeorm";
+import { User } from "../users/user.entity";
+import { AdAccount } from "../ad-accounts/ad-account.entity";
+import { Store } from "../stores/store.entity";
 
-@Entity('campaigns')
-@Index(['userId'])
-@Index(['storeId'])
-@Index(['adAccountId'])
-@Index(['metaId'])
-@Index(['externalId'])
+@Entity("campaigns")
+@Index(["userId"])
+@Index(["storeId"])
+@Index(["createdByUserId"])
+@Index(["adAccountId"])
+@Index(["storeId", "adAccountId"])
+@Index(["metaId"])
+@Index(["externalId"])
 export class Campaign {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
@@ -22,16 +33,16 @@ export class Campaign {
   @Column()
   name: string;
 
-  @Column({ default: 'ACTIVE' })
-  status: 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
+  @Column({ default: "ACTIVE" })
+  status: "ACTIVE" | "PAUSED" | "ARCHIVED";
 
   @Column({ nullable: true, default: null })
-  objective: 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' | null;
+  objective: "CONVERSIONS" | "REACH" | "TRAFFIC" | "LEADS" | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
   dailyBudget: number | null;
 
-  @Column({ type: 'decimal', precision: 6, scale: 2, default: 0 })
+  @Column({ type: "decimal", precision: 6, scale: 2, default: 0 })
   score: number;
 
   @Column({ nullable: true })
@@ -56,19 +67,19 @@ export class Campaign {
   adAccountId: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: "userId" })
   user: User;
 
   @ManyToOne(() => Store, (store) => store.campaigns, { nullable: false })
-  @JoinColumn({ name: 'storeId' })
+  @JoinColumn({ name: "storeId" })
   store: Store;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'createdByUserId' })
-  createdByUser: User | null;
+  @ManyToOne(() => User, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "createdByUserId" })
+  createdBy: User | null;
 
-  @ManyToOne(() => AdAccount)
-  @JoinColumn({ name: 'adAccountId' })
+  @ManyToOne(() => AdAccount, { onDelete: "NO ACTION" })
+  @JoinColumn({ name: "adAccountId" })
   adAccount: AdAccount;
 
   @CreateDateColumn()

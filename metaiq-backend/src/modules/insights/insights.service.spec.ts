@@ -19,12 +19,14 @@ describe('InsightsService', () => {
   };
 
   const mockMetricsService = {
-    getCampaignSummaryUnsafeInternal: jest.fn(),
+    getCampaignSummaryForSystemJob: jest.fn(),
   };
 
   const mockAccessScopeService = {
     applyCampaignScope: jest.fn(async (query) => query),
     applyInsightScope: jest.fn(async (query) => query),
+    validateInsightAccess: jest.fn(),
+    validateCampaignAccess: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -78,19 +80,19 @@ describe('InsightsService', () => {
       adAccountId: 'acc-123',
       user: {} as any,
       store: {} as any,
-      createdByUser: {} as any,
+      createdBy: {} as any,
       adAccount: {} as any,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
     it('should generate no insights when metrics are unavailable', async () => {
-      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(null);
+      mockMetricsService.getCampaignSummaryForSystemJob.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
 
       expect(result).toEqual([]);
-      expect(mockMetricsService.getCampaignSummaryUnsafeInternal).toHaveBeenCalled();
+      expect(mockMetricsService.getCampaignSummaryForSystemJob).toHaveBeenCalled();
     });
 
     it('should generate ROAS danger insight when ROAS < 1.0', async () => {
@@ -109,7 +111,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryForSystemJob.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null); // No duplicate
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -136,7 +138,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryForSystemJob.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -163,7 +165,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryForSystemJob.mockResolvedValue(mockSummary);
       mockInsightRepo.findOne.mockResolvedValue(null);
 
       const result = await service.generateForCampaign(mockCampaign);
@@ -190,7 +192,7 @@ describe('InsightsService', () => {
         lastMetricDate: new Date().toISOString().split('T')[0],
       };
 
-      mockMetricsService.getCampaignSummaryUnsafeInternal.mockResolvedValue(mockSummary);
+      mockMetricsService.getCampaignSummaryForSystemJob.mockResolvedValue(mockSummary);
 
       const existingInsight = {
         id: 'existing-insight',
@@ -246,7 +248,8 @@ describe('InsightsService', () => {
       mockInsightRepo.findOneOrFail.mockResolvedValue(mockInsight);
       mockInsightRepo.save.mockResolvedValue(resolvedInsight);
 
-      const result = await service.resolveInsightUnsafeInternal('insight-123');
+      mockAccessScopeService.validateInsightAccess.mockResolvedValue(mockInsight);
+      const result = await service.resolveForUser({ id: 'user-1' } as any, 'insight-123');
 
       expect(result.resolved).toBe(true);
       expect(mockInsightRepo.save).toHaveBeenCalled();
@@ -266,6 +269,7 @@ describe('InsightsService', () => {
       ];
 
       const mockQueryBuilder = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue(mockInsights),
@@ -273,7 +277,9 @@ describe('InsightsService', () => {
 
       mockInsightRepo.createQueryBuilder.mockReturnValue(mockQueryBuilder);
 
-      const result = await service.findAllUnsafeInternal({
+      const mockUser = { id: 'user-1', role: 'ADMIN', tenantId: 'tenant-1' } as any;
+      mockAccessScopeService.validateCampaignAccess.mockResolvedValue(undefined);
+      const result = await service.findAllForUser(mockUser, {
         campaignId: 'camp-123',
         resolved: false,
       });

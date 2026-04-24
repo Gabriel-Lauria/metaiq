@@ -1,29 +1,16 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { AppController } from './app.controller';
 
 describe('AppController health/readiness', () => {
-  const configService = {
-    get: jest.fn((key: string) => {
-      const values: Record<string, string> = {
-        'app.nodeEnv': 'test',
-        'database.type': 'postgres',
-      };
-      return values[key];
-    }),
-  } as unknown as ConfigService;
-
-  it('returns health metadata without touching the database', () => {
+  it('returns minimal health status without touching the database', () => {
     const dataSource = { isInitialized: false, query: jest.fn() } as unknown as DataSource;
-    const controller = new AppController(dataSource, configService);
+    const controller = new AppController(dataSource);
 
-    expect(controller.health()).toEqual(expect.objectContaining({
+    expect(controller.health()).toEqual({
       status: 'ok',
-      service: 'metaiq-backend',
-      environment: 'test',
-      db: 'postgres',
-    }));
+    });
+    expect(dataSource.query).not.toHaveBeenCalled();
   });
 
   it('returns ready when database query succeeds', async () => {
@@ -31,13 +18,19 @@ describe('AppController health/readiness', () => {
       isInitialized: true,
       query: jest.fn().mockResolvedValue([{ ok: 1 }]),
     } as unknown as DataSource;
-    const controller = new AppController(dataSource, configService);
+    const controller = new AppController(dataSource);
 
-    await expect(controller.ready()).resolves.toEqual(expect.objectContaining({
+    await expect(controller.ready()).resolves.toEqual({
       status: 'ready',
-      db: 'postgres',
-    }));
+    });
     expect(dataSource.query).toHaveBeenCalledWith('SELECT 1');
+  });
+
+  it('returns live without database dependency', () => {
+    const dataSource = { isInitialized: false, query: jest.fn() } as unknown as DataSource;
+    const controller = new AppController(dataSource);
+
+    expect(controller.live()).toEqual({ status: 'alive' });
   });
 
   it('fails readiness when the database is unavailable', async () => {
@@ -45,7 +38,7 @@ describe('AppController health/readiness', () => {
       isInitialized: true,
       query: jest.fn().mockRejectedValue(new Error('database unavailable')),
     } as unknown as DataSource;
-    const controller = new AppController(dataSource, configService);
+    const controller = new AppController(dataSource);
 
     await expect(controller.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
   });

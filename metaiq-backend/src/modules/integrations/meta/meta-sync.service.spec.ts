@@ -77,6 +77,14 @@ describe('MetaSyncService', () => {
     };
     accessScope = {
       validateStoreAccess: jest.fn(async () => ({ id: 'store-1' })),
+      validateAdAccountAccess: jest.fn(async (_requester: AuthenticatedUser, adAccountId: string) => {
+        const adAccount = await adAccountRepo.findOne({ where: { id: adAccountId } });
+        if (!adAccount) {
+          throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
+        }
+
+        return adAccount;
+      }),
     };
     metaService = {
       fetchAdAccountsRaw: jest.fn(),
@@ -100,7 +108,7 @@ describe('MetaSyncService', () => {
       0,
     ));
 
-    await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.syncAdAccountsForUser(user, 'store-1')).rejects.toBeInstanceOf(ConflictException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
 
@@ -109,7 +117,7 @@ describe('MetaSyncService', () => {
       integration({ tokenExpiresAt: new Date(Date.now() - 1000) }),
     ));
 
-    await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(service.syncAdAccountsForUser(user, 'store-1')).rejects.toBeInstanceOf(UnauthorizedException);
     expect(integrationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       status: IntegrationStatus.EXPIRED,
       lastSyncStatus: SyncStatus.ERROR,
@@ -123,7 +131,7 @@ describe('MetaSyncService', () => {
       integration({ status: IntegrationStatus.NOT_CONNECTED }),
     ));
 
-    await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.syncAdAccountsForUser(user, 'store-1')).rejects.toBeInstanceOf(BadRequestException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
 
@@ -134,7 +142,7 @@ describe('MetaSyncService', () => {
       },
     });
 
-    await expect(service.syncAdAccounts('store-1', user)).rejects.toBeInstanceOf(HttpException);
+    await expect(service.syncAdAccountsForUser(user, 'store-1')).rejects.toBeInstanceOf(HttpException);
     expect(integrationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       lastSyncStatus: SyncStatus.ERROR,
       lastSyncError: 'RATE_LIMIT',
@@ -160,7 +168,7 @@ describe('MetaSyncService', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(existing);
 
-    const result = await service.syncAdAccounts('store-1', user);
+    const result = await service.syncAdAccountsForUser(user, 'store-1');
 
     expect(result).toHaveLength(2);
     expect(adAccountRepo.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -181,14 +189,14 @@ describe('MetaSyncService', () => {
     const operationalUser = { ...user, role: Role.OPERATIONAL };
     metaService.fetchAdAccountsRaw.mockResolvedValueOnce([]);
 
-    await expect(service.syncAdAccounts('store-1', operationalUser)).resolves.toEqual([]);
+    await expect(service.syncAdAccountsForUser(operationalUser, 'store-1')).resolves.toEqual([]);
     expect(metaService.fetchAdAccountsRaw).toHaveBeenCalled();
   });
 
   it('bloqueia CLIENT de executar sync', async () => {
     const clientUser = { ...user, role: Role.CLIENT };
 
-    await expect(service.syncAdAccounts('store-1', clientUser)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.syncAdAccountsForUser(clientUser, 'store-1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(metaService.fetchAdAccountsRaw).not.toHaveBeenCalled();
   });
 
@@ -240,7 +248,7 @@ describe('MetaSyncService', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(existingCampaign);
 
-    const result = await service.syncCampaigns('store-1', 'ad-account-1', user);
+    const result = await service.syncCampaignsForUser(user, 'store-1', 'ad-account-1');
 
     expect(result).toHaveLength(2);
     expect(campaignRepo.create).toHaveBeenCalledWith(expect.objectContaining({

@@ -8,7 +8,6 @@ import {
   Post,
   UseGuards,
   Request,
-  Logger,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -20,25 +19,27 @@ import {
   AdminUpdateUserDto,
   CreateUserDto,
   ResetUserPasswordDto,
+  UserResponseView,
 } from './users.service';
 import { User } from './user.entity';
+import { AuditService } from '../../common/services/audit.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-  private readonly logger = new Logger(UsersController.name);
-
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
    * GET /users/me
    * Retorna dados do usuário autenticado
    */
   @Get('me')
-  async getCurrentUser(@Request() req: any): Promise<Omit<User, 'password'>> {
+  async getCurrentUser(@Request() req: any): Promise<UserResponseView> {
     const user = await this.usersService.findAuthenticatedProfile(req.user);
-    const { password: _password, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    return this.usersService.toUserResponseView(user);
   }
 
   /**
@@ -50,7 +51,8 @@ export class UsersController {
     @Request() req: any,
     @Body() dto: UpdateMeDto,
   ): Promise<Omit<User, 'password'>> {
-    const updated = await this.usersService.updateMe(req.user.id, dto);
+    const updated = await this.usersService.updateMe(req.user, dto);
+    this.audit(req, 'user.self_update', updated.id, 'user', { changedFields: Object.keys(dto) });
     const { password: _password, ...userWithoutPassword } = updated;
     return userWithoutPassword;
   }
@@ -61,8 +63,8 @@ export class UsersController {
    */
   @Delete('me')
   async deleteCurrentUser(@Request() req: any): Promise<{ message: string }> {
-    await this.usersService.removeForUser(req.user.id, req.user);
-    this.logger.log(`Usuário ${req.user.email} deletou sua conta`);
+    await this.usersService.removeForUser(req.user, req.user.id);
+    this.audit(req, 'user.self_delete', req.user.id, 'user');
     return { message: 'Conta deletada' };
   }
 
@@ -75,7 +77,7 @@ export class UsersController {
     @Param('id') id: string,
     @Request() req: any,
   ): Promise<Omit<User, 'password'>> {
-    const user = await this.usersService.findOneForUser(id, req.user);
+    const user = await this.usersService.findOneForUser(req.user, id);
     const { password: _password, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
@@ -87,7 +89,8 @@ export class UsersController {
     @Request() req: any,
     @Body() dto: AdminUpdateUserDto,
   ): Promise<Omit<User, 'password'>> {
-    const updated = await this.usersService.updateForUser(id, req.user, dto);
+    const updated = await this.usersService.updateForUser(req.user, id, dto);
+    this.audit(req, 'user.update', updated.id, 'user', { changedFields: Object.keys(dto) });
     const { password: _password, ...userWithoutPassword } = updated;
     return userWithoutPassword;
   }
@@ -99,7 +102,8 @@ export class UsersController {
     @Request() req: any,
     @Body() dto: ResetUserPasswordDto,
   ): Promise<Omit<User, 'password'>> {
-    const updated = await this.usersService.resetPasswordAsAdmin(id, req.user, dto);
+    const updated = await this.usersService.resetPasswordAsAdmin(req.user, id, dto);
+    this.audit(req, 'user.password_reset', updated.id, 'user');
     const { password: _password, ...userWithoutPassword } = updated;
     return userWithoutPassword;
   }
@@ -111,6 +115,7 @@ export class UsersController {
     @Body() dto: CreateUserDto,
   ): Promise<Omit<User, 'password'>> {
     const created = await this.usersService.createForUser(req.user, dto);
+    this.audit(req, 'user.create', created.id, 'user', { role: created.role });
     const { password: _password, ...userWithoutPassword } = created;
     return userWithoutPassword;
   }
@@ -132,8 +137,28 @@ export class UsersController {
     @Param('id') id: string,
     @Request() req: any,
   ): Promise<{ message: string }> {
-    await this.usersService.removeForUser(id, req.user);
-    this.logger.log(`Usuário ${req.user.email} excluiu usuário ${id}`);
+    await this.usersService.removeForUser(req.user, id);
+    this.audit(req, 'user.delete', id, 'user');
     return { message: 'Usuário excluído com segurança' };
+  }
+
+  private audit(
+    req: any,
+    action: string,
+    targetId: string,
+    targetType: string,
+    metadata: Record<string, unknown> = {},
+  ): void {
+    this.auditService.record({
+      action,
+      status: 'success',
+      actorId: req.user?.id,
+      actorRole: req.user?.role,
+      tenantId: req.user?.tenantId,
+      targetType,
+      targetId,
+      requestId: req.requestId,
+      metadata,
+    });
   }
 }

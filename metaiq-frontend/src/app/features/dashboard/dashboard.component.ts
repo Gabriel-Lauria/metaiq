@@ -5,6 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
 import { switchMap, debounceTime, tap } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { UiService } from '../../core/services/ui.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StoreContextService } from '../../core/services/store-context.service';
@@ -21,6 +22,7 @@ import { UiStateComponent } from '../../core/components/ui-state.component';
 })
 export class DashboardComponent implements OnInit {
   private api = inject(ApiService);
+  readonly accountContext = inject(AccountContextService);
   private uiService = inject(UiService);
   private destroyRef = inject(DestroyRef);
   private auth = inject(AuthService);
@@ -30,7 +32,7 @@ export class DashboardComponent implements OnInit {
   loading = signal(true);
   error = signal<string | null>(null);
   period = signal(30);
-  metrics = signal<AggregatedMetrics | null>(null);
+  metrics = signal<(AggregatedMetrics & { cpc?: number }) | null>(null);
   insights = signal<Insight[]>([]);
   summary = signal<DashboardSummary | null>(null);
   lastUpdated = signal<Date | null>(null);
@@ -56,8 +58,10 @@ export class DashboardComponent implements OnInit {
   isAdmin = computed(() => this.currentRole() === Role.ADMIN);
   isOperational = computed(() => this.currentRole() === Role.OPERATIONAL);
   requiresStoreContext = computed(() => this.isClient() || this.isOperational());
+  isIndividual = computed(() => this.accountContext.isIndividualAccount());
   dashboardTitle = computed(() => {
     if (this.isClient()) return 'Resultados da Loja';
+    if (this.isIndividual()) return 'Dashboard';
     if (this.isManager()) return 'Central do Supervisor';
     if (this.isAdmin()) return 'Visão da Empresa';
     return 'Operação da loja';

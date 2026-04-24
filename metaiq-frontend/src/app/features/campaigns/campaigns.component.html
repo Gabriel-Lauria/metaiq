@@ -3,11 +3,11 @@
     <div>
       <p class="page-kicker">Central de campanhas</p>
       <h2 class="page-title">Campanhas</h2>
-      <p class="page-sub">Liste, filtre, revise e opere campanhas no mesmo fluxo de trabalho.</p>
+      <p class="page-sub">{{ isIndividualAccount() ? 'Crie, revise e acompanhe campanhas sem precisar navegar pela estrutura de agência.' : 'Liste, filtre, revise e opere campanhas no mesmo fluxo de trabalho.' }}</p>
 
       <div class="header-meta">
         <span class="context-chip">Escopo: {{ selectedScopeName() }}</span>
-        <span class="demo-data-badge">{{ metricSourceLabel() }}</span>
+        <span class="demo-data-badge" *ngIf="demoModeEnabled">{{ metricSourceLabel() }}</span>
       </div>
     </div>
 
@@ -15,18 +15,95 @@
       <button class="btn btn-secondary" type="button" (click)="refresh()">Atualizar</button>
       <button
         *ngIf="canCreateCampaigns()"
-        class="btn btn-primary"
+        class="btn btn-secondary"
         type="button"
-        (click)="openCreatePanel()"
+        (click)="openCreateCampaign('manual')"
         [title]="createButtonHint()"
       >
-        Nova campanha
+        Criar campanha
+      </button>
+      <button
+        *ngIf="canCreateCampaigns()"
+        class="btn btn-primary"
+        type="button"
+        (click)="openCreateCampaign('ai')"
+        title="Abrir o builder diretamente no fluxo assistido por IA"
+      >
+        Criar com IA
       </button>
     </div>
   </div>
 
+  <section class="onboarding-card" *ngIf="shouldShowOnboarding()">
+    <div class="onboarding-header">
+      <div>
+        <span class="page-kicker">Comece aqui</span>
+        <h3>Onboarding guiado</h3>
+        <p>{{ isIndividualAccount() ? 'Avance no essencial para conectar a Meta e criar sua primeira campanha.' : 'Avance no essencial para conectar a Meta, preparar a store e chegar na revisão final.' }}</p>
+      </div>
+      <div class="onboarding-header-actions">
+        <button class="icon-btn" type="button" (click)="toggleOnboardingCollapsed()" [attr.aria-expanded]="!onboardingCollapsed()" aria-label="Expandir ou recolher onboarding">
+          {{ onboardingCollapsed() ? '+' : '−' }}
+        </button>
+        <button class="icon-btn" type="button" (click)="dismissOnboarding()" aria-label="Fechar onboarding">×</button>
+      </div>
+    </div>
+
+    <div class="onboarding-progress">
+      <div>
+        <strong>Progresso: {{ onboardingCompletedCount() }} de {{ onboardingTotalCount() }} concluídos</strong>
+        <p>{{ onboardingProgressPercent() }}% do ambiente pronto para criar campanhas.</p>
+      </div>
+      <div class="onboarding-progress-bar" aria-hidden="true">
+        <span [style.width.%]="onboardingProgressPercent()"></span>
+      </div>
+    </div>
+
+    <div class="onboarding-list" *ngIf="!onboardingCollapsed()">
+      <article class="onboarding-item" *ngFor="let item of onboardingItems(); trackBy: onboardingTrackById">
+        <div class="onboarding-item-main">
+          <span class="onboarding-check" [class.is-done]="item.done" aria-hidden="true">{{ item.done ? '✓' : '○' }}</span>
+          <div class="onboarding-copy">
+            <div class="onboarding-title-row">
+              <strong>{{ item.label }}</strong>
+              <button class="help-dot" type="button" aria-label="Ajuda do item">
+                ?
+                <span class="help-bubble">{{ item.help }}</span>
+              </button>
+            </div>
+            <app-ui-badge [label]="onboardingStatusLabel(item.done)" [tone]="onboardingStatusTone(item.done)" />
+          </div>
+        </div>
+        <div class="onboarding-actions">
+          <button class="btn btn-secondary" type="button" (click)="runOnboardingAction(item.id)">{{ item.actionLabel }}</button>
+          <button
+            class="btn btn-link"
+            type="button"
+            *ngIf="item.secondaryActionLabel"
+            (click)="runOnboardingSecondaryAction(item.id)"
+          >
+            {{ item.secondaryActionLabel }}
+          </button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="onboarding-ready" *ngIf="shouldShowOnboardingReady()">
+    <strong>Seu ambiente está pronto</strong>
+    <p>Integração, conta, campanha e revisão já foram percorridas. Você pode seguir direto para novas campanhas.</p>
+  </section>
+
+  <div class="onboarding-reopen" *ngIf="shouldShowOnboardingReopen()">
+    <button class="btn btn-secondary" type="button" (click)="reopenOnboarding()">Mostrar onboarding</button>
+  </div>
+
   <p class="permission-hint" *ngIf="!canCreateCampaigns()">
     Seu perfil acompanha campanhas, mas a criação real fica disponível para Administração e Operação.
+  </p>
+
+  <p class="permission-hint" *ngIf="!hasAnyRealMetrics()">
+    {{ emptyMetricsMessage() }}
   </p>
 
   <section class="creation-success-banner" *ngIf="creationNotice() as notice">
@@ -59,8 +136,8 @@
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando campanhas"
-    message="Buscando campanhas e métricas do escopo selecionado."
+    title="Carregando dados..."
+    message="Carregando dados..."
   />
 
   <div class="campaigns-content" *ngIf="!loading() && !error()">
@@ -107,6 +184,7 @@
       </div>
 
       <select
+        *ngIf="!isIndividualAccount()"
         class="search-input"
         aria-label="Filtrar campanhas por loja"
         [ngModel]="storeContext.selectedStoreId()"
@@ -121,7 +199,8 @@
 
     <div class="pagination-info" *ngIf="totalItems() > 0">
       <span>Mostrando {{ pageStart() }} - {{ pageEnd() }} de {{ totalItems() }} campanhas</span>
-      <span class="demo-data-note">Campanhas reais; métricas estimadas até haver leitura Meta real.</span>
+      <span class="demo-data-note" *ngIf="!hasAnyRealMetrics()">{{ emptyMetricsMessage() }}</span>
+      <span class="demo-data-note" *ngIf="demoModeEnabled">Dados de demonstração</span>
     </div>
 
     <div class="sort-headers" *ngIf="filtered().length > 0">
@@ -165,23 +244,23 @@
           </div>
 
           <div class="campaign-metrics">
-            <div class="metric" *ngIf="campaign.metrics">
+            <div class="metric" *ngIf="hasRealMetrics(campaign) && campaign.metrics">
               <span class="metric-label">CTR</span>
               <span class="metric-value">{{ fmt(campaign.metrics.ctr) }}%</span>
             </div>
-            <div class="metric" *ngIf="campaign.metrics">
+            <div class="metric" *ngIf="hasRealMetrics(campaign) && campaign.metrics">
               <span class="metric-label">CPA</span>
               <span class="metric-value">{{ campaign.metrics.cpa > 0 ? fmtCurrency(campaign.metrics.cpa) : '-' }}</span>
             </div>
-            <div class="metric" *ngIf="campaign.metrics">
+            <div class="metric" *ngIf="hasRealMetrics(campaign) && campaign.metrics">
               <span class="metric-label">ROAS</span>
-              <span class="metric-value">{{ campaign.metrics.roas > 0 ? fmtPct(campaign.metrics.roas) : '-' }}</span>
+              <span class="metric-value">{{ fmtRoas(campaign.metrics.roas) }}</span>
             </div>
             <div class="metric">
               <span class="metric-label">Status</span>
               <app-ui-badge [label]="statusLabel(campaign.status)" [tone]="statusTone(campaign.status)" />
             </div>
-            <div class="metric" *ngIf="campaign.metrics">
+            <div class="metric" *ngIf="hasRealMetrics(campaign) && campaign.metrics">
               <span class="metric-label">Score</span>
               <div class="score-mini">
                 <div class="score-bar">
@@ -190,11 +269,19 @@
                 <span class="score-num" [style.color]="scoreColor(campaign.metrics.score)">{{ campaign.metrics.score }}</span>
               </div>
             </div>
+            <div class="metric" *ngIf="!hasRealMetrics(campaign)">
+              <span class="metric-label">Métricas</span>
+              <span class="metric-value">Sem dados reais</span>
+            </div>
           </div>
         </div>
 
         <div class="campaign-details" *ngIf="expanded() === campaign.id">
-          <div class="details-grid" *ngIf="campaign.metrics">
+          <p class="demo-data-note" *ngIf="!hasRealMetrics(campaign)">
+            {{ campaignMetricsMessage(campaign) }}
+          </p>
+
+          <div class="details-grid" *ngIf="hasRealMetrics(campaign) && campaign.metrics">
             <div class="detail-card">
               <div class="detail-label">Spend</div>
               <div class="detail-value">{{ fmtCurrency(campaign.metrics.spend) }}</div>
@@ -213,15 +300,19 @@
             </div>
           </div>
 
-          <div class="insights-section" *ngIf="campaign.insights && campaign.insights.length > 0">
-            <h4>Insights</h4>
+          <div class="insights-section" *ngIf="hasInsights(campaign)">
+            <h4>Insights reais</h4>
             <div class="insights-list">
-              <div class="insight-item" *ngFor="let insight of campaign.insights.slice(0, 3); trackBy: trackByTypeTitle">
+              <div class="insight-item" *ngFor="let insight of (campaign.insights || []).slice(0, 3); trackBy: trackByTypeTitle">
                 <span class="insight-type" [ngClass]="'type-' + insight.type.toLowerCase()">{{ insight.type }}</span>
-                <span class="insight-title">{{ insight.title }}</span>
+                <span class="insight-title">{{ insight.title || insight.message || insight.recommendation }}</span>
               </div>
             </div>
           </div>
+
+          <p class="demo-data-note" *ngIf="!hasInsights(campaign)">
+            Nenhum insight real encontrado para esta campanha.
+          </p>
 
           <div class="detail-actions">
             <button class="btn btn-primary" type="button" (click)="openReport(campaign, $event)">Ver relatório</button>
@@ -259,7 +350,7 @@
       type="empty"
       icon="C"
       title="Nenhuma campanha encontrada"
-      message="Ajuste os filtros ou crie uma nova campanha para este escopo."
+      message="Nenhum dado encontrado para os filtros selecionados."
     />
   </div>
 
@@ -274,25 +365,24 @@
         <button type="button" class="report-close" (click)="closeReport()">Fechar</button>
       </header>
 
-      <p class="report-source-note">Campanha real com leitura de métricas estimadas neste ambiente.</p>
+      <p class="report-source-note" *ngIf="hasRealMetrics(report)">Campanha com métricas reais disponíveis neste período.</p>
+      <p class="report-source-note" *ngIf="!hasRealMetrics(report)">Sem métricas reais disponíveis para esta campanha no período selecionado.</p>
 
-      <div class="report-kpis" *ngIf="report.metrics as metrics">
+      <div class="report-kpis" *ngIf="hasRealMetrics(report) && report.metrics as metrics">
         <article><span>Spend</span><strong>{{ fmtCurrency(metrics.spend) }}</strong></article>
-        <article><span>ROAS</span><strong>{{ metrics.roas > 0 ? fmtPct(metrics.roas) : '0' }}</strong></article>
+        <article><span>ROAS</span><strong>{{ fmtRoas(metrics.roas) }}</strong></article>
         <article><span>CPA</span><strong>{{ fmtCurrency(metrics.cpa) }}</strong></article>
         <article><span>CTR</span><strong>{{ fmt(metrics.ctr) }}%</strong></article>
-        <article><span>CPC</span><strong>{{ fmtCurrency(metrics.clicks ? metrics.spend / metrics.clicks : 0) }}</strong></article>
+        <article><span>CPC</span><strong>{{ fmtCurrency(metrics.cpc ?? (metrics.clicks ? metrics.spend / metrics.clicks : 0)) }}</strong></article>
         <article><span>Conversões</span><strong>{{ metrics.conversions }}</strong></article>
-      </div>
-
-      <div class="report-chart">
-        <h4>Gráfico de evolução</h4>
-        <app-chart chartType="line" [chartData]="campaignEvolutionChart(report)" />
       </div>
 
       <div class="report-insights">
         <h4>Insights da campanha</h4>
         <div class="report-insight" *ngFor="let insight of reportInsights(report)">{{ insight }}</div>
+        <div class="report-insight" *ngIf="!reportInsights(report).length">
+          Nenhum insight real encontrado para esta campanha.
+        </div>
       </div>
     </section>
   </div>
@@ -344,6 +434,9 @@
 
   <app-campaign-create-panel
     *ngIf="createPanelOpen()"
+    [initialMode]="createPanelMode()"
+    [resumeDraftOnOpen]="createPanelResumeDraft()"
+    [initialTarget]="createPanelInitialTarget()"
     (close)="closeCreatePanel()"
     (created)="handleCampaignCreated($event)"
   />

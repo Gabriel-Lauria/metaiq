@@ -1,0 +1,98 @@
+<section class="register-shell">
+  <div class="register-card">
+    <div class="register-header">
+      <p class="eyebrow">Cadastro beta</p>
+      <h1>Criar minha conta</h1>
+      <p>Entre no MetaIQ como conta individual e comece sua primeira campanha logo depois do cadastro.</p>
+    </div>
+
+    <div class="beta-banner" *ngIf="enablePublicRegister">
+      Voce esta usando uma versao inicial do MetaIQ.
+    </div>
+
+    <div class="beta-banner warning" *ngIf="!enablePublicRegister">
+      Cadastro indisponivel no momento.
+    </div>
+
+    <form class="register-form" [formGroup]="form" (ngSubmit)="submit()" novalidate *ngIf="enablePublicRegister">
+      <label class="field">
+        <span>Nome</span>
+        <input type="text" formControlName="name" />
+        <small *ngIf="fieldError('name')">{{ fieldError('name') }}</small>
+      </label>
+
+      <label class="field">
+        <span>Email</span>
+        <input type="email" formControlName="email" />
+        <small *ngIf="fieldError('email')">{{ fieldError('email') }}</small>
+      </label>
+
+      <label class="field">
+        <span>Senha</span>
+        <input type="password" formControlName="password" />
+        <small *ngIf="fieldError('password')">{{ fieldError('password') }}</small>
+      </label>
+
+      <label class="field">
+        <span>Confirmar senha</span>
+        <input type="password" formControlName="confirmPassword" />
+        <small *ngIf="fieldError('confirmPassword')">{{ fieldError('confirmPassword') }}</small>
+      </label>
+
+      <label class="field field-span-2">
+        <span>Nome da empresa</span>
+        <input type="text" formControlName="businessName" />
+        <small *ngIf="fieldError('businessName')">{{ fieldError('businessName') }}</small>
+      </label>
+
+      <label class="field field-span-2">
+        <span>Segmento</span>
+        <input type="text" formControlName="businessSegment" placeholder="Ex.: odontologia, varejo, servicos" />
+      </label>
+
+      <label class="field">
+        <span>Estado</span>
+        <select formControlName="defaultState">
+          <option value="">Selecione</option>
+          <option *ngFor="let state of states" [value]="state.code">{{ state.name }}</option>
+        </select>
+        <small *ngIf="fieldError('defaultState')">{{ fieldError('defaultState') }}</small>
+      </label>
+
+      <label class="field">
+        <span>Cidade</span>
+        <select formControlName="defaultCity">
+          <option value="">Selecione</option>
+          <option *ngFor="let city of cities" [value]="city.name">{{ city.name }}</option>
+        </select>
+        <small *ngIf="fieldError('defaultCity')">{{ fieldError('defaultCity') }}</small>
+      </label>
+
+      <label class="field field-span-2">
+        <span>Website opcional</span>
+        <input type="url" formControlName="website" placeholder="https://suaempresa.com.br" />
+        <small *ngIf="fieldError('website')">{{ fieldError('website') }}</small>
+      </label>
+
+      <label class="field">
+        <span>Instagram opcional</span>
+        <input type="text" formControlName="instagram" placeholder="@suaempresa" />
+      </label>
+
+      <label class="field">
+        <span>WhatsApp opcional</span>
+        <input type="text" formControlName="whatsapp" placeholder="(11) 99999-9999" />
+      </label>
+
+      <div class="message error" *ngIf="messageType === 'error' && message">{{ message }}</div>
+      <div class="message info" *ngIf="messageType === 'info' && message">{{ message }}</div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit" [disabled]="loading">
+          {{ loading ? 'Criando conta...' : 'Criar minha conta' }}
+        </button>
+        <a class="btn btn-secondary" routerLink="/auth">Entrar</a>
+      </div>
+    </form>
+  </div>
+</section>

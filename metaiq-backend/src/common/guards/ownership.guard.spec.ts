@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ExecutionContext,
   ForbiddenException,
-  NotFoundException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role } from '../enums';
@@ -37,7 +36,7 @@ describe('OwnershipGuard', () => {
       }),
     } as unknown as Reflector;
     const accessScope = {
-      canAccessResource: jest.fn().mockResolvedValue(true),
+      validateResourceAccess: jest.fn().mockResolvedValue(undefined),
     } as unknown as AccessScopeService;
     const guard = new OwnershipGuard(reflector, accessScope);
 
@@ -50,7 +49,7 @@ describe('OwnershipGuard', () => {
       ),
     ).resolves.toBe(true);
 
-    expect(accessScope.canAccessResource).toHaveBeenCalledWith(
+    expect(accessScope.validateResourceAccess).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'user-1' }),
       'metricCampaign',
       '00000000-0000-4000-8000-000000000001',
@@ -62,17 +61,17 @@ describe('OwnershipGuard', () => {
       getAllAndOverride: jest.fn().mockReturnValue(undefined),
     } as unknown as Reflector;
     const accessScope = {
-      canAccessResource: jest.fn(),
+      validateResourceAccess: jest.fn(),
     } as unknown as AccessScopeService;
     const guard = new OwnershipGuard(reflector, accessScope);
 
     await expect(
       guard.canActivate(createContext({ id: '00000000-0000-4000-8000-000000000001' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(accessScope.canAccessResource).not.toHaveBeenCalled();
+    expect(accessScope.validateResourceAccess).not.toHaveBeenCalled();
   });
 
-  it('returns the project standard not found response when resource is outside scope', async () => {
+  it('propagates forbidden when the resource exists but is outside scope', async () => {
     const reflector = {
       getAllAndOverride: jest.fn().mockReturnValue({
         resource: 'campaign',
@@ -80,13 +79,15 @@ describe('OwnershipGuard', () => {
       }),
     } as unknown as Reflector;
     const accessScope = {
-      canAccessResource: jest.fn().mockResolvedValue(false),
+      validateResourceAccess: jest
+        .fn()
+        .mockRejectedValue(new ForbiddenException('Campanha fora do escopo')),
     } as unknown as AccessScopeService;
     const guard = new OwnershipGuard(reflector, accessScope);
 
     await expect(
       guard.canActivate(createContext({ id: '00000000-0000-4000-8000-000000000002' })),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('rejects malformed resource IDs before querying ownership', async () => {
@@ -97,13 +98,13 @@ describe('OwnershipGuard', () => {
       }),
     } as unknown as Reflector;
     const accessScope = {
-      canAccessResource: jest.fn(),
+      validateResourceAccess: jest.fn(),
     } as unknown as AccessScopeService;
     const guard = new OwnershipGuard(reflector, accessScope);
 
     await expect(guard.canActivate(createContext({ id: 'not-a-uuid' }))).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(accessScope.canAccessResource).not.toHaveBeenCalled();
+    expect(accessScope.validateResourceAccess).not.toHaveBeenCalled();
   });
 });

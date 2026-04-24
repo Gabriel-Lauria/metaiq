@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { isUUID } from 'class-validator';
@@ -19,22 +19,7 @@ export class MetricsService {
 
   private engine = new MetricsEngine();
 
-  async findAllUnsafeInternal(): Promise<MetricDaily[]> {
-    return this.metricRepository.find({
-      relations: ['campaign'],
-      order: { date: 'DESC' },
-    });
-  }
-
-  async findByCampaignUnsafeInternal(campaignId: string): Promise<MetricDaily[]> {
-    return this.metricRepository.find({
-      where: { campaign: { id: campaignId } },
-      relations: ['campaign'],
-      order: { date: 'DESC' },
-    });
-  }
-
-  async getSummary(
+  async getSummaryForUser(
     user: AuthenticatedUser,
     from: Date,
     to: Date,
@@ -44,7 +29,7 @@ export class MetricsService {
     const fromStr = from.toISOString().split('T')[0];
     const toStr = to.toISOString().split('T')[0];
 
-    // Scope is applied through Campaign -> Store first, with legacy userId fallback centralized in AccessScopeService.
+    // Scope is applied through Campaign -> Store using the centralized ownership policy.
     const query = this.metricRepository
       .createQueryBuilder('m')
       .innerJoinAndSelect('m.campaign', 'campaign')
@@ -117,7 +102,7 @@ export class MetricsService {
     };
   }
 
-  async findAllPaginated(
+  async findAllPaginatedForUser(
     user: AuthenticatedUser,
     pagination: PaginationDto,
     filters: { storeId?: string } = {},
@@ -152,7 +137,7 @@ export class MetricsService {
     };
   }
 
-  async getCampaignSummaryUnsafeInternal(campaignId: string, from: string, to: string): Promise<any> {
+  async getCampaignSummaryForSystemJob(campaignId: string, from: string, to: string): Promise<any> {
     const result = await this.metricRepository
       .createQueryBuilder('m')
       .select([
@@ -203,7 +188,7 @@ export class MetricsService {
     from: string,
     to: string,
   ): Promise<any> {
-    await this.ensureCampaignInScope(user, campaignId);
+    await this.accessScope.validateCampaignAccess(user, campaignId);
 
     const query = this.metricRepository
       .createQueryBuilder('m')
@@ -257,7 +242,7 @@ export class MetricsService {
     from: string,
     to: string,
   ): Promise<MetricDaily[]> {
-    await this.ensureCampaignInScope(user, campaignId);
+    await this.accessScope.validateCampaignAccess(user, campaignId);
 
     const query = this.metricRepository
       .createQueryBuilder('m')
@@ -269,7 +254,7 @@ export class MetricsService {
     return query.getMany();
   }
 
-  async upsertDailyMetric(data: Partial<MetricDaily>): Promise<MetricDaily> {
+  async upsertDailyMetricForSystemJob(data: Partial<MetricDaily>): Promise<MetricDaily> {
     const campaignId = this.assertValidCampaignId(data.campaignId);
     const date = this.normalizeMetricDate(data.date);
     const impressions = this.assertFiniteNumber(data.impressions, 'impressions');
@@ -305,8 +290,8 @@ export class MetricsService {
     return metric;
   }
 
-  async findByCampaignPaginated(user: AuthenticatedUser, campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
-    await this.ensureCampaignInScope(user, campaignId);
+  async findByCampaignPaginatedForUser(user: AuthenticatedUser, campaignId: string, pagination: PaginationDto): Promise<PaginatedResponse<MetricDaily>> {
+    await this.accessScope.validateCampaignAccess(user, campaignId);
 
     const { page = 1, limit = 10 } = pagination;
     const skip = (page - 1) * limit;
@@ -347,12 +332,6 @@ export class MetricsService {
 
     await this.accessScope.validateStoreAccess(user, storeId);
     query.andWhere('campaign.storeId = :filterStoreId', { filterStoreId: storeId });
-  }
-
-  private async ensureCampaignInScope(user: AuthenticatedUser, campaignId: string): Promise<void> {
-    if (!(await this.accessScope.canAccessMetricCampaign(user, campaignId))) {
-      throw new NotFoundException('Recurso não encontrado');
-    }
   }
 
   private assertValidDateRange(from: Date, to: Date): void {

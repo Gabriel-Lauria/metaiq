@@ -81,6 +81,66 @@ export class MetaGraphApiClient {
     }
   }
 
+  async postMultipart<T>(
+    path: string,
+    accessToken: string,
+    files: Record<string, { filename: string; contentType: string; buffer: Buffer }>,
+    timeout = 30000,
+  ): Promise<T> {
+    const url = this.resolveUrl(path);
+    const form = new FormData();
+
+    for (const [fieldName, file] of Object.entries(files)) {
+      form.append(fieldName, new Blob([file.buffer], { type: file.contentType }), file.filename);
+    }
+
+    form.append('access_token', accessToken);
+
+    try {
+      this.logger.log(
+        JSON.stringify({
+          event: 'META_GRAPH_POST_MULTIPART_REQUEST',
+          method: 'POST',
+          url,
+          files: Object.fromEntries(
+            Object.entries(files).map(([fieldName, file]) => [
+              fieldName,
+              { filename: file.filename, contentType: file.contentType, sizeBytes: file.buffer.byteLength },
+            ]),
+          ),
+        }),
+      );
+
+      const response = await axios.post(url, form, {
+        timeout,
+      });
+
+      this.logger.log(
+        JSON.stringify({
+          event: 'META_GRAPH_POST_MULTIPART_RESPONSE',
+          method: 'POST',
+          url,
+          response: this.sanitizeResponseData(response.data),
+        }),
+      );
+
+      return response.data as T;
+    } catch (error) {
+      this.logAxiosError(
+        'POST',
+        url,
+        Object.fromEntries(
+          Object.entries(files).map(([fieldName, file]) => [
+            fieldName,
+            { filename: file.filename, contentType: file.contentType, sizeBytes: file.buffer.byteLength },
+          ]),
+        ),
+        error,
+      );
+      throw error;
+    }
+  }
+
   async delete<T>(
     path: string,
     accessToken: string,

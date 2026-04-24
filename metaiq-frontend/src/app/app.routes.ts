@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { accountTypeGuard } from './core/guards/account-type.guard';
 import { roleGuard } from './core/guards/role.guard';
 import { Role } from './core/models';
 
@@ -12,15 +13,25 @@ const ALL_AUTHENTICATED_ROLES = [
 ];
 
 export const routes: Routes = [
-  { path: '', redirectTo: '/dashboard', pathMatch: 'full', data: { roles: [] } },
+  {
+    path: '',
+    loadComponent: () => import('./features/landing/landing.component').then((m) => m.LandingComponent),
+    pathMatch: 'full',
+    data: { roles: [] },
+  },
   {
     path: 'auth',
     loadComponent: () => import('./features/auth/auth.component').then((m) => m.AuthComponent),
     data: { roles: [] },
   },
   {
+    path: 'register',
+    loadComponent: () => import('./features/register/register.component').then((m) => m.RegisterComponent),
+    data: { roles: [] },
+  },
+  {
     path: 'dashboard',
-    loadComponent: () => import('./features/metrics/metrics.component').then((m) => m.MetricsComponent),
+    loadComponent: () => import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
     canActivate: [authGuard, roleGuard],
     data: { roles: ALL_AUTHENTICATED_ROLES },
   },
@@ -51,20 +62,20 @@ export const routes: Routes = [
   {
     path: 'admin/managers',
     loadComponent: () => import('./features/managers/managers.component').then((m) => m.ManagersComponent),
-    canActivate: [authGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN] },
+    canActivate: [authGuard, accountTypeGuard, roleGuard],
+    data: { roles: [Role.PLATFORM_ADMIN], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
   },
   {
     path: 'manager/stores',
     loadComponent: () => import('./features/stores/stores.component').then((m) => m.StoresComponent),
-    canActivate: [authGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER] },
+    canActivate: [authGuard, accountTypeGuard, roleGuard],
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
   },
   {
     path: 'manager/users',
     loadComponent: () => import('./features/users/users.component').then((m) => m.UsersComponent),
-    canActivate: [authGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER] },
+    canActivate: [authGuard, accountTypeGuard, roleGuard],
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
   },
   {
     path: 'manager/integrations',
@@ -72,5 +83,11 @@ export const routes: Routes = [
     canActivate: [authGuard, roleGuard],
     data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL] },
   },
-  { path: '**', redirectTo: '/dashboard', data: { roles: [] } },
+  {
+    path: 'my-company',
+    loadComponent: () => import('./features/my-company/my-company.component').then((m) => m.MyCompanyComponent),
+    canActivate: [authGuard, accountTypeGuard, roleGuard],
+    data: { roles: ALL_AUTHENTICATED_ROLES, allowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/dashboard' },
+  },
+  { path: '**', redirectTo: '/', data: { roles: [] } },
 ];

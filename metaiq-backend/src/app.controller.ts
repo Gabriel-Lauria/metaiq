@@ -1,53 +1,50 @@
 import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { CurrentUser } from './common/decorators/current-user.decorator';
 
 @Controller()
 export class AppController {
-  constructor(
-    private readonly dataSource: DataSource,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   @Get('/health')
   health() {
-    return {
-      status: 'ok',
-      service: 'metaiq-backend',
-      environment: this.configService.get<string>('app.nodeEnv'),
-      db: this.configService.get<string>('database.type'),
-      uptimeSeconds: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-    };
+    return { status: 'ok' };
+  }
+
+  @Get('/live')
+  live() {
+    return { status: 'alive' };
   }
 
   @Get('/ready')
   async ready() {
+    const checks = {
+      database: {
+        status: 'unknown',
+        latencyMs: 0,
+      },
+    };
+
     if (!this.dataSource.isInitialized) {
-      throw new ServiceUnavailableException('Database connection is not initialized');
+      throw new ServiceUnavailableException({ status: 'not_ready' });
     }
 
     try {
       await this.dataSource.query('SELECT 1');
     } catch {
-      throw new ServiceUnavailableException('Database readiness check failed');
+      throw new ServiceUnavailableException({ status: 'not_ready' });
     }
 
-    return {
-      status: 'ready',
-      db: this.configService.get<string>('database.type'),
-      timestamp: new Date().toISOString(),
-    };
+    void checks;
+    return { status: 'ready' };
   }
 
   @Get('/api')
   api() {
     return {
-      message: 'MetaIQ Backend API',
-      version: '1.0.0',
-      endpoints: ['/api/health', '/api/campaigns', '/api/metrics', '/api/auth'],
+      name: 'MetaIQ Backend API',
+      status: 'ok',
     };
   }
 

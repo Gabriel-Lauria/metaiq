@@ -40,7 +40,7 @@ export class InsightsController {
     @Query('resolved') resolved?: string,
     @Query('storeId') storeId?: string,
   ): Promise<Insight[]> {
-    return this.insightsService.findAllByUser(user, {
+    return this.insightsService.findAllForUser(user, {
       campaignId,
       storeId,
       type,
@@ -62,7 +62,7 @@ export class InsightsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Insight> {
-    return this.insightsService.findOneByUser(id, user);
+    return this.insightsService.findOneForUser(user, id);
   }
 
   /**
@@ -79,6 +79,6 @@ export class InsightsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<Insight> {
     this.logger.log(`Insight ${id} marcado como resolvido por usuário ${user.id}`);
-    return this.insightsService.resolveInsightByUser(id, user);
+    return this.insightsService.resolveForUser(user, id);
   }
 }

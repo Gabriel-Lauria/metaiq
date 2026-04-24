@@ -34,9 +34,10 @@ const getEnv = (...names: string[]): string | undefined => {
 
 const commonOptions = {
   entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation],
-  migrations: ['src/migrations/*{.ts,.js}'],
+  migrations: ['src/migrations/[0-9]*-*.{ts,js}'],
   synchronize: false,
   logging: parseBoolean(process.env.TYPEORM_LOGGING, false),
+  migrationsTransactionMode: 'all' as const,
 };
 
 const databaseType = getEnv('DB_TYPE', 'DATABASE_TYPE') || 'postgres';

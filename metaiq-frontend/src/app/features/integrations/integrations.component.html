@@ -2,9 +2,9 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Integrações</h1>
-      <p class="page-subtitle">Conecte a Meta, sincronize contas e configure a página padrão da store.</p>
+      <p class="page-subtitle">{{ isIndividualAccount() ? 'Conecte sua conta Meta, escolha sua pagina e sincronize sua conta de anuncio.' : 'Conecte a Meta, sincronize contas e configure a pagina padrao da store.' }}</p>
       <p class="selected-store" *ngIf="selectedStore()">
-        Loja selecionada: <strong>{{ selectedStore()?.name }}</strong>
+        {{ isIndividualAccount() ? 'Conta ativa:' : 'Loja selecionada:' }} <strong>{{ selectedStore()?.name }}</strong>
       </p>
     </div>
     <button class="btn btn-secondary" type="button" (click)="load()" [disabled]="loading()">Atualizar</button>
@@ -14,7 +14,7 @@
     *ngIf="loading()"
     type="loading"
     title="Carregando integração..."
-    message="Buscando dados da integração e das lojas."
+    [message]="isIndividualAccount() ? 'Buscando os dados da sua conta Meta.' : 'Buscando dados da integracao e das lojas.'"
   />
 
   <app-ui-state
@@ -30,12 +30,12 @@
     *ngIf="!loading() && !error() && !stores().length"
     type="empty"
     icon="🏬"
-    title="Nenhuma loja disponível"
-    message="Adicione uma loja à empresa para iniciar a integração com a Meta Ads."
+    [title]="isIndividualAccount() ? 'Nenhuma empresa disponível' : 'Nenhuma loja disponível'"
+    [message]="isIndividualAccount() ? 'A conta ainda não tem uma empresa ativa para conectar com a Meta Ads.' : 'Adicione uma loja à empresa para iniciar a integração com a Meta Ads.'"
   />
 
   <div class="integration-layout" *ngIf="!loading() && !error() && stores().length">
-    <aside class="store-panel">
+    <aside class="store-panel" *ngIf="!isIndividualAccount()">
       <div class="panel-header">
         <div>
           <h2>Lojas</h2>
@@ -68,7 +68,7 @@
         <div class="card-header">
           <div>
             <span class="card-pretitle">Meta Ads</span>
-            <h2>Integração da store</h2>
+            <h2>{{ isIndividualAccount() ? 'Minha conta Meta' : 'Integracao da store' }}</h2>
           </div>
           <app-ui-badge
             [label]="statusLabel(selectedIntegration()?.status)"
@@ -131,10 +131,6 @@
           </button>
         </div>
 
-        <div class="card-role-hint" *ngIf="isManager()">
-          Operação realizada pelo time.
-        </div>
-
         <div class="card-role-hint" *ngIf="isClient()">
           Dados conectados automaticamente.
         </div>
@@ -144,7 +140,7 @@
         <div class="section-header">
           <div>
             <h3>Contas de anúncio</h3>
-            <p>Veja as contas vinculadas à store conectada.</p>
+        <p>{{ isIndividualAccount() ? 'Veja as contas vinculadas a sua empresa.' : 'Veja as contas vinculadas a store conectada.' }}</p>
           </div>
         </div>
 
@@ -178,8 +174,8 @@
       <section class="page-configuration-section" *ngIf="selectedIntegration()?.status === 'CONNECTED'">
         <div class="section-header">
           <div>
-            <h3>Página da store</h3>
-            <p>Defina a página padrão usada na criação de campanhas.</p>
+            <h3>{{ isIndividualAccount() ? 'Página principal' : 'Página da store' }}</h3>
+            <p>{{ isIndividualAccount() ? 'Defina a página usada na criação das suas campanhas.' : 'Defina a página padrão usada na criação de campanhas.' }}</p>
           </div>
         </div>
 
@@ -192,7 +188,7 @@
             <ng-template #pageMissing>
               <strong>Selecione uma página para liberar a criação de campanhas</strong>
             </ng-template>
-            <small *ngIf="hasConfiguredPage()">Essa página será usada no módulo de campanhas.</small>
+            <small *ngIf="hasConfiguredPage()">{{ isIndividualAccount() ? 'Essa página será usada ao criar campanhas.' : 'Essa página será usada no módulo de campanhas.' }}</small>
             <small *ngIf="!hasConfiguredPage()">A Meta exige uma página vinculada para criar o creative da campanha.</small>
           </div>
 
@@ -243,7 +239,7 @@
         <div class="section-header">
           <div>
             <h3>Próximo passo</h3>
-            <p>Depois de conectar, sincronizar e configurar a página, a criação continua em Campanhas.</p>
+            <p>{{ isIndividualAccount() ? 'Depois de conectar, sincronizar e configurar a página, você já pode criar campanhas.' : 'Depois de conectar, sincronizar e configurar a página, a criação continua em Campanhas.' }}</p>
           </div>
         </div>
 
@@ -254,7 +250,7 @@
               {{ hasConfiguredPage() ? 'Criação centralizada na área de campanhas' : 'Finalize a configuração para liberar a criação' }}
             </strong>
             <small>
-              O builder de campanha agora fica no módulo de Campanhas com revisão, preview e operação.
+              {{ isIndividualAccount() ? 'O builder já abre com a empresa certa selecionada.' : 'O builder de campanha agora fica no módulo de Campanhas com revisão, preview e operação.' }}
             </small>
           </div>
 

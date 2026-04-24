@@ -1,11 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isUUID } from 'class-validator';
 import { AccessScopeService } from '../services/access-scope.service';
@@ -60,11 +53,7 @@ export class OwnershipGuard implements CanActivate {
       throw new BadRequestException('ID do recurso deve ser um UUID válido');
     }
 
-    const hasAccess = await this.accessScope.canAccessResource(user, metadata.resource, id);
-    if (!hasAccess) {
-      throw new NotFoundException(`Recurso não encontrado`);
-    }
-
+    await this.accessScope.validateResourceAccess(user, metadata.resource, id);
     return true;
   }
 }

@@ -2,45 +2,32 @@
   <section class="create-panel" role="dialog" aria-modal="true" aria-labelledby="campaign-builder-title" (click)="$event.stopPropagation()" (scroll)="onMainScroll($event)">
     <header class="builder-header">
       <div class="builder-hero">
-        <div class="hero-copy">
-          <span class="panel-eyebrow">Builder avançado</span>
-          <h2 id="campaign-builder-title">Crie campanhas com mais clareza, menos ruído e revisão real</h2>
-          <p>O fluxo continua conectado ao backend atual da Meta, mas agora com preenchimento mais guiado, IA por prompt e revisão contínua.</p>
-        </div>
-      </div>
-
-      <div class="builder-status-strip">
-        <div class="status-strip-copy">
-          <span class="section-kicker">Leitura operacional</span>
-          <strong>{{ blockerMessage() }}</strong>
-          <p>
-            Se preferir, siga direto para
-            <button type="button" class="link-btn inline-link" (click)="scrollToSection(firstBlockingSectionId())">
-              {{ nextPendingSection().label }}
-            </button>
-            e continue a partir do ponto mais crítico.
-          </p>
-        </div>
-
-        <div class="status-strip-actions">
-          <span class="hero-chip">{{ progressPercent() }}% concluído</span>
-          <button class="btn btn-secondary" type="button" (click)="scrollToSection(firstBlockingSectionId())">Ir para bloqueio</button>
-          <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-            {{ submitting() ? 'Criando na Meta...' : 'Criar na Meta' }}
-          </button>
+        <div class="builder-hero-row">
+          <h2 id="campaign-builder-title">{{ panelTitle() }}</h2>
+          <div class="header-actions">
+            <div class="mode-toggle" role="tablist" aria-label="Selecionar modo de criação">
+              <button class="mode-toggle-btn" type="button" [class.active]="creationEntryMode() === 'manual'" (click)="switchToManualMode()">Manual</button>
+              <button class="mode-toggle-btn" type="button" [class.active]="creationEntryMode() === 'ai'" (click)="switchToAiMode()">Usar IA</button>
+            </div>
+            <span class="hero-chip">{{ builderModeIndicator() }}</span>
+          </div>
         </div>
       </div>
 
       <div class="toolbar-secondary">
-        <button class="btn btn-secondary" type="button" (click)="focusAiSection()">Criar com IA</button>
-        <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+        <label class="help-toggle">
+          <input type="checkbox" [checked]="detailedHelpEnabled()" (change)="detailedHelpEnabled.set(!detailedHelpEnabled())" />
+          <span>Ajuda detalhada</span>
+        </label>
+        <button class="btn btn-secondary" type="button" (click)="openAdvancedBuilder()">
+          {{ creationMode() === 'advanced' ? 'Configurações avançadas abertas' : 'Mostrar configurações avançadas' }}
+        </button>
+        <button class="btn btn-secondary" type="button" *ngIf="creationMode() === 'advanced'" (click)="openLiteEditor()">Voltar ao essencial</button>
         <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
-        <button class="btn btn-secondary" type="button" (click)="goToNextPendingSection()">Próxima pendência</button>
-        <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar agora</button>
-        <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Ir para Integrações</button>
+        <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Integrações</button>
       </div>
 
-      <nav class="builder-nav">
+      <nav class="builder-nav" *ngIf="creationMode() === 'advanced'">
         <button
           type="button"
           class="nav-pill"
@@ -51,6 +38,15 @@
           {{ section.label }}
         </button>
       </nav>
+
+      <!-- FASE 7.1: Step-by-step stepper (quando habilitado) -->
+      <div class="step-flow-stepper-container" *ngIf="stepFlowEnabled()">
+        <app-campaign-builder-stepper
+          [steps]="stepperItems()"
+          [currentStepIndex]="0"
+          (stepSelected)="jumpToStep($event)"
+        ></app-campaign-builder-stepper>
+      </div>
     </header>
 
     <div class="panel-grid">
@@ -59,60 +55,44 @@
           <div class="context-banner-card is-loading" *ngIf="loadingContext()">
             <div class="banner-spinner" aria-hidden="true"></div>
             <div>
-              <strong>Preparando contexto da store</strong>
-              <p>Carregando integração Meta, página configurada e contas disponíveis para reduzir atrito no envio.</p>
+              <strong>Carregando dados da store</strong>
+              <p>Preparando integração, página e contas disponíveis.</p>
             </div>
           </div>
 
           <div class="context-banner-card is-error" *ngIf="contextError()">
             <div class="banner-icon" aria-hidden="true">!</div>
             <div>
-              <strong>O contexto de criação precisa de atenção</strong>
+              <strong>Algo precisa ser corrigido</strong>
               <p>{{ contextError() }}</p>
             </div>
-            <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Resolver em Integrações</button>
+            <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Resolver</button>
           </div>
         </section>
 
-        <section class="section-block status-block">
+        <section class="section-block problems-block" *ngIf="hasCampaignProblems() && showPreviewSidebar()">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">Prontidão</span>
-              <h3>Nome da campanha em edição</h3>
+              <h3>Problemas na campanha</h3>
             </div>
-            <app-ui-badge
-              [label]="canSubmit() ? 'Pronta para envio' : 'Revisão pendente'"
-              [tone]="canSubmit() ? 'success' : 'warning'"
-            />
+            <app-ui-badge label="Revisão necessária" tone="danger" />
           </div>
-
-            <div class="editing-name-card">
-              <strong>{{ state.campaign.name || 'Sem nome definido ainda' }}</strong>
-              <p>{{ blockerMessage() }}</p>
-              <div class="summary-chip-row">
-                <span class="summary-chip">{{ selectedObjectiveLabel() }}</span>
-                <span class="summary-chip">{{ destinationSummary() }}</span>
-                <span class="summary-chip">{{ formatCurrency(state.budget.value) }}</span>
-              </div>
-              <div class="inline-next-step">
-                <span>Próximo foco:</span>
-                <button type="button" class="link-btn" (click)="goToNextPendingSection()">{{ nextPendingSection().label }}</button>
-              </div>
+          <div class="problems-list">
+            <div class="problem-group">
+              <strong>Erros obrigatórios</strong>
+              <div class="problem-item" *ngFor="let issue of campaignProblems()">{{ issue }}</div>
             </div>
-
-          <div class="review-checklist compact">
-            <div class="review-item" *ngFor="let item of readinessItems(); trackBy: trackByValue" [class.done]="item.done">
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.done ? 'OK' : 'Pendente' }}</span>
+            <div class="problem-group warnings" *ngIf="hasCampaignWarnings()">
+              <strong>Avisos</strong>
+              <div class="warning-item-inline" *ngFor="let warning of campaignWarnings()">{{ warning }}</div>
             </div>
           </div>
         </section>
 
-        <section class="section-block ai-section" id="builder-ai">
+        <section class="section-block ai-section ai-entry-section" id="builder-ai" *ngIf="shouldShowAiEntry()">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">IA por prompt</span>
-              <h3>Descreva a campanha em linguagem natural</h3>
+              <h3>Briefing IA</h3>
             </div>
             <div class="section-badges">
               <app-ui-badge [label]="sectionModeLabel('builder-ai')" [tone]="sectionTone('builder-ai')" />
@@ -121,7 +101,6 @@
           </div>
 
           <div class="ai-section-intro">
-            <p>Use a IA para ganhar velocidade no primeiro preenchimento. Ela ajuda com nome, público, estratégia, copy e orçamento, sem alterar o payload real compatível com o backend.</p>
             <div class="prompt-presets">
               <button class="prompt-preset" type="button" *ngFor="let preset of aiPromptPresets" (click)="applyPromptPreset(preset)">
                 {{ preset }}
@@ -140,54 +119,364 @@
               ></textarea>
             </label>
 
-            <div class="ai-sidecards">
-              <article class="ai-tip-card" [class.is-busy]="aiSuggesting()">
-                <span>Preenche melhor quando você cita</span>
-                <strong>objetivo, público, orçamento, destino e CTA</strong>
-              </article>
-              <article class="ai-tip-card" [class.is-busy]="aiSuggesting()">
-                <span>Melhora a revisão final</span>
-                <strong>nome da campanha, criativo e UTMs já saem mais coerentes</strong>
-              </article>
-              <article class="ai-tip-card ai-summary-card" *ngIf="state.ui.aiLastSummary" [class.is-busy]="aiSuggesting()">
-                <span>Leitura do briefing</span>
-                <strong>{{ state.ui.aiLastSummary }}</strong>
-              </article>
+            <div class="field-grid field-span-2">
+              <label class="form-field">
+                <span>Objetivo comercial</span>
+                <input type="text" [(ngModel)]="state.ui.aiGoal" (ngModelChange)="touchState()" maxlength="120" placeholder="Ex.: vender no WhatsApp" />
+              </label>
+              <label class="form-field">
+                <span>Estágio do funil</span>
+                <select [(ngModel)]="state.ui.aiFunnelStage" (ngModelChange)="touchState()">
+                  <option *ngFor="let option of aiFunnelStageOptions" [value]="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span>Orçamento</span>
+                <input type="number" [(ngModel)]="state.ui.aiBudget" (ngModelChange)="touchState()" min="1" placeholder="R$ por dia ou campanha" />
+              </label>
+              <label class="form-field">
+                <span>Duração em dias</span>
+                <input type="number" [(ngModel)]="state.ui.aiDurationDays" (ngModelChange)="touchState()" min="1" max="365" placeholder="Ex.: 7" />
+              </label>
+              <label class="form-field">
+                <span>Destino preferido</span>
+                <select [(ngModel)]="state.ui.aiDestinationType" (ngModelChange)="touchState()">
+                  <option *ngFor="let option of aiDestinationOptions" [value]="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span>Região</span>
+                <input type="text" [(ngModel)]="state.ui.aiRegion" (ngModelChange)="touchState()" maxlength="120" placeholder="Ex.: Curitiba" />
+              </label>
+              <label class="form-field">
+                <span>Oferta principal</span>
+                <input type="text" [(ngModel)]="state.ui.aiPrimaryOffer" (ngModelChange)="touchState()" maxlength="180" placeholder="Ex.: banho e tosa com agendamento" />
+              </label>
+              <label class="form-field">
+                <span>Contexto extra</span>
+                <input type="text" [(ngModel)]="state.ui.aiExtraContext" (ngModelChange)="touchState()" maxlength="1200" placeholder="Diferenciais, restrições ou sazonalidade" />
+              </label>
             </div>
           </div>
 
-          <div class="ai-detected-fields" *ngIf="state.ui.aiDetectedFields.length">
-            <span class="section-kicker">Campos entendidos pela IA</span>
-            <div class="token-list">
-              <span class="token" *ngFor="let field of aiDetectedFieldsPreview()">{{ field }}</span>
-              <span class="token token-muted" *ngIf="state.ui.aiDetectedFields.length > aiDetectedFieldsPreview().length">
-                +{{ state.ui.aiDetectedFields.length - aiDetectedFieldsPreview().length }} campos
-              </span>
+          <div class="ai-detected-fields" *ngIf="state.ui.aiLastSummary || state.ui.aiConfidence !== null || state.ui.aiGeoPendingNotice">
+            <div class="token-list" *ngIf="state.ui.aiLastSummary">
+              <span class="token token-muted">Resumo</span>
+              <span class="token">{{ state.ui.aiLastSummary }}</span>
             </div>
-          </div>
-
-          <div class="ai-detected-fields" *ngIf="state.ui.aiCreativeIdeas.length">
-            <span class="section-kicker">Ideias de criativo</span>
-            <div class="token-list">
-              <span class="token" *ngFor="let idea of state.ui.aiCreativeIdeas">{{ idea }}</span>
+            <div class="token-list" *ngIf="state.ui.aiConfidence !== null">
+              <span class="token token-muted">Confiança</span>
+              <span class="token">{{ state.ui.aiConfidence }}/100</span>
+            </div>
+            <div class="token-list" *ngIf="state.ui.aiGeoPendingNotice">
+              <span class="token token-muted">{{ state.ui.aiGeoPendingNotice }}</span>
             </div>
           </div>
 
           <div class="ai-actions">
-            <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar prompt</button>
+            <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar</button>
             <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
-              {{ aiSuggesting() ? 'Gerando com IA...' : 'Gerar com IA' }}
+              {{ aiSuggesting() ? 'Gerando...' : 'Gerar sugestão' }}
             </button>
           </div>
 
           <div class="ai-processing-card" *ngIf="aiSuggesting()">
             <div class="banner-spinner" aria-hidden="true"></div>
             <div>
-              <strong>Estruturando briefing e sugerindo campanha</strong>
-              <p>A IA está traduzindo seu texto em objetivo, público, criativo e rastreamento sem sobrescrever campos que você já ajustou manualmente.</p>
+              <strong>Gerando sugestão</strong>
+              <p>A IA está montando a primeira versão da campanha.</p>
             </div>
           </div>
         </section>
+
+        <section class="section-block ai-result-section" id="builder-ai-result" *ngIf="creationMode() === 'ai-result' && state.ui.aiLastSuggestion as suggestion">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">Sugestão da IA</span>
+              <h3>Revise a primeira versão antes de aplicar ao rascunho</h3>
+            </div>
+            <div class="section-badges">
+              <app-ui-badge [label]="state.ui.aiConfidence !== null ? 'Confiança ' + state.ui.aiConfidence + '/100' : 'Confiança pendente'" tone="info" />
+              <app-ui-badge *ngIf="state.ui.aiUsedFallback" label="Fallback" tone="warning" />
+            </div>
+          </div>
+
+          <div class="ai-result-hero">
+            <div>
+              <span class="section-kicker">Nome sugerido</span>
+              <strong>{{ suggestion.campaign.campaignName }}</strong>
+              <p>{{ suggestion.review.summary }}</p>
+            </div>
+            <div class="ai-result-actions">
+              <button class="btn btn-primary" type="button" (click)="applyCurrentAiSuggestion()">Usar essa sugestão</button>
+              <button class="btn btn-secondary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
+                {{ aiSuggesting() ? 'Gerando...' : 'Gerar outra versão' }}
+              </button>
+              <button class="btn btn-secondary" type="button" (click)="adjustSuggestionBeforeUse()">Ajustar briefing</button>
+            </div>
+          </div>
+
+          <div class="ai-result-grid">
+            <article class="ai-result-card">
+              <span>Objetivo</span>
+              <strong>{{ suggestion.campaign.objective }}</strong>
+            </article>
+            <article class="ai-result-card">
+              <span>Objetivo comercial</span>
+              <strong>{{ suggestion.planner.goal || 'Pendente de revisão' }}</strong>
+            </article>
+            <article class="ai-result-card">
+              <span>Orçamento sugerido</span>
+              <strong>{{ suggestion.campaign.budget.amount ? formatCurrency(suggestion.campaign.budget.amount) + ' / ' + (suggestion.campaign.budget.type === 'daily' ? 'dia' : 'campanha') : 'Pendente de revisão' }}</strong>
+            </article>
+            <article class="ai-result-card">
+              <span>Funil</span>
+              <strong>{{ suggestion.planner.funnelStage || 'Pendente de revisão' }}</strong>
+            </article>
+            <article class="ai-result-card">
+              <span>Público e intenção</span>
+              <strong>{{ suggestion.planner.audienceIntent }}</strong>
+            </article>
+            <article class="ai-result-card">
+              <span>Destino</span>
+              <strong>{{ suggestion.creative.destinationUrl || 'Pendente de revisão' }}</strong>
+            </article>
+          </div>
+
+          <div class="ai-copy-panel">
+            <span class="section-kicker">Mensagem principal</span>
+            <p>{{ suggestion.creative.primaryText }}</p>
+            <strong>CTA: {{ formatCtaForDisplay(suggestion.creative.cta || '') || previewCta() }}</strong>
+          </div>
+
+          <div class="ai-detected-fields" *ngIf="suggestion.creative.imageSuggestion">
+            <span class="section-kicker">Sugestão de imagem</span>
+            <div class="token-list">
+              <span class="token">{{ suggestion.creative.imageSuggestion }}</span>
+            </div>
+          </div>
+
+          <div class="ai-result-columns">
+            <div class="ai-detected-fields" *ngIf="suggestion.review.strengths.length">
+              <span class="section-kicker">Pontos fortes</span>
+              <div class="token-list"><span class="token" *ngFor="let item of suggestion.review.strengths">{{ item }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="suggestion.planner.assumptions.length">
+              <span class="section-kicker">Dados assumidos</span>
+              <div class="token-list"><span class="token" *ngFor="let item of suggestion.planner.assumptions">{{ item }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="suggestion.planner.missingInputs.length">
+              <span class="section-kicker">Informações faltantes</span>
+              <div class="token-list"><span class="token token-muted" *ngFor="let item of suggestion.planner.missingInputs">{{ item }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="state.ui.aiGeoPendingNotice">
+              <span class="section-kicker">Pendência geográfica</span>
+              <div class="token-list"><span class="token token-muted">{{ state.ui.aiGeoPendingNotice }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="suggestion.review.risks.length">
+              <span class="section-kicker">Riscos</span>
+              <div class="token-list"><span class="token token-muted" *ngFor="let item of suggestion.review.risks">{{ item }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="suggestion.review.recommendations.length">
+              <span class="section-kicker">Recomendações</span>
+              <div class="token-list"><span class="token token-muted" *ngFor="let item of suggestion.review.recommendations">{{ item }}</span></div>
+            </div>
+            <div class="ai-detected-fields" *ngIf="state.ui.aiIgnoredFields.length">
+              <span class="section-kicker">Campos ignorados por segurança</span>
+              <div class="token-list"><span class="token token-muted" *ngFor="let item of state.ui.aiIgnoredFields">{{ item }}</span></div>
+            </div>
+          </div>
+
+          <div class="ai-detected-fields" *ngIf="suggestion.validation as validation">
+            <span class="section-kicker">Validação da campanha</span>
+            <div class="score-summary-card" [attr.data-tone]="scoreTone(validation.qualityScore)">
+              <div class="score-summary-header">
+                <div>
+                  <span>Qualidade IA</span>
+                  <strong>{{ validation.qualityScore }}/100</strong>
+                </div>
+                <app-ui-badge [label]="aiValidationStatusLabel()" [tone]="aiValidationTone()" />
+              </div>
+              <div class="score-summary-bar" aria-hidden="true">
+                <span [style.width.%]="validation.qualityScore" [style.background]="scoreColor(validation.qualityScore)"></span>
+              </div>
+              <p>{{ qualityScoreDetail() }}</p>
+            </div>
+            <div class="token-list" *ngIf="validation.blockingIssues.length">
+              <span class="token token-muted">Blocking issues</span>
+              <span class="token token-muted" *ngFor="let item of validation.blockingIssues">{{ item }}</span>
+            </div>
+            <div class="token-list" *ngIf="validation.warnings.length">
+              <span class="token token-muted">Warnings</span>
+              <span class="token" *ngFor="let item of validation.warnings">{{ item }}</span>
+            </div>
+            <div class="token-list" *ngIf="validation.recommendations.length">
+              <span class="token token-muted">Melhorias recomendadas</span>
+              <span class="token" *ngFor="let item of validation.recommendations">{{ item }}</span>
+            </div>
+          </div>
+
+          <p class="compatibility-note" *ngIf="suggestion.planner.assumptions.length || suggestion.planner.missingInputs.length">
+            Algumas informações foram assumidas pela IA. Revise antes de enviar.
+          </p>
+          <p class="compatibility-note" *ngIf="state.ui.aiValidationStale">
+            A validação pode não refletir as alterações recentes.
+          </p>
+          <p class="compatibility-note">Esta sugestão ainda não cria nada na Meta. Ela só preenche o rascunho quando você clicar em usar essa sugestão.</p>
+        </section>
+
+        <section class="section-block edit-lite-section" id="builder-lite" *ngIf="creationMode() === 'edit-lite' || creationMode() === 'advanced'">
+          <div class="section-heading">
+            <div>
+              <h3>Configuração</h3>
+            </div>
+            <div class="section-inline-actions">
+              <button class="btn btn-secondary btn-ai-toggle" type="button" (click)="switchToAiMode()">{{ assistantCtaLabel() }}</button>
+            </div>
+          </div>
+
+          <div class="builder-subsection">
+            <div class="field-grid">
+              <label class="form-field field-span-2" [class.invalid]="fieldInvalid('campaign.name')">
+                <span>Nome</span>
+                <input type="text" [(ngModel)]="state.campaign.name" (ngModelChange)="touchState()" (blur)="markFieldTouched('campaign.name')" maxlength="120" />
+              </label>
+
+              <label class="form-field">
+                <span>Objetivo
+                  <button class="field-tooltip" type="button" aria-label="Ajuda sobre objetivo">
+                    ?
+                    <span class="tooltip-bubble">Leva pessoas para seu site. Ideal para cliques, não conversões diretas.</span>
+                  </button>
+                </span>
+                <select [ngModel]="state.campaign.objective" (ngModelChange)="selectObjective($event)">
+                  <option *ngFor="let option of objectiveOptions; trackBy: trackByValue" [value]="option.value">{{ option.label }}</option>
+                </select>
+                <small *ngIf="detailedHelpEnabled()">Escolha o resultado principal esperado para a campanha.</small>
+              </label>
+
+              <label class="form-field">
+                <span>Conta</span>
+                <select [(ngModel)]="state.identity.adAccountId" (ngModelChange)="touchState()" [disabled]="loadingContext() || !internalAdAccounts().length">
+                  <option value="" disabled>Selecione uma conta sincronizada</option>
+                  <option *ngFor="let account of internalAdAccounts(); trackBy: trackByValue" [value]="account.id">
+                    {{ account.name }} · {{ account.externalId || account.metaId || account.id }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="form-field">
+                <span>Orçamento</span>
+                <input type="number" [(ngModel)]="state.budget.value" (ngModelChange)="touchState()" min="1" step="10" />
+              </label>
+
+              <label class="form-field">
+                <span>País</span>
+                <input type="text" [ngModel]="state.audience.country" (ngModelChange)="setCountry($event)" maxlength="2" />
+              </label>
+
+              <label class="form-field">
+                <span>Estado</span>
+                <select [ngModel]="state.audience.state" (ngModelChange)="selectAudienceState($event)" [disabled]="loadingIbgeStates()">
+                  <option value="">Selecione a UF</option>
+                  <option *ngFor="let option of ibgeStates(); trackBy: trackByValue" [value]="option.code">
+                    {{ option.name }} · {{ option.code }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="form-field">
+                <span>Cidade</span>
+                <select [ngModel]="state.audience.cityId || ''" (ngModelChange)="selectAudienceCity($event)" [disabled]="!state.audience.state || loadingIbgeCities()">
+                  <option value="">{{ loadingIbgeCities() ? 'Carregando cidades...' : 'Selecione a cidade' }}</option>
+                  <option *ngFor="let option of ibgeCities(); trackBy: trackByValue" [value]="option.id">
+                    {{ option.name }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="form-field field-span-2">
+                <span>Interesses
+                  <button class="field-tooltip" type="button" aria-label="Ajuda sobre interesses">
+                    ?
+                    <span class="tooltip-bubble">Defina quem você quer alcançar. Misture intenção, nicho e contexto local.</span>
+                  </button>
+                </span>
+                <input type="text" [(ngModel)]="state.audience.interests" (ngModelChange)="touchState()" placeholder="Interesses, intenção ou público principal" />
+                <small *ngIf="detailedHelpEnabled()">Ex.: donos de pet, empresários locais, interesse em recuperação tributária.</small>
+              </label>
+            </div>
+
+            <div class="field-hint" *ngIf="ibgeError()">{{ ibgeError() }}</div>
+          </div>
+
+          <div class="builder-subsection">
+            <div class="subsection-heading">
+              <h4>Criativo</h4>
+            </div>
+
+            <div class="field-grid">
+              <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.message')">
+                <span>Mensagem</span>
+                <textarea [(ngModel)]="state.creative.message" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.message')" rows="4" maxlength="500"></textarea>
+                <small *ngIf="fieldInvalid('creative.message')">Informe a mensagem principal do anúncio.</small>
+              </label>
+
+              <label class="form-field" [class.invalid]="fieldInvalid('creative.headline')">
+                <span>Headline</span>
+                <input type="text" [(ngModel)]="state.creative.headline" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.headline')" maxlength="80" />
+                <small *ngIf="fieldInvalid('creative.headline')">Informe uma headline clara.</small>
+              </label>
+
+              <label class="form-field">
+                <span>Descrição</span>
+                <input type="text" [(ngModel)]="state.creative.description" (ngModelChange)="touchState()" maxlength="120" />
+                <small *ngIf="detailedHelpEnabled()">Use uma linha curta para reforçar benefício ou contexto.</small>
+              </label>
+
+              <label class="form-field">
+                <span>CTA
+                  <button class="field-tooltip" type="button" aria-label="Ajuda sobre CTA">
+                    ?
+                    <span class="tooltip-bubble">Ação que o usuário verá no botão do anúncio.</span>
+                  </button>
+                </span>
+                <select [(ngModel)]="state.creative.cta" (ngModelChange)="touchState()">
+                  <option *ngFor="let option of ctaOptions" [value]="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+
+              <label class="form-field field-span-2" [class.invalid]="fieldInvalid('destination.websiteUrl')">
+                <span>URL</span>
+                <input type="url" [(ngModel)]="state.destination.websiteUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('destination.websiteUrl')" placeholder="https://..." />
+                <small *ngIf="fieldInvalid('destination.websiteUrl')">Informe uma URL válida com https://</small>
+              </label>
+
+              <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
+                <span>Imagem</span>
+                <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
+                <small *ngIf="fieldInvalid('creative.imageUrl')">Adicione uma imagem pública válida.</small>
+              </label>
+            </div>
+          </div>
+
+          <div class="builder-footer-actions">
+            <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+            <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
+            <button class="btn btn-primary" type="button" (click)="reviewNow()">Revisar campanha</button>
+          </div>
+        </section>
+
+        <div class="advanced-builder-shell" id="builder-advanced" *ngIf="creationMode() === 'advanced'">
+          <section class="section-block advanced-gate">
+            <div class="section-heading">
+              <div>
+                <h3>Configurações avançadas</h3>
+              </div>
+              <button class="btn btn-secondary" type="button" (click)="openLiteEditor()">Voltar ao ajuste rápido</button>
+            </div>
+            <p class="compatibility-note" *ngIf="detailedHelpEnabled()">Aqui ficam rastreamento, UTMs, placements, agenda e payload técnico.</p>
+          </section>
 
         <section class="section-block" id="builder-general">
           <div class="section-heading">
@@ -277,7 +566,7 @@
 
           <div class="status-grid">
             <div class="status-tile">
-              <span>Store</span>
+              <span>{{ isIndividualAccount() ? 'Empresa' : 'Store' }}</span>
               <strong>{{ selectedStoreName() }}</strong>
             </div>
             <div class="status-tile">
@@ -299,12 +588,13 @@
                   {{ account.name }} · {{ account.externalId || account.metaId || account.id }}
                 </option>
               </select>
-              <small *ngIf="fieldInvalid('identity.adAccountId')">A campanha precisa de uma conta sincronizada da store.</small>
+              <small *ngIf="fieldInvalid('identity.adAccountId')">A campanha precisa de uma conta sincronizada {{ isIndividualAccount() ? 'da sua empresa' : 'da store' }}.</small>
             </label>
 
             <label class="form-field">
               <span>Página do Facebook</span>
               <input type="text" [ngModel]="selectedPageName()" disabled />
+              <small *ngIf="hasMissingConfiguredPage()">Configure a Página do Facebook {{ isIndividualAccount() ? 'da sua empresa' : 'da loja' }} antes de criar campanhas.</small>
             </label>
 
             <label class="form-field">
@@ -358,14 +648,25 @@
               <small *ngIf="fieldInvalid('audience.country')">Use um código ISO de 2 letras, como `BR`.</small>
             </label>
 
-            <label class="form-field">
-              <span>Estado / região</span>
-              <input type="text" [(ngModel)]="state.audience.region" (ngModelChange)="touchState()" />
+            <label class="form-field" [class.invalid]="fieldInvalid('audience.location')">
+              <span>Estado</span>
+              <select [ngModel]="state.audience.state" (ngModelChange)="selectAudienceState($event)" (blur)="markFieldTouched('audience.location')" [disabled]="loadingIbgeStates()">
+                <option value="">Selecione a UF</option>
+                <option *ngFor="let option of ibgeStates(); trackBy: trackByValue" [value]="option.code">
+                  {{ option.name }} · {{ option.code }}
+                </option>
+              </select>
+              <small *ngIf="fieldInvalid('audience.location')">Se houver cidade, a UF precisa estar definida e consistente.</small>
             </label>
 
-            <label class="form-field">
+            <label class="form-field" [class.invalid]="fieldInvalid('audience.location')">
               <span>Cidade</span>
-              <input type="text" [(ngModel)]="state.audience.city" (ngModelChange)="touchState()" />
+              <select [ngModel]="state.audience.cityId || ''" (ngModelChange)="selectAudienceCity($event)" (blur)="markFieldTouched('audience.location')" [disabled]="!state.audience.state || loadingIbgeCities()">
+                <option value="">{{ loadingIbgeCities() ? 'Carregando cidades...' : 'Selecione a cidade' }}</option>
+                <option *ngFor="let option of ibgeCities(); trackBy: trackByValue" [value]="option.id">
+                  {{ option.name }}
+                </option>
+              </select>
             </label>
 
             <label class="form-field">
@@ -409,6 +710,7 @@
               <span>Idiomas adicionais</span>
               <input type="text" [(ngModel)]="state.audience.languagesAdditional" (ngModelChange)="touchState()" placeholder="Espanhol, Inglês" />
             </label>
+            <div class="field-hint field-span-2" *ngIf="ibgeError()">{{ ibgeError() }}</div>
           </div>
 
           <div class="summary-chip-row">
@@ -689,7 +991,7 @@
             <label class="form-field field-span-2" [class.invalid]="fieldInvalid('destination.websiteUrl')">
               <span>URL do site</span>
               <input type="url" [(ngModel)]="state.destination.websiteUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('destination.websiteUrl')" placeholder="https://..." />
-              <small *ngIf="fieldInvalid('destination.websiteUrl')">O destino do tipo site precisa de uma URL válida.</small>
+              <small *ngIf="fieldInvalid('destination.websiteUrl')">Use uma URL final segura começando com https://.</small>
             </label>
           </div>
         </section>
@@ -720,13 +1022,13 @@
             <label class="form-field">
               <span>CTA</span>
               <select [(ngModel)]="state.creative.cta" (ngModelChange)="touchState()">
-                <option *ngFor="let option of ctaOptions" [value]="option">{{ option }}</option>
+                <option *ngFor="let option of ctaOptions" [value]="option.value">{{ option.label }}</option>
               </select>
             </label>
             <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
               <span>URL da imagem</span>
-              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState(); previewImageFailed.set(false)" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
-              <small *ngIf="fieldInvalid('creative.imageUrl')">A URL da imagem deve começar com `http://` ou `https://`.</small>
+              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
+              <small *ngIf="fieldInvalid('creative.imageUrl')">A imagem precisa estar acessível publicamente ou ser enviada em formato aceito pela Meta.</small>
             </label>
           </div>
 
@@ -734,20 +1036,86 @@
             <input type="checkbox" [(ngModel)]="state.creative.carousel" (ngModelChange)="touchState()" />
             <div>
               <strong>Criativo em carrossel</strong>
-              <span>Estrutura visual preparada para futura expansão sem mudar o payload atual.</span>
+              <span>Serve para planejamento visual por enquanto. O payload real ainda sai como peça simples na Meta.</span>
             </div>
           </label>
 
-          <div class="preview-modes">
-            <article class="preview-mode-card">
-              <span>Preview feed</span>
-              <strong>{{ previewHeadline() }}</strong>
-            </article>
-            <article class="preview-mode-card">
-              <span>Preview story</span>
-              <strong>{{ previewCta() }}</strong>
-            </article>
+          <div class="copilot-inline-actions">
+            <button class="btn btn-secondary" type="button" (click)="analyzeCampaignWithAi()" [disabled]="aiCopilotAnalyzing()">
+              {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : '✨ Analisar campanha' }}
+            </button>
+            <span>Revisa público, copy, oferta, orçamento e destino sem inventar métricas.</span>
           </div>
+
+          <div class="campaign-copilot-card" *ngIf="aiCopilotAnalyzing() || aiCopilotAnalysis()" [attr.data-tone]="scoreTone(aiCopilotConfidenceValue())">
+            <div class="score-summary-header">
+              <div>
+                <span>Análise da campanha</span>
+                <strong>{{ aiCopilotAnalyzing() ? '--/100' : (aiCopilotConfidenceValue() + '/100') }}</strong>
+              </div>
+              <app-ui-badge [label]="aiCopilotAnalyzing() ? 'Analisando' : aiCopilotStatusLabel()" [tone]="aiCopilotAnalyzing() ? 'info' : scoreTone(aiCopilotConfidenceValue())" />
+            </div>
+            <div class="score-summary-bar" aria-hidden="true">
+              <span [style.width.%]="aiCopilotAnalyzing() ? 42 : aiCopilotConfidenceValue()" [style.background]="scoreColor(aiCopilotConfidenceValue())"></span>
+            </div>
+            <p>{{ aiCopilotAnalyzing() ? 'Analisando campanha...' : ((aiCopilotAnalysis()?.summary || aiCopilotDetail())) }}</p>
+            <div class="copilot-columns" *ngIf="!aiCopilotAnalyzing() && aiCopilotAnalysis()">
+              <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.strengths?.length">
+                <span>Pontos fortes</span>
+                <ul>
+                  <li *ngFor="let item of aiCopilotAnalysis()?.strengths">+ {{ item }}</li>
+                </ul>
+              </div>
+              <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.issues?.length">
+                <span>Problemas</span>
+                <ul>
+                  <li *ngFor="let item of aiCopilotAnalysis()?.issues">! {{ item }}</li>
+                </ul>
+              </div>
+              <div class="copilot-list copilot-list-wide" *ngIf="aiCopilotVisibleImprovements().length">
+                <span>Sugestões aplicáveis</span>
+                <div class="copilot-improvement-list">
+                  <article class="copilot-improvement-card" *ngFor="let item of aiCopilotVisibleImprovements(); trackBy: trackByValue">
+                    <div class="copilot-improvement-copy">
+                      <strong>{{ item.label }}</strong>
+                      <p>{{ item.description }}</p>
+                      <code>{{ copilotImprovementPreview(item) }}</code>
+                    </div>
+                    <div class="copilot-improvement-actions">
+                      <button class="btn btn-primary" type="button" (click)="applyCopilotImprovement(item)" [disabled]="isCopilotImprovementApplied(item.id)">
+                        {{ isCopilotImprovementApplied(item.id) ? 'Aplicada' : 'Aplicar' }}
+                      </button>
+                      <button class="btn btn-secondary" type="button" (click)="ignoreCopilotImprovement(item.id)">Ignorar</button>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+            <div class="copilot-feedback" *ngIf="state.ui.aiCopilotLastAppliedMessage || state.ui.aiCopilotApplyError || state.ui.aiCopilotUndoSnapshot">
+              <small class="copilot-feedback-success" *ngIf="state.ui.aiCopilotLastAppliedMessage">✔ {{ state.ui.aiCopilotLastAppliedMessage }}</small>
+              <small class="copilot-feedback-error" *ngIf="state.ui.aiCopilotApplyError">{{ state.ui.aiCopilotApplyError }}</small>
+              <button class="link-btn inline-link" type="button" *ngIf="state.ui.aiCopilotUndoSnapshot" (click)="undoLastCopilotImprovement()">Desfazer</button>
+            </div>
+            <small *ngIf="state.ui.aiCopilotStale && !aiCopilotAnalyzing()">Revise novamente a análise após as últimas mudanças no builder.</small>
+          </div>
+
+          <app-creative-preview
+            [pageName]="selectedPageName()"
+            [displayName]="state.identity.displayName"
+            [message]="previewMessage()"
+            [headline]="previewHeadline()"
+            [description]="previewDescription()"
+            [ctaLabel]="previewCta()"
+            [ctaValue]="state.creative.cta"
+            [imageUrl]="state.creative.imageUrl"
+            [destinationUrl]="state.destination.websiteUrl"
+            [objective]="state.campaign.objective"
+            [destinationType]="state.destination.type"
+            [carousel]="state.creative.carousel"
+            [selectedPlacements]="state.placements.selected"
+            [interests]="state.audience.interests"
+            [goals]="state.tracking.goals"
+          />
         </section>
 
         <section class="section-block" id="builder-tracking">
@@ -761,15 +1129,26 @@
 
           <div class="field-grid">
             <label class="form-field">
-              <span>Pixel</span>
+              <span>Pixel
+                <button class="field-tooltip" type="button" aria-label="Ajuda sobre pixel">
+                  ?
+                  <span class="tooltip-bubble">Ajuda a Meta a medir ações no site e melhorar a otimização.</span>
+                </button>
+              </span>
               <input type="text" [(ngModel)]="state.tracking.pixel" (ngModelChange)="touchState()" placeholder="Meta Pixel principal" />
+              <small *ngIf="detailedHelpEnabled() && !state.tracking.pixel.trim()">Configure quando quiser mensurar melhor ações no site.</small>
             </label>
             <label class="form-field">
               <span>Evento principal</span>
               <input type="text" [(ngModel)]="state.tracking.mainEvent" (ngModelChange)="touchState()" />
             </label>
             <label class="form-field">
-              <span>Rastreamento de conversão</span>
+              <span>Rastreamento de conversão
+                <button class="field-tooltip" type="button" aria-label="Ajuda sobre rastreamento">
+                  ?
+                  <span class="tooltip-bubble">Define como o resultado será lido na campanha e na análise posterior.</span>
+                </button>
+              </span>
               <input type="text" [(ngModel)]="state.tracking.conversionTracking" (ngModelChange)="touchState()" />
             </label>
             <label class="form-field">
@@ -794,28 +1173,32 @@
             </label>
           </div>
         </section>
+        </div>
 
         <section class="section-block review-block" id="builder-review">
           <div class="section-heading">
             <div>
-              <span class="section-kicker">Revisão final</span>
-              <h3>Checklist, alertas e payload</h3>
+              <h3>Revisar campanha</h3>
             </div>
-            <app-ui-badge [label]="sectionModeLabel('builder-review')" [tone]="sectionTone('builder-review')" />
+            <div class="review-heading-actions">
+              <button class="btn btn-secondary" type="button" (click)="analyzeCampaignWithAi()" [disabled]="aiCopilotAnalyzing()">
+                {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : '✨ Analisar campanha' }}
+              </button>
+              <app-ui-badge [label]="canSubmit() ? 'Pronta para envio' : 'Revisão pendente'" [tone]="canSubmit() ? 'success' : 'warning'" />
+            </div>
           </div>
 
-          <p class="compatibility-note">{{ compatibilityNote() }}</p>
-
-          <div class="signal-row">
-            <span class="signal-chip" *ngFor="let item of reviewSignals(); trackBy: trackByValue" [class]="'tone-' + item.tone">
-              {{ item.label }}
-            </span>
-          </div>
-
-          <div class="review-checklist">
-            <div class="review-item" *ngFor="let item of readinessItems(); trackBy: trackByValue" [class.done]="item.done">
-              <strong>{{ item.label }}</strong>
-              <span>{{ item.done ? 'OK' : 'Pendente' }}</span>
+          <div class="problems-card" *ngIf="hasCampaignProblems()">
+            <strong>Problemas na campanha</strong>
+            <div class="problems-list">
+              <div class="problem-group">
+                <strong>Erros obrigatórios</strong>
+                <div class="problem-item" *ngFor="let issue of campaignProblems()">{{ issue }}</div>
+              </div>
+              <div class="problem-group warnings" *ngIf="hasCampaignWarnings()">
+                <strong>Avisos</strong>
+                <div class="warning-item-inline" *ngFor="let warning of campaignWarnings()">{{ warning }}</div>
+              </div>
             </div>
           </div>
 
@@ -826,9 +1209,87 @@
             </div>
           </div>
 
+          <div class="campaign-copilot-card compact" *ngIf="!aiCopilotAnalyzing() && aiCopilotAnalysis()" [attr.data-tone]="scoreTone(aiCopilotConfidenceValue())">
+            <div class="score-summary-header">
+              <div>
+                <span>Análise da campanha</span>
+                <strong>{{ aiCopilotConfidenceValue() }}/100</strong>
+              </div>
+              <app-ui-badge [label]="aiCopilotStatusLabel()" [tone]="scoreTone(aiCopilotConfidenceValue())" />
+            </div>
+            <div class="score-summary-bar" aria-hidden="true">
+              <span [style.width.%]="aiCopilotConfidenceValue()" [style.background]="scoreColor(aiCopilotConfidenceValue())"></span>
+            </div>
+            <p>{{ aiCopilotAnalysis()?.summary }}</p>
+            <div class="copilot-columns">
+              <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.strengths?.length">
+                <span>Pontos fortes</span>
+                <ul>
+                  <li *ngFor="let item of aiCopilotAnalysis()?.strengths">+ {{ item }}</li>
+                </ul>
+              </div>
+              <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.issues?.length">
+                <span>Problemas</span>
+                <ul>
+                  <li *ngFor="let item of aiCopilotAnalysis()?.issues">! {{ item }}</li>
+                </ul>
+              </div>
+              <div class="copilot-list copilot-list-wide" *ngIf="aiCopilotVisibleImprovements().length">
+                <span>Sugestões aplicáveis</span>
+                <div class="copilot-improvement-list">
+                  <article class="copilot-improvement-card" *ngFor="let item of aiCopilotVisibleImprovements(); trackBy: trackByValue">
+                    <div class="copilot-improvement-copy">
+                      <strong>{{ item.label }}</strong>
+                      <p>{{ item.description }}</p>
+                      <code>{{ copilotImprovementPreview(item) }}</code>
+                    </div>
+                    <div class="copilot-improvement-actions">
+                      <button class="btn btn-primary" type="button" (click)="applyCopilotImprovement(item)" [disabled]="isCopilotImprovementApplied(item.id)">
+                        {{ isCopilotImprovementApplied(item.id) ? 'Aplicada' : 'Aplicar' }}
+                      </button>
+                      <button class="btn btn-secondary" type="button" (click)="ignoreCopilotImprovement(item.id)">Ignorar</button>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+            <div class="copilot-feedback" *ngIf="state.ui.aiCopilotLastAppliedMessage || state.ui.aiCopilotApplyError || state.ui.aiCopilotUndoSnapshot">
+              <small class="copilot-feedback-success" *ngIf="state.ui.aiCopilotLastAppliedMessage">✔ {{ state.ui.aiCopilotLastAppliedMessage }}</small>
+              <small class="copilot-feedback-error" *ngIf="state.ui.aiCopilotApplyError">{{ state.ui.aiCopilotApplyError }}</small>
+              <button class="link-btn inline-link" type="button" *ngIf="state.ui.aiCopilotUndoSnapshot" (click)="undoLastCopilotImprovement()">Desfazer</button>
+            </div>
+            <small *ngIf="state.ui.aiCopilotStale">A análise está desatualizada e pode ser refeita antes de publicar.</small>
+          </div>
+
+          <div class="ai-detected-fields review-insights" *ngIf="state.ui.aiLastSuggestion?.validation as validation">
+            <div class="score-summary-card" [attr.data-tone]="scoreTone(validation.qualityScore)">
+              <div class="score-summary-header">
+                <div>
+                  <span>Qualidade IA</span>
+                  <strong>{{ validation.qualityScore }}/100</strong>
+                </div>
+                <app-ui-badge [label]="aiValidationStatusLabel()" [tone]="aiValidationTone()" />
+              </div>
+              <div class="score-summary-bar" aria-hidden="true">
+                <span [style.width.%]="validation.qualityScore" [style.background]="scoreColor(validation.qualityScore)"></span>
+              </div>
+              <p>{{ qualityScoreDetail() }}</p>
+            </div>
+            <div class="token-list" *ngIf="validation.warnings.length">
+              <span class="token token-muted" *ngFor="let item of validation.warnings">{{ item }}</span>
+            </div>
+            <div class="token-list" *ngIf="validation.recommendations.length">
+              <span class="token" *ngFor="let item of validation.recommendations">{{ item }}</span>
+            </div>
+          </div>
+
+          <div class="submit-loading" *ngIf="submitting() || recoverySubmitting()">
+            {{ metaCreationLoadingLabel() }}
+          </div>
+
           <div class="technical-review">
             <button class="link-btn technical-toggle" type="button" (click)="technicalReviewOpen.set(!technicalReviewOpen())" [attr.aria-expanded]="technicalReviewOpen()">
-              {{ technicalReviewOpen() ? 'Ocultar payload técnico' : 'Ver payload técnico' }}
+              {{ technicalReviewOpen() ? 'Ocultar payload de revisão' : 'Ver payload de revisão' }}
             </button>
             <div class="json-preview" *ngIf="technicalReviewOpen()">
               <span class="section-kicker">JSON final expandido</span>
@@ -836,135 +1297,135 @@
             </div>
           </div>
 
-          <div class="submit-error" *ngIf="submitError()">
-            {{ submitError() }}
+          <div class="submit-error-card" *ngIf="submitFailure() as failure">
+            <span class="section-kicker">Integração Meta</span>
+            <strong>Não foi possível criar a campanha na Meta</strong>
+            <p>{{ failure.message }}</p>
+            <p *ngIf="failure.executionStatus === 'PARTIAL'">Parte da campanha foi criada na Meta, mas o fluxo parou antes de finalizar.</p>
+
+            <div class="error-meta-grid">
+              <div class="error-meta-item" *ngIf="failure.step">
+                <span>Etapa com erro</span>
+                <strong>{{ metaStepLabel(failure.step) }}</strong>
+              </div>
+              <div class="error-meta-item" *ngIf="failure.hint">
+                <span>Dica</span>
+                <strong>{{ failure.hint }}</strong>
+              </div>
+              <div class="error-meta-item" *ngIf="failure.executionId">
+                <span>Código da execução</span>
+                <strong>{{ failure.executionId }}</strong>
+              </div>
+              <div class="error-meta-item" *ngIf="failure.executionStatus">
+                <span>Status</span>
+                <strong>{{ failure.executionStatus }}</strong>
+              </div>
+            </div>
+
+            <div class="partial-resource-list" *ngIf="partialResourceEntries(failure.partialIds).length">
+              <span class="section-kicker">Recursos já criados na Meta</span>
+              <div class="summary-row" *ngFor="let item of partialResourceEntries(failure.partialIds); trackBy: trackByValue">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.value }}</strong>
+              </div>
+            </div>
+
+            <div class="partial-guidance" *ngIf="failure.executionStatus === 'PARTIAL'">
+              <button class="btn btn-secondary" type="button" *ngIf="canContinuePartialCreation()" (click)="continuePartialCreation()" [disabled]="recoverySubmitting()">
+                {{ recoverySubmitting() ? 'Continuando criacao...' : 'Continuar criação com segurança' }}
+              </button>
+              <p *ngIf="shouldShowPartialRecoveryGuidance()">
+                A execução parcial precisa ser recuperada pelo fluxo seguro de recovery antes de uma nova tentativa.
+              </p>
+            </div>
+
+            <div class="technical-review">
+              <button class="link-btn technical-toggle" type="button" (click)="technicalErrorOpen.set(!technicalErrorOpen())" [attr.aria-expanded]="technicalErrorOpen()">
+                {{ technicalErrorOpen() ? 'Ocultar detalhes técnicos' : 'Detalhes técnicos' }}
+              </button>
+              <div class="json-preview technical-details" *ngIf="technicalErrorOpen()">
+                <div class="summary-row" *ngIf="failure.executionId">
+                  <span>executionId</span>
+                  <strong>{{ failure.executionId }}</strong>
+                </div>
+                <div class="summary-row" *ngIf="failure.step">
+                  <span>step</span>
+                  <strong>{{ failure.step }}</strong>
+                </div>
+                <div class="summary-row" *ngIf="failure.executionStatus">
+                  <span>executionStatus</span>
+                  <strong>{{ failure.executionStatus }}</strong>
+                </div>
+                <div class="summary-row" *ngFor="let item of partialResourceEntries(failure.partialIds); trackBy: trackByValue">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+                <div class="summary-row" *ngFor="let item of technicalMetaErrorEntries(failure.metaError); trackBy: trackByValue">
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="review-actions">
+          <div class="builder-footer-actions review-actions">
             <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
-            <button class="btn btn-secondary" type="button" (click)="requestClosePanel()">Voltar</button>
-            <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-              {{ submitting() ? 'Criando na Meta...' : 'Criar na Meta' }}
+            <button class="btn btn-secondary" type="button" (click)="openLiteEditor()">Voltar ao formulário</button>
+            <button class="btn btn-primary" type="button" *ngIf="showCreateButtonInReview()" (click)="submit()" [disabled]="submitButtonDisabled()">
+              {{ submitButtonLabel() }}
             </button>
           </div>
         </section>
       </div>
 
-      <aside class="summary-sidebar">
-        <section class="sidebar-block">
+      <aside class="summary-sidebar" *ngIf="showPreviewSidebar()">
+        <section class="sidebar-block readiness-sidebar-block">
           <div class="sidebar-heading">
-            <span class="section-kicker">Mapa do fluxo</span>
-            <strong>Seções e progresso</strong>
+            <strong>Resumo do builder</strong>
+            <app-ui-badge [label]="canSubmit() ? 'Pronta para envio' : 'Ajustes pendentes'" [tone]="canSubmit() ? 'success' : 'warning'" />
           </div>
-
-          <div class="section-rail">
-            <button
-              type="button"
-              class="section-rail-item"
-              *ngFor="let section of sectionProgress(); trackBy: trackByValue"
-              [class.is-done]="section.done"
-              [class.is-active]="activeSection() === section.id"
-              (click)="scrollToSection(section.id)"
+          <div class="score-card-grid">
+            <article
+              class="score-card"
+              *ngFor="let card of builderScoreCards(); trackBy: trackByValue"
+              [attr.data-tone]="card.tone"
             >
-              <span class="section-rail-marker"></span>
-              <span class="section-rail-copy">
-                <strong>{{ section.label }}</strong>
-                <small>{{ section.done ? 'Concluído' : 'Pendente' }}</small>
-              </span>
-            </button>
-          </div>
-        </section>
-
-        <section class="sidebar-block">
-          <div class="sidebar-heading">
-            <span class="section-kicker">Resumo em tempo real</span>
-            <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
-          </div>
-
-          <div class="summary-list">
-            <div class="summary-row" *ngFor="let row of summaryRows(); trackBy: trackByValue">
-              <span>{{ row.label }}</span>
-              <strong>{{ row.value }}</strong>
-            </div>
-          </div>
-        </section>
-
-        <section class="sidebar-block">
-          <div class="sidebar-heading">
-            <span class="section-kicker">Sinais de revisão</span>
-            <strong>{{ progressPercent() }}% concluído</strong>
-          </div>
-
-          <div class="checklist-list">
-            <div class="checklist-item" *ngFor="let item of readinessItems(); trackBy: trackByValue">
-              <span class="check-indicator" [class.done]="item.done"></span>
-              <span>{{ item.label }}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="sidebar-block">
-          <div class="sidebar-heading">
-            <span class="section-kicker">Estimativas simuladas</span>
-            <strong>Leitura rápida</strong>
-          </div>
-
-          <div class="estimate-grid sidebar-estimates">
-            <article class="estimate-card">
-              <span>Reach</span>
-              <strong>{{ simulatedMetrics().reach | number:'1.0-0':'pt-BR' }}</strong>
-            </article>
-            <article class="estimate-card">
-              <span>CTR simulado</span>
-              <strong>{{ simulatedMetrics().ctr }}%</strong>
-            </article>
-            <article class="estimate-card">
-              <span>Cliques</span>
-              <strong>{{ simulatedMetrics().clicks | number:'1.0-0':'pt-BR' }}</strong>
-            </article>
-            <article class="estimate-card">
-              <span>Leads</span>
-              <strong>{{ simulatedMetrics().leads | number:'1.0-0':'pt-BR' }}</strong>
-            </article>
-          </div>
-        </section>
-
-        <section class="sidebar-block preview-block">
-          <div class="sidebar-heading">
-            <span class="section-kicker">Preview</span>
-            <strong>{{ previewHeadline() }}</strong>
-          </div>
-
-          <div class="creative-preview">
-            <div class="preview-ad-header">
-              <div class="preview-avatar">{{ selectedStoreName().slice(0, 1) }}</div>
-              <div>
-                <strong>{{ selectedStoreName() }}</strong>
-                <span>Patrocinado · Meta</span>
+              <div class="score-card-head">
+                <span>{{ card.title }}</span>
+                <small>{{ card.status }}</small>
               </div>
-            </div>
+              <strong>{{ card.value }}</strong>
+              <div class="score-card-bar" aria-hidden="true">
+                <span [style.width.%]="card.percent" [style.background]="scoreColor(card.percent)"></span>
+              </div>
+              <p>{{ card.meta }}</p>
+              <small class="score-card-detail">{{ card.detail }}</small>
+            </article>
+          </div>
+        </section>
 
-            <div class="preview-message">{{ previewMessage() }}</div>
-
-            <div class="preview-media" *ngIf="state.creative.imageUrl.trim() && !previewImageFailed(); else previewPlaceholder">
-              <img [src]="state.creative.imageUrl" alt="Preview do criativo" (error)="onPreviewImageError()" />
-            </div>
-
-            <ng-template #previewPlaceholder>
-              <div class="preview-placeholder">{{ previewPlaceholderMessage() }}</div>
-            </ng-template>
-
-            <div class="preview-copy">
-              <strong>{{ previewHeadline() }}</strong>
-              <p>{{ previewDescription() }}</p>
-              <button class="preview-cta" type="button">{{ previewCta() }}</button>
-            </div>
+        <section class="sidebar-block preview-sidebar-block">
+          <div class="sidebar-heading">
+            <strong>Preview</strong>
           </div>
 
-          <div class="token-list" *ngIf="previewInterests().length || previewTags().length">
-            <span class="token" *ngFor="let interest of previewInterests()">{{ interest }}</span>
-            <span class="token token-muted" *ngFor="let tag of previewTags()">{{ tag }}</span>
-          </div>
+          <app-creative-preview
+            [pageName]="selectedPageName()"
+            [displayName]="state.identity.displayName"
+            [message]="previewMessage()"
+            [headline]="previewHeadline()"
+            [description]="previewDescription()"
+            [ctaLabel]="previewCta()"
+            [ctaValue]="state.creative.cta"
+            [imageUrl]="state.creative.imageUrl"
+            [destinationUrl]="state.destination.websiteUrl"
+            [objective]="state.campaign.objective"
+            [destinationType]="state.destination.type"
+            [carousel]="state.creative.carousel"
+            [selectedPlacements]="state.placements.selected"
+            [interests]="state.audience.interests"
+            [goals]="state.tracking.goals"
+          />
         </section>
       </aside>
     </div>
@@ -975,9 +1436,12 @@
         <span>{{ canSubmit() ? 'Pronta para envio' : nextPendingSection().label + ' pendente' }}</span>
       </div>
       <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar</button>
-      <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="!canSubmit()">
-        {{ submitting() ? 'Criando...' : 'Criar' }}
+      <button class="btn btn-primary" type="button" *ngIf="showCreateButtonInReview(); else mobileReviewAction" (click)="submit()" [disabled]="submitButtonDisabled()">
+        {{ submitButtonLabel() }}
       </button>
+      <ng-template #mobileReviewAction>
+        <button class="btn btn-primary" type="button" (click)="reviewNow()">Revisar campanha</button>
+      </ng-template>
     </div>
   </section>
 

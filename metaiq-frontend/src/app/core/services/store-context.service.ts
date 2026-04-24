@@ -2,12 +2,14 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 import { Role, Store } from '../models';
 import { ApiService } from './api.service';
+import { AccountContextService } from './account-context.service';
 import { AuthService } from './auth.service';
 
 @Injectable({ providedIn: 'root' })
 export class StoreContextService {
   private api = inject(ApiService);
   private auth = inject(AuthService);
+  private accountContext = inject(AccountContextService);
   private readonly storageKey = 'selectedStoreId';
 
   stores = signal<Store[]>([]);
@@ -74,17 +76,14 @@ export class StoreContextService {
   }
 
   select(storeId: string): void {
-    const safeStoreId = this.canUseStore(storeId) ? storeId : '';
-    this.selectedStoreId.set(safeStoreId);
-    try {
-      if (safeStoreId) {
-        localStorage.setItem(this.storageKey, safeStoreId);
-      } else {
-        localStorage.removeItem(this.storageKey);
-      }
-    } catch {
-      // Storage is optional; context still works in memory.
+    if (this.accountContext.isIndividualAccount()) {
+      const fixedStoreId = this.accountContext.fixedStoreId() || '';
+      this.persistSelection(fixedStoreId);
+      return;
     }
+
+    const safeStoreId = this.canUseStore(storeId) ? storeId : '';
+    this.persistSelection(safeStoreId);
   }
 
   reset(): void {
@@ -105,11 +104,21 @@ export class StoreContextService {
   }
 
   getValidSelectedStoreId(): string {
+    if (this.accountContext.isIndividualAccount()) {
+      return this.accountContext.fixedStoreId() ?? '';
+    }
+
     const storeId = this.selectedStoreId();
     return this.hasAccessToStore(storeId) ? storeId : '';
   }
 
   private ensureValidSelection(stores: Store[]): void {
+    if (this.accountContext.isIndividualAccount()) {
+      const fixedStoreId = this.accountContext.fixedStoreId() || stores[0]?.id || '';
+      this.persistSelection(fixedStoreId);
+      return;
+    }
+
     const currentStoreId = this.selectedStoreId();
     const hasCurrentStore = !!currentStoreId && stores.some((store) => store.id === currentStoreId);
 
@@ -130,6 +139,10 @@ export class StoreContextService {
   }
 
   private getStoredStoreId(): string {
+    if (this.accountContext?.isIndividualAccount()) {
+      return this.accountContext.fixedStoreId() ?? '';
+    }
+
     try {
       return localStorage.getItem(this.storageKey) ?? '';
     } catch {
@@ -138,12 +151,33 @@ export class StoreContextService {
   }
 
   private requiresStoreContext(): boolean {
+    if (this.accountContext.isIndividualAccount()) {
+      return true;
+    }
+
     const role = this.auth.getCurrentRole();
     return role === Role.OPERATIONAL || role === Role.CLIENT;
   }
 
   private useAccessibleStores(): boolean {
+    if (this.accountContext.isIndividualAccount()) {
+      return true;
+    }
+
     const role = this.auth.getCurrentRole();
     return role === Role.OPERATIONAL || role === Role.CLIENT;
+  }
+
+  private persistSelection(storeId: string): void {
+    this.selectedStoreId.set(storeId);
+    try {
+      if (storeId) {
+        localStorage.setItem(this.storageKey, storeId);
+      } else {
+        localStorage.removeItem(this.storageKey);
+      }
+    } catch {
+      // Storage is optional; context still works in memory.
+    }
   }
 }

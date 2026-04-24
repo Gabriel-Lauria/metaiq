@@ -3,8 +3,8 @@
   <app-ui-state
     *ngIf="loading()"
     type="loading"
-    title="Carregando dashboard"
-    message="Preparando os indicadores do período."
+    title="Carregando dados..."
+    message="Carregando dados..."
   />
 
   <!-- Error State -->
@@ -24,7 +24,7 @@
     type="empty"
     icon="D"
     [title]="isClient() ? 'Nenhum resultado disponível' : 'Nenhum dado encontrado'"
-    [message]="isClient() ? 'Ainda não há resultados para o período escolhido.' : 'Não há métricas ou insights para o período escolhido.'"
+    [message]="'Nenhum dado encontrado para os filtros selecionados.'"
     actionLabel="Atualizar"
     (action)="loadData()"
   />
@@ -35,7 +35,6 @@
     <div class="dashboard-header">
       <div class="header-left">
         <h1 class="page-title">{{ dashboardTitle() }}</h1>
-        <span class="demo-data-badge">Dados de demonstração</span>
         <p class="page-subtitle">
           Últimos {{ period() }} dias
           <span *ngIf="storeContext.selectedStore()"> • {{ storeContext.selectedStore()!.name }}</span>
@@ -44,7 +43,7 @@
       <div class="time-range-buttons">
         <select
           class="store-select"
-          *ngIf="storeContext.stores().length > 1"
+          *ngIf="storeContext.stores().length > 1 && !isIndividual()"
           [ngModel]="storeContext.selectedStoreId()"
           (ngModelChange)="setStore($event)"
         >
@@ -74,7 +73,6 @@
 
     <!-- Metrics Grid -->
     <div class="metrics-grid" *ngIf="metrics() && hasMetricsData()">
-      <div class="demo-data-note">Métricas simuladas até a integração Meta ser ativada.</div>
       <app-ui-kpi-card [label]="isClient() ? 'Pessoas alcançadas' : 'Impressões'" [value]="metrics()!.impressions.toLocaleString()" marker="I" tone="info" />
       <app-ui-kpi-card [label]="kpiLabel('clicks')" [value]="metrics()!.clicks.toLocaleString()" marker="C" tone="info" />
       <app-ui-kpi-card [label]="kpiLabel('spend')" [value]="fmt(metrics()!.spend)" marker="$" tone="warning" />

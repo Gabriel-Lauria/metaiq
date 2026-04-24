@@ -3,21 +3,22 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ChartData } from 'chart.js';
 import { forkJoin, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import { UiStateComponent } from '../../core/components/ui-state.component';
-import { ChartComponent } from '../../core/components/chart.component';
-import { Role, Store } from '../../core/models';
+import { AdAccount, IntegrationStatus, Role, Store, StoreIntegration } from '../../core/models';
 import { ApiService } from '../../core/services/api.service';
+import { AccountContextService } from '../../core/services/account-context.service';
 import { AuthService } from '../../core/services/auth.service';
 import { StoreContextService } from '../../core/services/store-context.service';
 import { UiService } from '../../core/services/ui.service';
 import { CampaignCreatePanelComponent, CampaignCreateSuccessEvent } from './campaign-create-panel.component';
+import { environment } from '../../core/environment';
 
 interface CampaignMetric {
   ctr: number;
+  cpc?: number;
   cpa: number;
   roas: number;
   score: number;
@@ -25,11 +26,14 @@ interface CampaignMetric {
   conversions: number;
   impressions: number;
   clicks: number;
+  revenue?: number;
 }
 
 interface CampaignInsight {
   type: string;
-  title: string;
+  title?: string;
+  message?: string;
+  recommendation?: string;
 }
 
 interface Campaign {
@@ -56,6 +60,15 @@ interface CampaignStatusAction {
   nextStatus: 'ACTIVE' | 'PAUSED';
 }
 
+interface OnboardingItem {
+  id: 'connect-meta' | 'select-page' | 'select-account' | 'create-campaign' | 'review-campaign';
+  label: string;
+  help: string;
+  done: boolean;
+  actionLabel: string;
+  secondaryActionLabel?: string;
+}
+
 type SortField = 'name' | 'ctr' | 'cpa' | 'roas' | 'score' | 'status';
 type SortDirection = 'asc' | 'desc';
 
@@ -67,7 +80,6 @@ type SortDirection = 'asc' | 'desc';
     FormsModule,
     UiBadgeComponent,
     UiStateComponent,
-    ChartComponent,
     CampaignCreatePanelComponent,
   ],
   templateUrl: './campaigns.component.html',
@@ -76,6 +88,7 @@ type SortDirection = 'asc' | 'desc';
 export class CampaignsComponent implements OnInit {
   private apiService = inject(ApiService);
   private authService = inject(AuthService);
+  readonly accountContext = inject(AccountContextService);
   private ui = inject(UiService);
   private destroyRef = inject(DestroyRef);
   private route = inject(ActivatedRoute);
@@ -94,18 +107,31 @@ export class CampaignsComponent implements OnInit {
   sortDirection = signal<SortDirection>('asc');
   selectedReport = signal<Campaign | null>(null);
   createPanelOpen = signal(false);
+  createPanelMode = signal<'manual' | 'ai'>('manual');
+  createPanelResumeDraft = signal(false);
+  createPanelInitialTarget = signal<'configuration' | 'review' | null>(null);
   creationNotice = signal<CampaignCreationNotice | null>(null);
   highlightedCampaignId = signal<string | null>(null);
   actionLoadingId = signal<string | null>(null);
   editingCampaign = signal<Campaign | null>(null);
   statusAction = signal<CampaignStatusAction | null>(null);
+  integration = signal<StoreIntegration | null>(null);
+  syncedAdAccounts = signal<AdAccount[]>([]);
+  onboardingCollapsed = signal(false);
+  onboardingClosed = signal(false);
+  onboardingDraftAvailable = signal(false);
+  onboardingReviewVisited = signal(false);
   editName = '';
 
   private searchSubject = new Subject<string>();
   private pendingRouteStoreId: string | null = null;
   private pendingOpenCreateFromRoute = false;
+  private pendingRouteCreateMode: 'manual' | 'ai' = 'manual';
+  private pendingRouteResumeDraft = false;
+  private pendingRouteTarget: 'configuration' | 'review' = 'configuration';
   private pendingCreatedMetaCampaignId: string | null = null;
   private campaignListRequestId = 0;
+  private onboardingContextRequestId = 0;
 
   filtered = computed(() => {
     const query = this.searchTerm().trim().toLowerCase();
@@ -170,13 +196,95 @@ export class CampaignsComponent implements OnInit {
   pausedCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'PAUSED').length);
   archivedCount = computed(() => this.campaigns().filter((campaign) => campaign.status === 'ARCHIVED').length);
   averageRoas = computed(() => {
-    const campaignsWithMetrics = this.campaigns().filter((campaign) => campaign.metrics?.roas != null);
-    if (!campaignsWithMetrics.length) return 0;
+    const totals = this.realMetricsTotals();
+    if (totals.spend <= 0 || totals.revenue <= 0) {
+      return null;
+    }
 
-    const totalRoas = campaignsWithMetrics.reduce((sum, campaign) => sum + (campaign.metrics?.roas ?? 0), 0);
-    return totalRoas / campaignsWithMetrics.length;
+    return totals.revenue / totals.spend;
   });
-  selectedScopeName = computed(() => this.storeContext.selectedStore()?.name || 'Todas as lojas');
+  selectedScopeName = computed(() => this.storeContext.selectedStore()?.name || (this.accountContext.isIndividualAccount() ? 'Minha empresa' : 'Todas as lojas'));
+  hasAnyRealMetrics = computed(() => this.campaigns().some((campaign) => this.hasRealMetrics(campaign)));
+  totalCtr = computed(() => {
+    const totals = this.realMetricsTotals();
+    return totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null;
+  });
+  totalCpc = computed(() => {
+    const totals = this.realMetricsTotals();
+    return totals.clicks > 0 ? totals.spend / totals.clicks : null;
+  });
+  totalCpa = computed(() => {
+    const totals = this.realMetricsTotals();
+    return totals.conversions > 0 ? totals.spend / totals.conversions : null;
+  });
+  readonly demoModeEnabled = environment.enableDemoData === true;
+  readonly onboardingItems = computed<OnboardingItem[]>(() => {
+    const hasDraft = this.onboardingDraftAvailable();
+    return [
+      {
+        id: 'connect-meta',
+        label: 'Conectar conta Meta',
+        help: 'Permite criar campanhas diretamente na sua conta.',
+        done: this.integration()?.status === IntegrationStatus.CONNECTED,
+        actionLabel: 'Conectar agora',
+      },
+      {
+        id: 'select-page',
+        label: 'Selecionar página',
+        help: 'A página será usada como identidade principal da campanha.',
+        done: !!this.integration()?.pageId,
+        actionLabel: 'Configurar página',
+      },
+      {
+        id: 'select-account',
+        label: 'Selecionar conta de anúncio',
+        help: 'Libera o envio da campanha para a conta certa.',
+        done: this.syncedAdAccounts().length > 0,
+        actionLabel: 'Selecionar conta',
+      },
+      {
+        id: 'create-campaign',
+        label: 'Criar primeira campanha',
+        help: 'Você pode começar pelo fluxo manual e usar IA se quiser.',
+        done: this.campaigns().length > 0,
+        actionLabel: hasDraft ? 'Continuar rascunho' : 'Criar campanha',
+        secondaryActionLabel: hasDraft ? 'Criar do zero' : 'Usar IA',
+      },
+      {
+        id: 'review-campaign',
+        label: 'Revisar campanha',
+        help: 'A revisão final confirma se tudo está pronto para envio.',
+        done: this.onboardingReviewVisited(),
+        actionLabel: hasDraft ? 'Continuar criação' : 'Abrir revisão',
+      },
+    ];
+  });
+  readonly onboardingCompletedCount = computed(() => this.onboardingItems().filter((item) => item.done).length);
+  readonly onboardingTotalCount = computed(() => this.onboardingItems().length);
+  readonly onboardingProgressPercent = computed(() => {
+    const total = this.onboardingTotalCount();
+    return total > 0 ? Math.round((this.onboardingCompletedCount() / total) * 100) : 0;
+  });
+  readonly onboardingComplete = computed(() =>
+    this.onboardingTotalCount() > 0 && this.onboardingCompletedCount() === this.onboardingTotalCount(),
+  );
+  readonly shouldShowOnboarding = computed(() =>
+    this.canCreateCampaigns()
+    && !!this.storeContext.getValidSelectedStoreId()
+    && !this.onboardingComplete()
+    && !this.onboardingClosed(),
+  );
+  readonly shouldShowOnboardingReopen = computed(() =>
+    this.canCreateCampaigns()
+    && !!this.storeContext.getValidSelectedStoreId()
+    && !this.onboardingComplete()
+    && this.onboardingClosed(),
+  );
+  readonly shouldShowOnboardingReady = computed(() =>
+    this.canCreateCampaigns()
+    && !!this.storeContext.getValidSelectedStoreId()
+    && this.onboardingComplete(),
+  );
 
   constructor() {
     this.searchSubject
@@ -194,16 +302,16 @@ export class CampaignsComponent implements OnInit {
       this.updateQueryParams();
     });
 
-    effect(
-      () => {
-        if (!this.storeContext.loaded()) return;
+    effect(() => {
+      if (!this.storeContext.loaded()) return;
 
-        this.storeContext.selectedStoreId();
-        this.applyRouteIntent();
-        this.loadCampaigns();
-      },
-      { allowSignalWrites: true },
-    );
+      this.storeContext.selectedStoreId();
+      this.applyRouteIntent();
+      this.syncOnboardingUiState();
+      this.syncOnboardingProgressState();
+      this.loadOnboardingContext();
+      this.loadCampaigns();
+    });
   }
 
   ngOnInit(): void {
@@ -225,7 +333,13 @@ export class CampaignsComponent implements OnInit {
         }
 
         this.pendingRouteStoreId = typeof params['storeId'] === 'string' ? params['storeId'] : null;
-        this.pendingOpenCreateFromRoute = params['openCreate'] === '1' || params['openCreate'] === 'true';
+        this.pendingOpenCreateFromRoute =
+          params['openCreate'] === '1'
+          || params['openCreate'] === 'true'
+          || params['action'] === 'create';
+        this.pendingRouteCreateMode = params['createMode'] === 'ai' ? 'ai' : 'manual';
+        this.pendingRouteResumeDraft = params['resumeDraft'] === '1' || params['resumeDraft'] === 'true';
+        this.pendingRouteTarget = params['startAt'] === 'review' ? 'review' : 'configuration';
 
         this.applyRouteIntent();
       });
@@ -250,7 +364,10 @@ export class CampaignsComponent implements OnInit {
     this.loadCampaigns();
   }
 
-  openCreatePanel(): void {
+  openCreateCampaign(
+    mode: 'manual' | 'ai' = 'manual',
+    options?: { resumeDraft?: boolean; target?: 'configuration' | 'review' },
+  ): void {
     if (!this.canCreateCampaigns()) {
       this.ui.showWarning(
         'Criação indisponível',
@@ -259,11 +376,20 @@ export class CampaignsComponent implements OnInit {
       return;
     }
 
+    this.createPanelMode.set(mode);
+    this.createPanelResumeDraft.set(!!options?.resumeDraft);
+    this.createPanelInitialTarget.set(options?.target === 'review' ? 'review' : options?.target === 'configuration' ? 'configuration' : null);
     this.createPanelOpen.set(true);
+  }
+
+  openCreatePanel(mode: 'manual' | 'ai' = 'manual'): void {
+    this.openCreateCampaign(mode);
   }
 
   closeCreatePanel(): void {
     this.createPanelOpen.set(false);
+    this.createPanelResumeDraft.set(false);
+    this.createPanelInitialTarget.set(null);
   }
 
   handleCampaignCreated(event: CampaignCreateSuccessEvent): void {
@@ -319,6 +445,10 @@ export class CampaignsComponent implements OnInit {
     return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
 
+  isIndividualAccount(): boolean {
+    return this.accountContext.isIndividualAccount();
+  }
+
   canManageOperations(): boolean {
     return this.authService.hasAnyRole([Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL]);
   }
@@ -331,8 +461,8 @@ export class CampaignsComponent implements OnInit {
 
   creationOverviewLabel(): string {
     if (!this.canCreateCampaigns()) return 'Acompanhamento';
-    if (!this.storeContext.getValidSelectedStoreId()) return 'Selecione uma store';
-    return 'Builder centralizado';
+    if (!this.storeContext.getValidSelectedStoreId()) return this.isIndividualAccount() ? 'Conta em preparação' : 'Selecione uma store';
+    return this.isIndividualAccount() ? 'Fluxo simplificado' : 'Builder centralizado';
   }
 
   creationOverviewMessage(): string {
@@ -340,9 +470,74 @@ export class CampaignsComponent implements OnInit {
       return 'Seu perfil acompanha análise, status e relatório das campanhas.';
     }
     if (!this.storeContext.getValidSelectedStoreId()) {
-      return 'Escolha uma store para criar, revisar e enviar novas campanhas.';
+      return this.isIndividualAccount()
+        ? 'Conecte a Meta e finalize a configuração inicial para criar campanhas.'
+        : 'Escolha uma store para criar, revisar e enviar novas campanhas.';
     }
-    return `Abra o builder para revisar setup, preview e envio de ${this.selectedScopeName()}.`;
+    return this.isIndividualAccount()
+      ? 'Abra o builder para criar campanhas direto com a configuração da sua empresa.'
+      : `Abra o builder para revisar setup, preview e envio de ${this.selectedScopeName()}.`;
+  }
+
+  onboardingStatusLabel(done: boolean): string {
+    return done ? 'Concluído' : 'Pendente';
+  }
+
+  onboardingStatusTone(done: boolean): 'success' | 'warning' {
+    return done ? 'success' : 'warning';
+  }
+
+  toggleOnboardingCollapsed(): void {
+    const nextValue = !this.onboardingCollapsed();
+    this.onboardingCollapsed.set(nextValue);
+    this.persistOnboardingPreference('collapsed', nextValue);
+  }
+
+  dismissOnboarding(): void {
+    this.onboardingClosed.set(true);
+    this.persistOnboardingPreference('closed', true);
+  }
+
+  reopenOnboarding(): void {
+    this.onboardingClosed.set(false);
+    this.persistOnboardingPreference('closed', false);
+  }
+
+  runOnboardingAction(itemId: OnboardingItem['id']): void {
+    if (itemId === 'connect-meta' || itemId === 'select-page' || itemId === 'select-account') {
+      this.goToIntegrations();
+      return;
+    }
+
+    if (itemId === 'review-campaign') {
+      this.openCreateCampaign('manual', {
+        resumeDraft: this.onboardingDraftAvailable(),
+        target: this.onboardingDraftAvailable() ? 'review' : 'configuration',
+      });
+      return;
+    }
+
+    this.openCreateCampaign('manual', {
+      resumeDraft: this.onboardingDraftAvailable(),
+      target: 'configuration',
+    });
+  }
+
+  runOnboardingSecondaryAction(itemId: OnboardingItem['id']): void {
+    if (itemId !== 'create-campaign') {
+      return;
+    }
+
+    if (this.onboardingDraftAvailable()) {
+      this.openCreateCampaign('manual', { target: 'configuration' });
+      return;
+    }
+
+    this.openCreateCampaign('ai', { target: 'configuration' });
+  }
+
+  onboardingTrackById(_: number, item: OnboardingItem): string {
+    return item.id;
   }
 
   hasPrev(): boolean {
@@ -454,62 +649,31 @@ export class CampaignsComponent implements OnInit {
       : 'A campanha deixará de ser tratada como ativa no MetaIQ até uma nova ativação.';
   }
 
-  campaignEvolutionChart(campaign: Campaign): ChartData<'line'> {
-    const metrics = campaign.metrics;
-    const spend = metrics?.spend || 0;
-    const conversions = metrics?.conversions || 0;
-
-    return {
-      labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4'],
-      datasets: [
-        {
-          label: 'Spend',
-          data: [0.16, 0.23, 0.27, 0.34].map((value) => Math.round(spend * value)),
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15, 118, 110, 0.12)',
-          tension: 0.35,
-          fill: true,
-        },
-        {
-          label: 'Conversões',
-          data: [0.18, 0.24, 0.25, 0.33].map((value) => Math.round(conversions * value)),
-          borderColor: '#f97316',
-          backgroundColor: 'rgba(249, 115, 22, 0.12)',
-          tension: 0.35,
-        },
-      ],
-    };
-  }
-
-  reportInsights(campaign: Campaign): string[] {
-    const metrics = campaign.metrics;
-    const insights = campaign.insights?.map((insight) => insight.title) || [];
-    if (!metrics) return insights.length ? insights : ['Aguardando métricas para gerar insights.'];
-
-    return [
-      ...insights,
-      metrics.roas < 2 ? 'ROAS baixo: revisar oferta, criativo e público.' : 'ROAS saudável para manter investimento controlado.',
-      metrics.ctr < 1.5 ? 'CTR em queda: testar novos criativos e chamadas.' : 'CTR competitivo no período analisado.',
-      metrics.cpa > 80 ? 'CPA em alta: reduzir verba até recuperar eficiência.' : 'CPA dentro da faixa esperada.',
-    ].slice(0, 5);
-  }
-
   fmt(value: number): string {
     return value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   }
 
   fmtPct(value: number): string {
-    return (value * 100).toFixed(1);
+    return value.toFixed(1);
   }
 
   fmtCurrency(value: number): string {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
+  fmtRoas(value: number | null | undefined): string {
+    if (value == null || !Number.isFinite(value) || value < 0) {
+      return '—';
+    }
+
+    return `${value.toFixed(2)}x`;
+  }
+
   scoreColor(score: number): string {
-    if (score >= 80) return '#10b981';
-    if (score >= 55) return '#f59e0b';
-    return '#ef4444';
+    if (score >= 90) return '#16A34A';
+    if (score >= 70) return '#2563EB';
+    if (score >= 40) return '#F59E0B';
+    return '#DC2626';
   }
 
   statusLabel(status: Campaign['status']): string {
@@ -525,7 +689,7 @@ export class CampaignsComponent implements OnInit {
   }
 
   metricSourceLabel(): string {
-    return 'Métricas estimadas';
+    return this.demoModeEnabled ? 'Dados de demonstração' : 'Métricas reais';
   }
 
   trackById(_: number, item: { id: string }): string {
@@ -620,7 +784,7 @@ export class CampaignsComponent implements OnInit {
 
   private applyLoadedCampaigns(campaigns: Campaign[], requestId: number, selectedStoreId: string | null): void {
     if (!this.isCurrentCampaignListRequest(requestId, selectedStoreId)) return;
-    this.campaigns.set(campaigns.map((campaign) => this.withPresentationMetrics(campaign)));
+    this.campaigns.set(campaigns);
     this.loading.set(false);
 
     if (this.pendingCreatedMetaCampaignId) {
@@ -659,13 +823,13 @@ export class CampaignsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (updated) => {
-          const enhanced = this.withPresentationMetrics(updated as Campaign);
-          this.campaigns.update((items) => items.map((item) => item.id === campaign.id ? enhanced : item));
+          const updatedCampaign = updated as Campaign;
+          this.campaigns.update((items) => items.map((item) => item.id === campaign.id ? updatedCampaign : item));
           if (this.selectedReport()?.id === campaign.id) {
-            this.selectedReport.set(enhanced);
+            this.selectedReport.set(updatedCampaign);
           }
           this.actionLoadingId.set(null);
-          this.ui.showSuccess(successTitle, enhanced.name);
+          this.ui.showSuccess(successTitle, updatedCampaign.name);
         },
         error: (err) => {
           this.actionLoadingId.set(null);
@@ -674,54 +838,77 @@ export class CampaignsComponent implements OnInit {
       });
   }
 
-  private withPresentationMetrics(campaign: Campaign): Campaign {
-    if (campaign.metrics) return campaign;
-
-    const seed = this.hashSeed(campaign.id || campaign.metaId || campaign.name);
-    const dailyBudget = Number(campaign.dailyBudget || 0);
-    const activeFactor = campaign.status === 'ACTIVE' ? 1 : campaign.status === 'PAUSED' ? 0.35 : 0.12;
-    const spend = Math.round((dailyBudget > 0 ? dailyBudget * 21 : 650 + (seed % 900)) * activeFactor);
-    const impressions = Math.max(0, Math.round((spend * (80 + (seed % 70))) || (seed % 14000)));
-    const ctr = Number((1.1 + ((seed % 190) / 100)).toFixed(2));
-    const clicks = Math.round(impressions * (ctr / 100));
-    const conversions = Math.round(clicks * (0.025 + ((seed % 30) / 1000)));
-    const cpa = conversions > 0 ? spend / conversions : 0;
-    const roas = spend > 0 ? Number((1.2 + ((seed % 260) / 100)).toFixed(2)) : 0;
-    const score = Math.max(35, Math.min(96, Math.round(45 + roas * 12 + ctr * 4 - cpa / 20)));
-
-    return {
-      ...campaign,
-      metrics: {
-        ctr,
-        cpa,
-        roas,
-        score,
-        spend,
-        conversions,
-        impressions,
-        clicks,
-      },
-      insights: campaign.insights || this.presentationInsights(campaign.status, roas, ctr, cpa),
-    };
-  }
-
-  private presentationInsights(status: Campaign['status'], roas: number, ctr: number, cpa: number): CampaignInsight[] {
-    const statusInsight = status === 'ACTIVE'
-      ? 'Campanha ativa: acompanhe entrega e custo por resultado diariamente.'
-      : status === 'PAUSED'
-        ? 'Campanha pausada: revise criativo e público antes de reativar.'
-        : 'Campanha arquivada mantida apenas para histórico.';
+  hasRealMetrics(campaign: Campaign): boolean {
+    const metrics = campaign.metrics;
+    if (!metrics) {
+      return false;
+    }
 
     return [
-      { type: 'INFO', title: statusInsight },
-      { type: roas >= 2.5 ? 'OPORTUNIDADE' : 'ALERTA', title: roas >= 2.5 ? 'ROAS estimado saudável para escalar com cautela.' : 'ROAS estimado pede revisão de oferta.' },
-      { type: ctr >= 1.8 ? 'INFO' : 'ALERTA', title: ctr >= 1.8 ? 'CTR estimado competitivo.' : 'CTR estimado baixo: teste nova chamada.' },
-      { type: cpa <= 80 ? 'INFO' : 'ALERTA', title: cpa <= 80 ? 'CPA estimado dentro da faixa esperada.' : 'CPA estimado alto para este recorte.' },
-    ];
+      metrics.impressions,
+      metrics.clicks,
+      metrics.spend,
+      metrics.conversions,
+      metrics.revenue,
+      metrics.ctr,
+      metrics.cpc,
+      metrics.cpa,
+      metrics.roas,
+      metrics.score,
+    ].some((value) => typeof value === 'number' && Number.isFinite(value));
   }
 
-  private hashSeed(value: string): number {
-    return value.split('').reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) >>> 0, 2166136261);
+  hasInsights(campaign: Campaign): boolean {
+    return (campaign.insights?.length ?? 0) > 0;
+  }
+
+  emptyMetricsMessage(): string {
+    return 'Sem métricas reais disponíveis no período selecionado.';
+  }
+
+  campaignMetricsMessage(campaign: Campaign): string {
+    return this.hasRealMetrics(campaign)
+      ? 'Métricas reais disponíveis para esta campanha.'
+      : 'Sem métricas reais disponíveis para esta campanha no período selecionado.';
+  }
+
+  reportInsights(campaign: Campaign): string[] {
+    const insights = campaign.insights ?? [];
+    if (!insights.length) {
+      return [];
+    }
+
+    return insights
+      .map((insight) => insight.title || insight.message || insight.recommendation || '')
+      .filter((value) => value.trim().length > 0);
+  }
+
+  private realMetricsTotals(): {
+    impressions: number;
+    clicks: number;
+    spend: number;
+    conversions: number;
+    revenue: number;
+  } {
+    return this.campaigns().reduce((totals, campaign) => {
+      if (!this.hasRealMetrics(campaign) || !campaign.metrics) {
+        return totals;
+      }
+
+      return {
+        impressions: totals.impressions + Number(campaign.metrics.impressions || 0),
+        clicks: totals.clicks + Number(campaign.metrics.clicks || 0),
+        spend: totals.spend + Number(campaign.metrics.spend || 0),
+        conversions: totals.conversions + Number(campaign.metrics.conversions || 0),
+        revenue: totals.revenue + Number(campaign.metrics.revenue || 0),
+      };
+    }, {
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      conversions: 0,
+      revenue: 0,
+    });
   }
 
   private applyRouteIntent(): void {
@@ -750,7 +937,10 @@ export class CampaignsComponent implements OnInit {
       this.pendingOpenCreateFromRoute = false;
 
       if (this.canCreateCampaigns()) {
-        this.createPanelOpen.set(true);
+        this.openCreateCampaign(this.pendingRouteCreateMode, {
+          resumeDraft: this.pendingRouteResumeDraft,
+          target: this.pendingRouteTarget,
+        });
       } else {
         this.ui.showWarning(
           'Criação indisponível',
@@ -767,9 +957,94 @@ export class CampaignsComponent implements OnInit {
   private clearCreateRouteParams(): void {
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { openCreate: null, storeId: null },
+      queryParams: { action: null, openCreate: null, storeId: null, createMode: null, resumeDraft: null, startAt: null },
       queryParamsHandling: 'merge',
       replaceUrl: true,
+    });
+  }
+
+  private loadOnboardingContext(): void {
+    const storeId = this.storeContext.getValidSelectedStoreId();
+    const requestId = ++this.onboardingContextRequestId;
+
+    if (!storeId) {
+      this.integration.set(null);
+      this.syncedAdAccounts.set([]);
+      return;
+    }
+
+    forkJoin({
+      integration: this.apiService.getMetaIntegrationStatus(storeId),
+      adAccounts: this.apiService.getAdAccounts(storeId),
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ integration, adAccounts }) => {
+          if (requestId !== this.onboardingContextRequestId || storeId !== this.storeContext.getValidSelectedStoreId()) {
+            return;
+          }
+          this.integration.set(integration);
+          this.syncedAdAccounts.set(adAccounts || []);
+        },
+        error: () => {
+          if (requestId !== this.onboardingContextRequestId) {
+            return;
+          }
+          this.integration.set(null);
+          this.syncedAdAccounts.set([]);
+        },
+      });
+  }
+
+  private syncOnboardingProgressState(): void {
+    const storeId = this.storeContext.getValidSelectedStoreId() || this.storeContext.selectedStoreId();
+    this.onboardingDraftAvailable.set(this.readStorageFlag(this.builderDraftStorageKey(storeId)));
+    this.onboardingReviewVisited.set(this.readStorageFlag(this.reviewVisitedStorageKey(storeId)));
+  }
+
+  private syncOnboardingUiState(): void {
+    const storeId = this.storeContext.getValidSelectedStoreId() || this.storeContext.selectedStoreId();
+    this.onboardingCollapsed.set(this.readStorageFlag(this.onboardingPreferenceKey('collapsed', storeId)));
+    this.onboardingClosed.set(this.readStorageFlag(this.onboardingPreferenceKey('closed', storeId)));
+  }
+
+  private persistOnboardingPreference(kind: 'collapsed' | 'closed', value: boolean): void {
+    const storeId = this.storeContext.getValidSelectedStoreId() || this.storeContext.selectedStoreId();
+    try {
+      if (value) {
+        localStorage.setItem(this.onboardingPreferenceKey(kind, storeId), '1');
+      } else {
+        localStorage.removeItem(this.onboardingPreferenceKey(kind, storeId));
+      }
+    } catch {
+      // localStorage is optional for onboarding preferences
+    }
+  }
+
+  private onboardingPreferenceKey(kind: 'collapsed' | 'closed', storeId: string): string {
+    return `metaiq.campaigns.onboarding.${kind}.${storeId || 'global'}`;
+  }
+
+  private builderDraftStorageKey(storeId: string): string {
+    return `metaiq.campaign-builder.v2.${storeId || 'global'}`;
+  }
+
+  private reviewVisitedStorageKey(storeId: string): string {
+    return `metaiq.campaign-builder.review-visited.${storeId || 'global'}`;
+  }
+
+  private readStorageFlag(key: string): boolean {
+    try {
+      return localStorage.getItem(key) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private goToIntegrations(): void {
+    const storeId = this.storeContext.getValidSelectedStoreId() || this.storeContext.selectedStoreId() || null;
+    this.router.navigate(['/manager/integrations'], {
+      queryParams: storeId ? { storeId } : undefined,
     });
   }
 }

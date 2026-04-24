@@ -9,7 +9,7 @@
     <div class="toolbar">
       <select
         class="select"
-        *ngIf="storeContext.stores().length > 1"
+        *ngIf="storeContext.stores().length > 1 && !isIndividualAccount()"
         [ngModel]="storeContext.selectedStoreId()"
         (ngModelChange)="setStore($event)"
       >

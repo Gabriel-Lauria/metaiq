@@ -6,6 +6,7 @@ import { NotificationContainerComponent } from './core/components/notification-c
 import { GlobalLoadingComponent } from './core/components/global-loading.component';
 import { Role } from './core/models';
 import { roleLabel } from './core/role-labels';
+import { AccountContextService } from './core/services/account-context.service';
 import { AuthService } from './core/services/auth.service';
 import { UiService } from './core/services/ui.service';
 
@@ -35,6 +36,7 @@ interface MenuItem {
 })
 export class AppComponent {
   private authService = inject(AuthService);
+  private accountContext = inject(AccountContextService);
   private uiService = inject(UiService);
   private router = inject(Router);
 
@@ -117,6 +119,13 @@ export class AppComponent {
       title: 'Integrações',
       roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL],
     },
+    {
+      label: 'Minha empresa',
+      route: '/my-company',
+      icon: 'E',
+      title: 'Minha empresa',
+      roles: this.allAuthenticatedRoles,
+    },
   ];
 
   constructor() {
@@ -150,8 +159,11 @@ export class AppComponent {
   private updatePageTitle(): void {
     const url = this.router.url;
     const role = this.authService.getCurrentRole();
+    const isIndividual = this.accountContext.isIndividualAccount();
     const titles: { [key: string]: string } = {
-      '/dashboard': role === Role.CLIENT
+      '/dashboard': isIndividual
+        ? 'Dashboard'
+        : role === Role.CLIENT
         ? 'Resultados da Loja'
         : role === Role.MANAGER
           ? 'Central do Supervisor'
@@ -166,6 +178,7 @@ export class AppComponent {
       '/manager/stores': 'Lojas',
       '/manager/users': 'Gestão de Usuários',
       '/manager/integrations': 'Integrações',
+      '/my-company': 'Minha empresa',
     };
     this.currentTitle = titles[url] || 'Dashboard';
   }
@@ -198,7 +211,16 @@ export class AppComponent {
   }
 
   getMenu(): MenuItem[] {
+    const isIndividual = this.accountContext.isIndividualAccount();
+
     return this.menu
+      .filter((item) => !isIndividual || [
+        '/dashboard',
+        '/campaigns',
+        '/metrics',
+        '/manager/integrations',
+        '/my-company',
+      ].includes(item.route))
       .filter((item) => this.authService.hasAnyRole(item.roles))
       .map((item) => ({
         ...item,
@@ -209,6 +231,7 @@ export class AppComponent {
   dashboardLabel(): string {
     const role = this.authService.getCurrentRole();
     if (role === Role.CLIENT) return 'Resultados';
+    if (this.accountContext.isIndividualAccount()) return 'Dashboard';
     if (role === Role.MANAGER) return 'Central';
     if (role === Role.PLATFORM_ADMIN) return 'Plataforma';
     if (role === Role.ADMIN) return 'Empresa';
