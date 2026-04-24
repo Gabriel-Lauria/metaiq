@@ -147,20 +147,20 @@ export class RegisterComponent implements OnInit {
           });
         },
         error: (err) => {
-          this.loading = false;
-          const rawMessage = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
-          if (rawMessage.includes('email já cadastrado') || rawMessage.includes('email ja cadastrado') || rawMessage.includes('email já em uso') || rawMessage.includes('email ja em uso')) {
-            this.message = 'Esse email ja esta em uso.';
-          } else if (err?.status === 400 && typeof err?.message === 'string' && err.message.trim()) {
-            this.message = err.message;
-          } else if (rawMessage.includes('senha')) {
-            this.message = 'Verifique os dados e tente novamente.';
-          } else if (err?.status === 0) {
-            this.message = 'Nao foi possivel criar sua conta agora.';
-          } else {
-            this.message = 'Nao foi possivel criar sua conta agora.';
-          }
-          this.messageType = 'error';
+          setTimeout(() => {
+            this.loading = false;
+            const rawMessage = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
+            if (rawMessage.includes('email já cadastrado') || rawMessage.includes('email ja cadastrado') || rawMessage.includes('email já em uso') || rawMessage.includes('email ja em uso')) {
+              this.message = 'Esse email ja esta em uso.';
+            } else if (err?.status === 400 && typeof err?.message === 'string' && err.message.trim()) {
+              this.message = err.message;
+            } else if (rawMessage.includes('senha')) {
+              this.message = 'Verifique os dados e tente novamente.';
+            } else {
+              this.message = 'Nao foi possivel criar sua conta agora.';
+            }
+            this.messageType = 'error';
+          });
         },
       });
   }
