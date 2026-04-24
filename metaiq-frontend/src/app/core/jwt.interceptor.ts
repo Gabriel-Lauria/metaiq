@@ -15,6 +15,12 @@ import { AuthResponse } from './models';
 
 let refreshTokenRequest: Observable<string> | null = null;
 const REFRESH_ATTEMPTED = new HttpContextToken<boolean>(() => false);
+const AUTH_URLS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
+const PUBLIC_API_URLS = [
+  ...AUTH_URLS,
+  '/ibge/states',
+];
+const PUBLIC_PAGE_ROUTES = ['/', '/auth', '/login', '/register'];
 
 export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
@@ -26,7 +32,6 @@ export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
     req = addToken(req, token);
   }
 
-  // Add credentials for auth endpoints
   if (isAuthUrl(req.url)) {
     req = addCredentials(req);
   }
@@ -34,12 +39,20 @@ export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
   return next(req).pipe(
     catchError(error => {
       if (error instanceof HttpErrorResponse && error.status === 401) {
-        if (isAuthUrl(req.url) || req.context.get(REFRESH_ATTEMPTED)) {
-          if (!isAuthUrl(req.url)) {
-            forceCleanLogout(authService, router, uiService);
-          }
+        if (isPublicApiUrl(req.url)) {
           return throwError(() => error);
         }
+
+        if (req.context.get(REFRESH_ATTEMPTED)) {
+          forceCleanLogout(authService, router, uiService);
+          return throwError(() => error);
+        }
+
+        if (!authService.canAttemptSessionRefresh()) {
+          handleUnauthorizedWithoutRefresh(authService, router, uiService);
+          return throwError(() => error);
+        }
+
         return handle401Error(req, next, authService, router, uiService);
       }
       return throwError(() => error);
@@ -93,15 +106,35 @@ function handle401Error(
 }
 
 function isAuthUrl(url: string): boolean {
-  const whitelist = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
-  return whitelist.some(path => url.includes(path));
+  return AUTH_URLS.some(path => url.includes(path));
+}
+
+function isPublicApiUrl(url: string): boolean {
+  return PUBLIC_API_URLS.some(path => url.includes(path));
+}
+
+function isPublicPageRoute(url: string): boolean {
+  return PUBLIC_PAGE_ROUTES.includes(url);
+}
+
+function handleUnauthorizedWithoutRefresh(
+  authService: AuthService,
+  router: Router,
+  uiService: UiService
+): void {
+  authService.clearLocalSession();
+  refreshTokenRequest = null;
+
+  if (isPublicPageRoute(router.url)) {
+    return;
+  }
+
+  uiService.showWarning('Sessão expirada', 'Faça login novamente para continuar.');
+  router.navigate(['/auth'], {
+    queryParams: { returnUrl: router.url },
+  });
 }
 
 function forceCleanLogout(authService: AuthService, router: Router, uiService: UiService): void {
-  authService.clearLocalSession();
-  refreshTokenRequest = null;
-  uiService.showWarning('Sessão expirada', 'Faça login novamente para continuar.');
-  if (router.url !== '/auth') {
-    router.navigate(['/auth']);
-  }
+  handleUnauthorizedWithoutRefresh(authService, router, uiService);
 }

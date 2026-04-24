@@ -16,6 +16,7 @@ export class AuthService {
     'user',
     'selectedStoreId',
   ];
+  private readonly sessionHintKey = 'metaiq_session_hint';
   private refreshSessionRequest: Observable<boolean> | null = null;
 
   private currentUserSubject = new BehaviorSubject<User | null>(null);
@@ -84,6 +85,18 @@ export class AuthService {
     return !!this.getAccessToken();
   }
 
+  hasSessionHint(): boolean {
+    try {
+      return localStorage.getItem(this.sessionHintKey) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  canAttemptSessionRefresh(): boolean {
+    return this.isAuthenticated() || this.hasSessionHint();
+  }
+
   isInitialized(): boolean {
     return this.authInitializedSubject.value;
   }
@@ -101,6 +114,11 @@ export class AuthService {
     if (this.isAuthenticated()) {
       this.authInitializedSubject.next(true);
       return of(true);
+    }
+
+    if (!this.hasSessionHint()) {
+      this.clearSessionState();
+      return of(false);
     }
 
     if (!this.refreshSessionRequest) {
@@ -139,6 +157,7 @@ export class AuthService {
 
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.removeItem('accessToken');
+    localStorage.setItem(this.sessionHintKey, '1');
     const role = this.normalizeRole(response.user.role);
     const userWithRole = { ...response.user, role };
     localStorage.setItem('user', JSON.stringify(userWithRole));
@@ -152,6 +171,7 @@ export class AuthService {
     for (const key of this.sessionKeys) {
       localStorage.removeItem(key);
     }
+    localStorage.removeItem(this.sessionHintKey);
   }
 
   private clearSessionState(): void {

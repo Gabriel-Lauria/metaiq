@@ -33,10 +33,12 @@ describe('jwtInterceptor session refresh', () => {
       'getAccessToken',
       'refreshToken',
       'clearLocalSession',
+      'canAttemptSessionRefresh',
     ]);
     router = jasmine.createSpyObj<Router>('Router', ['navigate'], { url: '/dashboard' });
     uiService = jasmine.createSpyObj<UiService>('UiService', ['showWarning']);
     authService.getAccessToken.and.returnValue(null);
+    authService.canAttemptSessionRefresh.and.returnValue(true);
 
     TestBed.configureTestingModule({
       providers: [
@@ -68,6 +70,22 @@ describe('jwtInterceptor session refresh', () => {
 
     const request = httpMock.expectOne('/api/auth/refresh');
     expect(request.request.withCredentials).toBeTrue();
+    request.flush({ message: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+  });
+
+  it('does not trigger refresh for public ibge endpoints', (done) => {
+    http.get('/api/ibge/states').subscribe({
+      error: (error) => {
+        expect(error.status).toBe(401);
+        expect(authService.refreshToken).not.toHaveBeenCalled();
+        expect(authService.clearLocalSession).not.toHaveBeenCalled();
+        expect(router.navigate).not.toHaveBeenCalled();
+        expect(uiService.showWarning).not.toHaveBeenCalled();
+        done();
+      },
+    });
+
+    const request = httpMock.expectOne('/api/ibge/states');
     request.flush({ message: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
   });
 
@@ -104,7 +122,9 @@ describe('jwtInterceptor session refresh', () => {
         expect(error.status).toBe(401);
         expect(authService.refreshToken).toHaveBeenCalledTimes(1);
         expect(authService.clearLocalSession).toHaveBeenCalled();
-        expect(router.navigate).toHaveBeenCalledWith(['/auth']);
+        expect(router.navigate).toHaveBeenCalledWith(['/auth'], {
+          queryParams: { returnUrl: '/dashboard' },
+        });
         done();
       },
     });
@@ -115,5 +135,24 @@ describe('jwtInterceptor session refresh', () => {
     const retry = httpMock.expectOne('/api/protected');
     expect(retry.request.headers.get('Authorization')).toBe('Bearer new-access-token');
     retry.flush({ message: 'expired again' }, { status: 401, statusText: 'Unauthorized' });
+  });
+
+  it('does not call refresh when there is no active or recoverable session', (done) => {
+    authService.canAttemptSessionRefresh.and.returnValue(false);
+
+    http.get('/api/protected').subscribe({
+      error: (error) => {
+        expect(error.status).toBe(401);
+        expect(authService.refreshToken).not.toHaveBeenCalled();
+        expect(authService.clearLocalSession).toHaveBeenCalled();
+        expect(router.navigate).toHaveBeenCalledWith(['/auth'], {
+          queryParams: { returnUrl: '/dashboard' },
+        });
+        done();
+      },
+    });
+
+    httpMock.expectOne('/api/protected')
+      .flush({ message: 'expired' }, { status: 401, statusText: 'Unauthorized' });
   });
 });

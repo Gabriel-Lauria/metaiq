@@ -55,6 +55,7 @@ describe('AuthService token storage', () => {
 
     expect(service.getAccessToken()).toBe('access-token');
     expect(localStorage.getItem('accessToken')).toBeNull();
+    expect(localStorage.getItem('metaiq_session_hint')).toBe('1');
     expect(localStorage.getItem('user')).toContain('admin@test.com');
     expect(service.getCurrentUser()?.accountType).toBe('AGENCY');
     expect(service.getCurrentUser()?.storeId).toBeNull();
@@ -62,7 +63,7 @@ describe('AuthService token storage', () => {
   });
 
   it('restores authentication after reload using the refresh cookie', (done) => {
-    localStorage.setItem('accessToken', 'stale-token');
+    localStorage.setItem('metaiq_session_hint', '1');
     const service = TestBed.inject(AuthService);
 
     service.initializeSession().subscribe((authenticated) => {
@@ -79,6 +80,7 @@ describe('AuthService token storage', () => {
   });
 
   it('clears local session and finishes initialization when refresh fails', (done) => {
+    localStorage.setItem('metaiq_session_hint', '1');
     const service = TestBed.inject(AuthService);
 
     service.initializeSession().subscribe((authenticated) => {
@@ -95,6 +97,7 @@ describe('AuthService token storage', () => {
   });
 
   it('does not start a second refresh while session restoration is pending', () => {
+    localStorage.setItem('metaiq_session_hint', '1');
     const service = TestBed.inject(AuthService);
 
     service.ensureAuthenticated().subscribe();
@@ -120,7 +123,21 @@ describe('AuthService token storage', () => {
     expect(logoutRequest.request.withCredentials).toBeTrue();
     expect(service.getAccessToken()).toBeNull();
     expect(service.getCurrentUser()).toBeNull();
+    expect(localStorage.getItem('metaiq_session_hint')).toBeNull();
     logoutRequest.flush({ success: true });
+  });
+
+  it('does not attempt refresh restoration without a session hint', (done) => {
+    const service = TestBed.inject(AuthService);
+
+    service.initializeSession().subscribe((authenticated) => {
+      expect(authenticated).toBeFalse();
+      expect(service.isInitialized()).toBeTrue();
+      expect(service.getAccessToken()).toBeNull();
+      done();
+    });
+
+    httpMock.expectNone((req) => req.url.endsWith('/auth/refresh'));
   });
 
   it('rejects unknown backend roles instead of falling back to an operational profile', () => {
