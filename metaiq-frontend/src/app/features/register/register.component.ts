@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
-import { IbgeCity, IbgeState } from '../../core/models';
+import { IbgeCity, IbgeState, RegisterRequest } from '../../core/models';
 import { environment } from '../../core/environment';
 
 @Component({
@@ -117,19 +117,26 @@ export class RegisterComponent implements OnInit {
     this.loading = true;
     this.message = '';
 
-    this.authService.register({
+    const businessSegment = this.cleanOptional(this.form.value.businessSegment);
+    const website = this.cleanOptional(this.form.value.website);
+    const instagram = this.cleanOptional(this.form.value.instagram);
+    const whatsapp = this.cleanOptional(this.form.value.whatsapp);
+
+    const registerPayload: RegisterRequest = {
       accountType: 'INDIVIDUAL',
       name: this.form.value.name!.trim(),
       email: this.form.value.email!.trim(),
       password: this.form.value.password!,
       businessName: this.form.value.businessName!.trim(),
-      businessSegment: this.form.value.businessSegment?.trim() || '',
       defaultState: this.form.value.defaultState!.trim().toUpperCase(),
       defaultCity: this.form.value.defaultCity!.trim(),
-      website: this.form.value.website?.trim() || '',
-      instagram: this.form.value.instagram?.trim() || '',
-      whatsapp: this.form.value.whatsapp?.trim() || '',
-    })
+      ...(businessSegment ? { businessSegment } : {}),
+      ...(website ? { website } : {}),
+      ...(instagram ? { instagram } : {}),
+      ...(whatsapp ? { whatsapp } : {}),
+    };
+
+    this.authService.register(registerPayload)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -144,6 +151,8 @@ export class RegisterComponent implements OnInit {
           const rawMessage = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
           if (rawMessage.includes('email já cadastrado') || rawMessage.includes('email ja cadastrado') || rawMessage.includes('email já em uso') || rawMessage.includes('email ja em uso')) {
             this.message = 'Esse email ja esta em uso.';
+          } else if (err?.status === 400 && typeof err?.message === 'string' && err.message.trim()) {
+            this.message = err.message;
           } else if (rawMessage.includes('senha')) {
             this.message = 'Verifique os dados e tente novamente.';
           } else if (err?.status === 0) {
@@ -167,5 +176,10 @@ export class RegisterComponent implements OnInit {
     }
     if (field.errors['mismatch']) return 'As senhas precisam ser iguais.';
     return 'Verifique este campo.';
+  }
+
+  private cleanOptional(value: string | null | undefined): string | undefined {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
   }
 }
