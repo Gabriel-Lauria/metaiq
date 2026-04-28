@@ -75,6 +75,7 @@ export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaign
     country: state.audience.country.trim().toUpperCase(),
     adAccountId: state.identity.adAccountId,
     message: normalizeCreativeText(state.creative.message),
+    assetId: state.creative.assetId.trim() || undefined,
     imageUrl: normalizeCreativeText(state.creative.imageUrl),
     state: stateCode || undefined,
     stateName: stateName || undefined,
@@ -278,11 +279,11 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
   }
 
   if (!isValidImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-url', label: 'URL da imagem do criativo precisa ser http(s).', tone: 'danger' });
+    signals.push({ id: 'image-url', label: 'A imagem do criativo precisa estar enviada e acessível para a Meta.', tone: 'danger' });
   }
 
   if (state.creative.imageUrl.trim() && !isLikelyDirectImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-direct', label: 'A URL da imagem parece ser preview, redirect ou página HTML. Use uma imagem direta.', tone: 'danger' });
+    signals.push({ id: 'image-direct', label: 'A imagem selecionada não parece válida para envio à Meta. Reenvie o arquivo.', tone: 'danger' });
   }
 
   if (!isValidCountry(state.audience.country)) {
@@ -356,7 +357,7 @@ export function missingRealPayloadFields(state: CampaignBuilderState): string[] 
     state.destination.type !== 'site' || !isSecureHttpUrl(state.destination.websiteUrl) ? 'URL de destino https' : '',
     !state.creative.message.trim() ? 'mensagem' : '',
     !state.creative.headline.trim() ? 'headline' : '',
-    !isLikelyDirectImageUrl(state.creative.imageUrl) ? 'URL da imagem' : '',
+    !isLikelyDirectImageUrl(state.creative.imageUrl) ? 'imagem do criativo' : '',
   ].filter(Boolean);
 }
 

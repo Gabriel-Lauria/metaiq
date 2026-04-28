@@ -20,10 +20,11 @@ describe('ThemeService', () => {
       expect(localStorage.getItem('metaiq-theme')).toBe('dark');
     });
 
-    it('should restore theme from localStorage', () => {
+    it('should force light theme even when localStorage has dark', () => {
       localStorage.setItem('metaiq-theme', 'dark');
       ThemeService.initialize();
-      expect(ThemeService.getCurrentTheme().name).toBe('dark');
+      expect(ThemeService.getCurrentTheme().name).toBe('light');
+      expect(localStorage.getItem('metaiq-theme')).toBe('light');
     });
   });
 

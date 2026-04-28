@@ -2,8 +2,8 @@
   color-scheme: light;
   --bg-page: #f8fafc;
   --bg-surface: #ffffff;
-  --bg-surface-soft: #f8fafc;
-  --bg-surface-muted: #ecfeff;
+  --bg-surface-soft: #f1f5f9;
+  --bg-surface-muted: #e2e8f0;
   --sidebar: #1e40af;
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
@@ -36,6 +36,7 @@
 
 /* Light Theme - Default */
 body.light-theme {
+  color-scheme: light;
   --color-primary: #3366FF;
   --color-secondary: #FFB84D;
   --color-background: #FFFFFF;
@@ -51,7 +52,6 @@ body.light-theme {
 
 /* Dark Theme */
 body.dark-theme {
-  color-scheme: dark;
   --color-primary: #4477FF;
   --color-secondary: #FFB84D;
   --color-background: #0F0F0F;
@@ -81,13 +81,22 @@ body.dark-theme {
   box-sizing: border-box;
 }
 
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--bg-page);
+  color: var(--text);
+}
+
 html {
   height: 100%;
   scroll-behavior: smooth;
 }
 
 body {
-  min-height: 100%;
+  min-height: 100vh;
   font-family: var(--font-sans);
   background: var(--bg-page);
   color: var(--text);
@@ -141,6 +150,28 @@ app-root {
 
 app-root {
   display: block;
+  background: var(--bg-page);
+  color: var(--text);
+}
+
+.app-layout,
+.app-shell,
+.main-layout,
+.main-content,
+.page,
+.page-content {
+  background: var(--bg-page);
+  color: var(--text);
+}
+
+.card,
+.panel,
+.content-card,
+.metric-card,
+.dashboard-card {
+  background: var(--bg-surface);
+  color: var(--text);
+  border: 1px solid var(--border);
 }
 
 button,

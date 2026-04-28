@@ -275,6 +275,25 @@ export class AccessScopeService {
     return adAccount;
   }
 
+  async validateAdAccountInStoreAccess(
+    user: AuthenticatedUser,
+    storeId: string,
+    adAccountId?: string | null,
+  ): Promise<AdAccount> {
+    const [store, adAccount] = await Promise.all([
+      this.validateStoreAccess(user, storeId),
+      this.validateAdAccountAccess(user, adAccountId),
+    ]);
+
+    if (adAccount.storeId !== store.id) {
+      throw new BadRequestException(
+        "A conta de anúncios informada não pertence à store selecionada.",
+      );
+    }
+
+    return adAccount;
+  }
+
   async canAccessInsight(
     user: AuthenticatedUser,
     insightId: string,
@@ -320,6 +339,45 @@ export class AccessScopeService {
       insight.campaign.store.tenantId,
     );
     return insight;
+  }
+
+  async validateCampaignInStoreAccess(
+    user: AuthenticatedUser,
+    storeId: string,
+    campaignId?: string | null,
+  ): Promise<Campaign> {
+    const [store, campaign] = await Promise.all([
+      this.validateStoreAccess(user, storeId),
+      this.validateCampaignAccess(user, campaignId),
+    ]);
+
+    if (campaign.storeId !== store.id) {
+      throw new BadRequestException(
+        "A campanha informada não pertence à store selecionada.",
+      );
+    }
+
+    return campaign;
+  }
+
+  async validateCampaignInAdAccountAccess(
+    user: AuthenticatedUser,
+    storeId: string,
+    adAccountId: string,
+    campaignId?: string | null,
+  ): Promise<Campaign> {
+    const [adAccount, campaign] = await Promise.all([
+      this.validateAdAccountInStoreAccess(user, storeId, adAccountId),
+      this.validateCampaignInStoreAccess(user, storeId, campaignId),
+    ]);
+
+    if (campaign.adAccountId !== adAccount.id) {
+      throw new BadRequestException(
+        "A campanha informada não pertence à conta de anúncios selecionada.",
+      );
+    }
+
+    return campaign;
   }
 
   async canAccessResource(

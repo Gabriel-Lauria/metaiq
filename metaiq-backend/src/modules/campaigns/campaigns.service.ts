@@ -156,16 +156,11 @@ export class CampaignsService {
     adAccountId: string,
     storeId: string,
   ): Promise<void> {
-    const adAccount = await this.accessScope.validateAdAccountAccess(
+    const adAccount = await this.accessScope.validateAdAccountInStoreAccess(
       user,
+      storeId,
       adAccountId,
     );
-
-    if (adAccount.storeId !== storeId) {
-      throw new BadRequestException(
-        "A conta de anúncio informada não pertence à store selecionada.",
-      );
-    }
 
     if (!adAccount.active) {
       throw new ForbiddenException(

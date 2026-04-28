@@ -39,6 +39,8 @@ import { MetaCampaignCreation } from './modules/integrations/meta/meta-campaign-
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { AuditLog } from './common/entities/audit-log.entity';
 import { ObservabilityInterceptor } from './common/interceptors/observability.interceptor';
+import { Asset } from './modules/assets/entities/asset.entity';
+import { AssetsModule } from './modules/assets/assets.module';
 
 @Module({
   imports: [
@@ -68,7 +70,7 @@ import { ObservabilityInterceptor } from './common/interceptors/observability.in
         const baseConfig = {
           synchronize: config.get<boolean>('database.synchronize'),
           logging: appEnv !== 'production' && appEnv !== 'test',
-          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation, AuditLog],
+          entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation, AuditLog, Asset],
           migrations: [__dirname + '/migrations/[0-9]*-*.{js,ts}'],
           migrationsRun: config.get<boolean>('database.migrationsRun'),
           migrationsTransactionMode: 'all' as const,
@@ -114,6 +116,7 @@ import { ObservabilityInterceptor } from './common/interceptors/observability.in
     MetricsModule,
     InsightsModule,
     DashboardModule,
+    AssetsModule,
     MetaIntegrationModule,
     IbgeModule,
   ],

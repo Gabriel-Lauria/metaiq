@@ -7,6 +7,10 @@ import { forkJoin } from 'rxjs';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import {
   AdAccount,
+  Asset,
+  CampaignAiFailureResponse,
+  CampaignAiStructuredResponse,
+  CampaignAnalysisResponse,
   AiCampaignCopilotAnalysis,
   AiCampaignCopilotImprovement,
   AiCampaignCopilotImprovementType,
@@ -30,6 +34,7 @@ import {
   MetaCampaignErrorDetails,
   MetaCampaignExecutionStatus,
   MetaCampaignExecutionStep,
+  MetaCampaignExecutionContext,
   MetaCampaignPartialIds,
   MetaCampaignRecoveryResponse,
   StoreIntegration,
@@ -64,6 +69,7 @@ import {
   firstBlockingSectionId,
   generalSectionComplete,
   hasConfiguredPage,
+  hasConsistentAudienceLocation,
   hasSyncedAdAccounts,
   identitySectionComplete,
   isIntegrationConnected,
@@ -100,6 +106,8 @@ import {
   SectionProgress,
   SuccessOverlayState,
   SummaryRow,
+  WizardObjectiveId,
+  CampaignModeSelection,
 } from './campaign-builder.types';
 import {
   CTA_OPTIONS,
@@ -109,6 +117,8 @@ import {
   type MetaCallToActionType,
 } from './cta.constants';
 import { CreativePreviewComponent } from './creative-preview.component';
+import { ImageUploadComponent } from '../../shared/components/image-upload/image-upload.component';
+import { CampaignModeSelectorComponent } from './campaign-mode-selector.component';
 // FASE 7.1: Step-by-step imports
 import { CampaignBuilderStepperComponent, StepperItem } from './campaign-builder-stepper.component';
 import {
@@ -126,7 +136,15 @@ import { StepId, StepValidation } from './campaign-builder.types';
 @Component({
   selector: 'app-campaign-create-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, UiBadgeComponent, CreativePreviewComponent, CampaignBuilderStepperComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    UiBadgeComponent,
+    CreativePreviewComponent,
+    CampaignBuilderStepperComponent,
+    ImageUploadComponent,
+    CampaignModeSelectorComponent,
+  ],
   templateUrl: './campaign-create-panel.component.html',
   styleUrls: ['./campaign-create-panel.component.scss'],
 })
@@ -143,7 +161,14 @@ export class CampaignCreatePanelComponent {
   @Output() close = new EventEmitter<void>();
   @Output() created = new EventEmitter<CampaignCreateSuccessEvent>();
   @Input() set initialMode(value: CampaignCreationEntryMode | '' | null | undefined) {
-    this.applyEntryMode(value === 'ai' ? 'ai' : 'manual');
+    if (value === 'ai') {
+      this.selectMode('AI');
+      return;
+    }
+
+    if (value === 'manual') {
+      this.selectMode('GUIDED');
+    }
   }
   @Input() set resumeDraftOnOpen(value: boolean | '' | null | undefined) {
     this.pendingDraftRestore.set(!!value);
@@ -156,6 +181,17 @@ export class CampaignCreatePanelComponent {
     { value: 'OUTCOME_TRAFFIC', label: 'Tráfego', hint: 'Levar mais visitas para o destino escolhido.' },
     { value: 'OUTCOME_LEADS', label: 'Leads', hint: 'Capturar novos contatos com foco em intenção.' },
     { value: 'REACH', label: 'Alcance', hint: 'Maximizar cobertura com controle operacional simples.' },
+  ];
+  readonly wizardObjectiveOptions: Array<{
+    id: WizardObjectiveId;
+    label: string;
+    hint: string;
+    objective: CampaignObjective;
+  }> = [
+    { id: 'sell-more', label: 'Vender mais', hint: 'Foco em gerar intenção e conversas para fechar vendas.', objective: 'OUTCOME_LEADS' },
+    { id: 'receive-messages', label: 'Receber mensagens', hint: 'Ideal para puxar o contato e responder rapidamente.', objective: 'OUTCOME_LEADS' },
+    { id: 'drive-site', label: 'Levar para o site', hint: 'Bom para tráfego qualificado para a página de destino.', objective: 'OUTCOME_TRAFFIC' },
+    { id: 'promote-offer', label: 'Divulgar promoção', hint: 'Ajuda a dar alcance para uma oferta ou novidade.', objective: 'REACH' },
   ];
   readonly ctaOptions = CTA_OPTIONS;
   readonly genderOptions: Array<{ value: CampaignGender; label: string }> = [
@@ -252,6 +288,8 @@ export class CampaignCreatePanelComponent {
   readonly activeSection = signal('builder-ai');
   readonly creationMode = signal<CampaignCreationMode>('edit-lite');
   readonly creationEntryMode = signal<CampaignCreationEntryMode>('manual');
+  readonly modeSelection = signal<CampaignModeSelection | null>(null);
+  readonly showModeSelector = computed(() => !this.modeSelection());
   readonly audienceAdvancedOpen = signal(false);
   readonly budgetAdvancedOpen = signal(false);
   readonly scheduleAdvancedOpen = signal(false);
@@ -262,6 +300,7 @@ export class CampaignCreatePanelComponent {
   readonly technicalReviewOpen = signal(false);
   readonly technicalErrorOpen = signal(false);
   readonly detailedHelpEnabled = signal(false);
+  readonly aiExplanationOpen = signal(true);
   readonly ibgeStates = signal<IbgeState[]>([]);
   readonly ibgeCities = signal<IbgeCity[]>([]);
   readonly loadingIbgeStates = signal(false);
@@ -271,16 +310,17 @@ export class CampaignCreatePanelComponent {
 
   // FASE 7.1: Step-by-step signals
   readonly stepFlowEnabled = signal(false); // Ativar com flag para não quebrar fluxo existente
-  readonly currentStep = signal<StepId>('configuration');
+  readonly currentStep = signal<StepId>('objective');
   readonly stepValidations = signal<Record<StepId, StepValidation>>({
-    'briefing-ia': { errors: [], warnings: [], isComplete: false },
-    'configuration': { errors: [], warnings: [], isComplete: false },
+    'objective': { errors: [], warnings: [], isComplete: false },
+    'product': { errors: [], warnings: [], isComplete: false },
     'audience': { errors: [], warnings: [], isComplete: false },
     'creative': { errors: [], warnings: [], isComplete: false },
+    'budget': { errors: [], warnings: [], isComplete: false },
     'review': { errors: [], warnings: [], isComplete: false },
   });
   readonly stepperItems = computed(() => {
-    const sequence = getStepSequence(this.creationEntryMode() === 'ai');
+    const sequence = getStepSequence(false);
     const items: StepperItem[] = [];
 
     for (const stepId of sequence) {
@@ -297,17 +337,16 @@ export class CampaignCreatePanelComponent {
         status = 'error';
       }
 
-      const labelMap: Record<StepId, string> = {
-        'briefing-ia': 'Briefing IA',
-        'configuration': 'Configuração',
-        'audience': 'Público',
-        'creative': 'Criativo',
-        'review': 'Revisão',
-      };
-
       items.push({
         id: stepId,
-        label: labelMap[stepId],
+        label: {
+          'objective': 'Objetivo',
+          'product': 'Produto',
+          'audience': 'Público',
+          'creative': 'Criativo',
+          'budget': 'Orçamento',
+          'review': 'Revisão',
+        }[stepId],
         status,
         order: stepIndex,
       });
@@ -317,7 +356,7 @@ export class CampaignCreatePanelComponent {
   });
 
   readonly stepProgressLabel = computed(() => {
-    const sequence = getStepSequence(this.creationEntryMode() === 'ai');
+    const sequence = getStepSequence(false);
     const index = sequence.indexOf(this.currentStep());
     return `Etapa ${index + 1} de ${sequence.length}`;
   });
@@ -458,14 +497,26 @@ export class CampaignCreatePanelComponent {
     const failure = this.submitFailure();
     return !!failure?.executionId
       && failure.executionStatus === 'PARTIAL'
+      && failure.canRetry !== false
       && !this.partialExecutionDirty()
       && !this.submitting()
       && !this.recoverySubmitting();
   });
+  readonly wizardReviewChecklist = computed(() => {
+    this.revision();
+    return [
+      { label: 'objetivo definido', done: !!this.state.ui.simpleObjective && !!this.state.campaign.objective.trim() },
+      { label: 'produto preenchido', done: !!this.state.ui.productName.trim() && !!this.state.ui.productDescription.trim() },
+      { label: 'público definido', done: !!this.state.audience.city.trim() && hasConsistentAudienceLocation(this.state) },
+      { label: 'imagem selecionada', done: isLikelyDirectImageUrl(this.state.creative.imageUrl) },
+      { label: 'orçamento válido', done: Number(this.state.budget.value) > 0 },
+    ];
+  });
 
   constructor() {
-    this.applyEntryMode('manual');
+    this.state.ui.modeSelection = 'AI';
     this.loadIbgeStates();
+    this.disableStepFlow();
 
     if (!this.storeContext.loaded()) {
       this.storeContext.load();
@@ -597,10 +648,11 @@ export class CampaignCreatePanelComponent {
    */
   advanceStep(): void {
     if (!this.canAdvanceCurrentStep()) {
+      this.submitAttempted.set(true);
       return;
     }
 
-    const nextStep = getNextStep(this.currentStep(), this.creationEntryMode() === 'ai');
+    const nextStep = getNextStep(this.currentStep(), false);
     if (nextStep) {
       this.currentStep.set(nextStep);
       this.scrollToTopOfPanel();
@@ -611,7 +663,7 @@ export class CampaignCreatePanelComponent {
    * Volta para o step anterior
    */
   regressStep(): void {
-    const previousStep = getPreviousStep(this.currentStep(), this.creationEntryMode() === 'ai');
+    const previousStep = getPreviousStep(this.currentStep(), false);
     if (previousStep) {
       this.currentStep.set(previousStep);
       this.scrollToTopOfPanel();
@@ -622,7 +674,7 @@ export class CampaignCreatePanelComponent {
    * Pula para um step específico (apenas se for anterior)
    */
   jumpToStep(targetStep: StepId): void {
-    const sequence = getStepSequence(this.creationEntryMode() === 'ai');
+    const sequence = getStepSequence(false);
     const currentIndex = sequence.indexOf(this.currentStep());
     const targetIndex = sequence.indexOf(targetStep);
 
@@ -637,9 +689,7 @@ export class CampaignCreatePanelComponent {
    */
   enableStepFlow(): void {
     this.stepFlowEnabled.set(true);
-    const entryMode = this.creationEntryMode();
-    const startStep: StepId = entryMode === 'ai' ? 'briefing-ia' : 'configuration';
-    this.currentStep.set(startStep);
+    this.currentStep.set('objective');
     this.updateAllStepValidations();
   }
 
@@ -804,6 +854,8 @@ export class CampaignCreatePanelComponent {
     this.state.ui.aiGeoPendingNotice = null;
     this.state.ui.aiIgnoredFields = [];
     this.state.ui.aiUsedFallback = false;
+    this.state.ui.aiFailure = null;
+    this.state.ui.aiCopilotFailure = null;
     this.state.ui.aiLastSuggestion = null;
     this.setCreationMode(this.creationEntryMode() === 'ai' ? 'ai-entry' : 'edit-lite', false);
     this.touchState(false);
@@ -828,18 +880,37 @@ export class CampaignCreatePanelComponent {
     }
 
     this.aiSuggesting.set(true);
+    this.state.ui.aiFailure = null;
 
     this.campaignAiService.suggest(this.buildAiSuggestionRequest(prompt, storeId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.aiSuggesting.set(false);
+          if (this.isAiFailureResponse(result)) {
+            this.handleAiSuggestionFailure(result);
+            return;
+          }
+
           this.state.ui.aiLastSuggestion = result;
+          this.state.ui.aiFailure = null;
           this.state.ui.aiCreativeIdeas = result.creative.imageSuggestion ? [result.creative.imageSuggestion] : [];
           this.applyAiTrustMetadata(result);
           this.state.ui.aiDetectedFields = this.buildAiDetectedFields(result);
           this.state.ui.aiLastSummary = result.review.summary || 'Sugestão de campanha gerada pela IA.';
           this.state.ui.aiApplied = false;
+          if (this.stepFlowEnabled()) {
+            const { ignoredFields } = this.applyStructuredAiSuggestion(result);
+            this.state.ui.aiIgnoredFields = ignoredFields;
+            this.state.ui.aiApplied = true;
+            this.state.ui.aiValidationStale = false;
+            this.touchState(false);
+            this.ui.showSuccess(
+              'Sugestão aplicada',
+              'A IA preencheu texto, título, descrição e sugestões de público para você revisar.',
+            );
+            return;
+          }
           this.state.ui.builderMode = 'ai';
           this.creationEntryMode.set('ai');
           this.setCreationMode('ai-result', false);
@@ -852,27 +923,17 @@ export class CampaignCreatePanelComponent {
         },
         error: (error) => {
           this.aiSuggesting.set(false);
-          this.state.ui.aiCreativeIdeas = [];
-          this.state.ui.aiConfidence = 20;
-          this.state.ui.aiStrengths = [];
-          this.state.ui.aiAssumptions = ['Fallback local aplicado sem consultar a IA externa.'];
-          this.state.ui.aiMissingInputs = ['Contexto validado pela IA indisponível no momento.'];
-          this.state.ui.aiRiskWarnings = ['Revise todas as sugestões antes de publicar.'];
-          this.state.ui.aiRecommendations = ['Preencha os campos principais manualmente no builder antes de enviar para a Meta.'];
-          this.state.ui.aiValidationReady = false;
-          this.state.ui.aiQualityScore = 40;
-          this.state.ui.aiBlockingIssues = ['Não foi possível validar a campanha automaticamente.'];
-          this.state.ui.aiValidationWarnings = [];
-          this.state.ui.aiValidationRecommendations = ['Revise manualmente antes de enviar.'];
-          this.state.ui.aiValidationStale = false;
-          this.state.ui.aiIgnoredFields = [];
-          this.state.ui.aiUsedFallback = true;
-          this.state.ui.aiLastSuggestion = null;
-          this.touchState(false);
-          this.ui.showWarning(
-            'IA indisponível no momento',
-            error?.message || 'Não foi possível gerar sugestões agora. O builder avançado continua disponível para criação manual.',
-          );
+          this.handleAiSuggestionFailure({
+            status: 'AI_FAILED',
+            reason: 'api_error',
+            message: error?.message || 'Não conseguimos gerar a campanha com IA agora.',
+            meta: {
+              promptVersion: 'campaign-structured-v3.1.0',
+              model: 'unknown',
+              usedFallback: false,
+              responseValid: false,
+            },
+          });
         },
       });
   }
@@ -885,13 +946,22 @@ export class CampaignCreatePanelComponent {
     }
 
     this.aiCopilotAnalyzing.set(true);
+    this.state.ui.aiCopilotFailure = null;
 
     this.campaignAiService.analyze(this.buildCampaignCopilotRequest(storeId))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.aiCopilotAnalyzing.set(false);
+          if (this.isAiFailureResponse(result)) {
+            this.state.ui.aiCopilotAnalysis = null;
+            this.state.ui.aiCopilotFailure = result;
+            this.touchState(false);
+            return;
+          }
+
           this.state.ui.aiCopilotAnalysis = this.normalizeCopilotConfidence(result);
+          this.state.ui.aiCopilotFailure = null;
           this.state.ui.aiCopilotStale = false;
           this.state.ui.aiCopilotAppliedImprovementIds = [];
           this.state.ui.aiCopilotIgnoredImprovementIds = [];
@@ -906,10 +976,19 @@ export class CampaignCreatePanelComponent {
         },
         error: (error) => {
           this.aiCopilotAnalyzing.set(false);
-          this.ui.showWarning(
-            'Análise indisponível no momento',
-            error?.message || 'Não foi possível analisar a campanha agora. O fluxo manual continua disponível.',
-          );
+          this.state.ui.aiCopilotAnalysis = null;
+          this.state.ui.aiCopilotFailure = {
+            status: 'AI_FAILED',
+            reason: 'api_error',
+            message: error?.message || 'Não conseguimos gerar a campanha com IA agora.',
+            meta: {
+              promptVersion: 'campaign-copilot-v1.0.0',
+              model: 'unknown',
+              usedFallback: false,
+              responseValid: false,
+            },
+          };
+          this.touchState(false);
         },
       });
   }
@@ -946,11 +1025,17 @@ export class CampaignCreatePanelComponent {
   }
 
   openAdvancedBuilder(): void {
-    this.setCreationMode('advanced');
+    this.selectMode('ADVANCED');
   }
 
   openLiteEditor(): void {
-    this.setCreationMode('edit-lite');
+    if (this.modeSelection() === 'AI') {
+      this.selectMode('AI');
+      this.setCreationMode('edit-lite');
+      return;
+    }
+
+    this.selectMode('GUIDED');
   }
 
   saveDraft(): void {
@@ -962,6 +1047,12 @@ export class CampaignCreatePanelComponent {
   }
 
   reviewNow(): void {
+    if (this.modeSelection() === 'GUIDED' && this.stepFlowEnabled()) {
+      this.currentStep.set('review');
+      this.updateAllStepValidations();
+      this.scrollToTopOfPanel();
+      return;
+    }
     if (this.creationMode() === 'ai-entry') {
       this.setCreationMode('edit-lite', false);
     }
@@ -970,11 +1061,11 @@ export class CampaignCreatePanelComponent {
   }
 
   switchToManualMode(): void {
-    this.applyEntryMode('manual');
+    this.selectMode('GUIDED');
   }
 
   switchToAiMode(): void {
-    this.applyEntryMode('ai');
+    this.selectMode('AI');
   }
 
   goToNextPendingSection(): void {
@@ -1015,15 +1106,103 @@ export class CampaignCreatePanelComponent {
   }
 
   builderModeLabel(): string {
-    return this.creationEntryMode() === 'ai' ? 'Assistido por IA' : 'Manual';
+    switch (this.modeSelection()) {
+      case 'AI':
+        return 'Criar com IA';
+      case 'ADVANCED':
+        return 'Criação avançada';
+      case 'GUIDED':
+        return 'Criação orientada';
+      default:
+        return 'Escolha o modo';
+    }
   }
 
   builderModeIndicator(): string {
-    return `Modo: ${this.creationEntryMode() === 'ai' ? 'IA' : 'Manual'}`;
+    return this.builderModeLabel();
   }
 
   panelTitle(): string {
     return 'Criar campanha';
+  }
+
+  /**
+   * SELECIONAR MODO DE CRIAÇÃO
+   * Transiciona entre os modos: AI, GUIDED, ADVANCED
+   */
+  selectMode(mode: CampaignModeSelection): void {
+    this.modeSelection.set(mode);
+    this.state.ui.modeSelection = mode;
+
+    switch (mode) {
+      case 'AI':
+        this.initializeAiMode();
+        break;
+      case 'GUIDED':
+        this.initializeGuidedMode();
+        break;
+      case 'ADVANCED':
+        this.initializeAdvancedMode();
+        break;
+    }
+  }
+
+  /**
+   * MODO IA
+   * Mostra tela de briefing, processa com IA, mostra revisão
+   */
+  private initializeAiMode(): void {
+    this.disableStepFlow();
+    this.applyEntryMode('ai');
+    this.setCreationMode(this.state.ui.aiLastSuggestion ? 'ai-result' : 'ai-entry', false);
+  }
+
+  /**
+   * MODO GUIADO
+   * Usa o wizard existente (stepper)
+   */
+  private initializeGuidedMode(): void {
+    this.applyEntryMode('manual');
+    this.enableStepFlow();
+    this.setCreationMode('edit-lite', false);
+  }
+
+  /**
+   * MODO AVANÇADO
+   * Mostra formulário completo com todos os campos
+   */
+  private initializeAdvancedMode(): void {
+    this.disableStepFlow();
+    this.applyEntryMode('manual');
+    this.setCreationMode('advanced', false);
+  }
+
+  /**
+   * PROCESSAR BRIEFING DA IA
+   * Envia briefing para backend gerar campanha
+   */
+  onAiBriefingSubmit(briefing: string): void {
+    this.state.ui.aiBriefing = briefing;
+    this.state.ui.aiPrompt = briefing;
+    this.applyAiSuggestions();
+  }
+
+  /**
+   * VOLTAR AO SELETOR DE MODO
+   */
+  resetMode(): void {
+    this.modeSelection.set(null);
+    this.state.ui.modeSelection = 'AI';
+    this.disableStepFlow();
+    this.touchState(false);
+  }
+
+  /**
+   * TROCAR DE MODO
+   * Mantém dados e apenas muda a interface
+   */
+  switchMode(newMode: CampaignModeSelection): void {
+    this.selectMode(newMode);
   }
 
   assistantCtaLabel(): string {
@@ -1043,6 +1222,9 @@ export class CampaignCreatePanelComponent {
   }
 
   showCreateButtonInReview(): boolean {
+    if (this.stepFlowEnabled()) {
+      return this.currentStep() === 'review';
+    }
     return this.creationMode() === 'advanced' || this.activeSection() === 'builder-review';
   }
 
@@ -1366,6 +1548,89 @@ export class CampaignCreatePanelComponent {
     return buildApiPayload(this.state);
   }
 
+  selectWizardObjective(optionId: WizardObjectiveId): void {
+    const option = this.wizardObjectiveOptions.find((entry) => entry.id === optionId);
+    if (!option) {
+      return;
+    }
+
+    this.state.ui.simpleObjective = option.id;
+    this.state.campaign.objective = option.objective;
+    if (!this.state.tracking.mainEvent.trim()) {
+      this.state.tracking.mainEvent = defaultEventForObjective(option.objective);
+    }
+    this.touchState();
+  }
+
+  syncProductDetails(): void {
+    const productName = this.state.ui.productName.trim();
+    if (productName) {
+      this.state.campaign.name = productName;
+      if (!this.state.creative.headline.trim()) {
+        this.state.creative.headline = productName;
+      }
+    }
+
+    if (!this.state.creative.description.trim() && this.state.ui.productDifferential.trim()) {
+      this.state.creative.description = this.state.ui.productDifferential.trim();
+    }
+
+    this.touchState();
+  }
+
+  applyBudgetPreset(value: number): void {
+    this.state.budget.value = value;
+    this.state.budget.quickBudget = value;
+    this.touchState();
+  }
+
+  budgetProjectionLabel(): string {
+    const dailyValue = Number(this.state.budget.value) || 0;
+    return `Em 7 dias: até ${this.formatCurrency(dailyValue * 7)}`;
+  }
+
+  generateWizardWithAi(): void {
+    const prompt = [
+      this.selectedWizardObjectiveLabel(),
+      this.state.ui.productName.trim() ? `Produto: ${this.state.ui.productName.trim()}` : '',
+      this.state.ui.productDescription.trim() ? `Descrição: ${this.state.ui.productDescription.trim()}` : '',
+      this.state.ui.productDifferential.trim() ? `Diferencial: ${this.state.ui.productDifferential.trim()}` : '',
+      this.state.ui.productPrice.trim() ? `Preço: ${this.state.ui.productPrice.trim()}` : '',
+      this.state.audience.city.trim() ? `Localização: ${this.state.audience.city.trim()} ${this.state.audience.state.trim()}` : '',
+      this.state.audience.interests.trim() ? `Interesses: ${this.state.audience.interests.trim()}` : '',
+    ].filter(Boolean).join('. ');
+
+    this.state.ui.aiPrompt = prompt;
+    this.state.ui.aiGoal = this.selectedWizardObjectiveLabel();
+    this.applyAiSuggestions();
+  }
+
+  selectedWizardObjectiveLabel(): string {
+    return this.wizardObjectiveOptions.find((option) => option.id === this.state.ui.simpleObjective)?.label || 'Levar para o site';
+  }
+
+  stepIsCurrent(stepId: StepId): boolean {
+    return this.currentStep() === stepId;
+  }
+
+  stepIsValid(stepId: StepId): boolean {
+    return this.stepValidations()[stepId]?.isComplete ?? false;
+  }
+
+  onCreativeAssetSelected(asset: Asset): void {
+    this.state.creative.assetId = asset.id;
+    this.state.creative.imageUrl = asset.storageUrl;
+    this.touchState();
+    this.markFieldTouched('creative.imageUrl');
+  }
+
+  clearCreativeAsset(): void {
+    this.state.creative.assetId = '';
+    this.state.creative.imageUrl = '';
+    this.touchState();
+    this.markFieldTouched('creative.imageUrl');
+  }
+
   markFieldTouched(field: string): void {
     this.touchedFields.update((current) => ({
       ...current,
@@ -1587,6 +1852,34 @@ export class CampaignCreatePanelComponent {
     return failure?.executionStatus === 'PARTIAL' && !this.canContinuePartialCreation();
   }
 
+  stepStateEntries(failure?: MetaCampaignExecutionContext | null): Array<{ label: string; status: string; detail?: string }> {
+    const state = failure?.stepState;
+    if (!state || typeof state !== 'object') {
+      return [];
+    }
+
+    const orderedSteps: MetaCampaignExecutionStep[] = ['campaign', 'adset', 'creative', 'ad', 'persist'];
+    const entries = orderedSteps
+      .map((step): { label: string; status: string; detail?: string } | null => {
+        const entry = state[step];
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+
+        const detail = typeof entry['errorMessage'] === 'string' && entry['errorMessage'].trim()
+          ? entry['errorMessage'].trim()
+          : undefined;
+
+        return {
+          label: this.metaStepLabel(step),
+          status: typeof entry['status'] === 'string' ? entry['status'] : 'PENDING',
+          detail,
+        };
+      });
+
+    return entries.filter((item): item is { label: string; status: string; detail?: string } => !!item);
+  }
+
   private reviewContext() {
     return {
       state: this.state,
@@ -1612,6 +1905,13 @@ export class CampaignCreatePanelComponent {
       companyContext.website ? `Website: ${companyContext.website}` : '',
       companyContext.instagram ? `Instagram: ${companyContext.instagram}` : '',
       companyContext.whatsapp ? `WhatsApp: ${companyContext.whatsapp}` : '',
+      this.state.ui.productName.trim() ? `Produto: ${this.state.ui.productName.trim()}` : '',
+      this.state.ui.productDescription.trim() ? `Descrição do produto: ${this.state.ui.productDescription.trim()}` : '',
+      this.state.ui.productDifferential.trim() ? `Diferencial: ${this.state.ui.productDifferential.trim()}` : '',
+      this.state.ui.productPrice.trim() ? `Preço ou faixa: ${this.state.ui.productPrice.trim()}` : '',
+      this.state.audience.interests.trim() ? `Interesses atuais: ${this.state.audience.interests.trim()}` : '',
+      this.state.creative.message.trim() ? `Texto já escrito: ${this.state.creative.message.trim()}` : '',
+      this.state.creative.headline.trim() ? `Título já escrito: ${this.state.creative.headline.trim()}` : '',
       this.state.ui.aiExtraContext.trim(),
     ].filter(Boolean);
 
@@ -1706,13 +2006,13 @@ export class CampaignCreatePanelComponent {
     };
   }
 
-  private applyAiTrustMetadata(result: CampaignSuggestionResponse): void {
+  private applyAiTrustMetadata(result: CampaignAiStructuredResponse): void {
     this.state.ui.aiConfidence = result.review.confidence;
     this.state.ui.aiStrengths = (result.review.strengths || []).slice(0, 6);
     this.state.ui.aiAssumptions = (result.planner.assumptions || []).slice(0, 6);
     this.state.ui.aiMissingInputs = (result.planner.missingInputs || []).slice(0, 6);
-    this.state.ui.aiRiskWarnings = (result.review.risks || []).slice(0, 6);
-    this.state.ui.aiRecommendations = (result.review.recommendations || []).slice(0, 6);
+    this.state.ui.aiRiskWarnings = ((result.risks?.length ? result.risks : result.review.risks) || []).slice(0, 6);
+    this.state.ui.aiRecommendations = ((result.improvements?.length ? result.improvements : result.review.recommendations) || []).slice(0, 6);
     this.state.ui.aiValidationReady = result.validation.isReadyToPublish;
     this.state.ui.aiQualityScore = result.validation.qualityScore;
     this.state.ui.aiBlockingIssues = (result.validation.blockingIssues || []).slice(0, 6);
@@ -1720,6 +2020,44 @@ export class CampaignCreatePanelComponent {
     this.state.ui.aiValidationRecommendations = (result.validation.recommendations || []).slice(0, 6);
     this.state.ui.aiValidationStale = false;
     this.state.ui.aiUsedFallback = !!result.meta?.usedFallback;
+  }
+
+  private isAiFailureResponse(
+    result: CampaignSuggestionResponse | CampaignAnalysisResponse | null | undefined,
+  ): result is CampaignAiFailureResponse {
+    return !!result && result.status === 'AI_FAILED';
+  }
+
+  private handleAiSuggestionFailure(failure: CampaignAiFailureResponse): void {
+    this.state.ui.aiCreativeIdeas = [];
+    this.state.ui.aiConfidence = null;
+    this.state.ui.aiStrengths = [];
+    this.state.ui.aiAssumptions = [];
+    this.state.ui.aiMissingInputs = [];
+    this.state.ui.aiRiskWarnings = [];
+    this.state.ui.aiRecommendations = [];
+    this.state.ui.aiValidationReady = null;
+    this.state.ui.aiQualityScore = null;
+    this.state.ui.aiBlockingIssues = [];
+    this.state.ui.aiValidationWarnings = [];
+    this.state.ui.aiValidationRecommendations = [];
+    this.state.ui.aiValidationStale = false;
+    this.state.ui.aiIgnoredFields = [];
+    this.state.ui.aiUsedFallback = false;
+    this.state.ui.aiLastSuggestion = null;
+    this.state.ui.aiFailure = failure;
+    if (!this.stepFlowEnabled()) {
+      this.setCreationMode('ai-entry', false);
+    }
+    this.touchState(false);
+  }
+
+  retryAiSuggestion(): void {
+    this.applyAiSuggestions();
+  }
+
+  retryAiCopilotAnalysis(): void {
+    this.analyzeCampaignWithAi();
   }
 
   private applyEntryMode(mode: CampaignCreationEntryMode): void {
@@ -1755,7 +2093,7 @@ export class CampaignCreatePanelComponent {
     if (this.state.ui.aiCopilotStale) {
       return 'Análise desatualizada';
     }
-    return this.scoreStatusLabel(this.aiCopilotConfidenceValue());
+    return this.qualityDecisionLabel(this.aiCopilotConfidenceValue());
   }
 
   aiCopilotDetail(): string {
@@ -2031,7 +2369,7 @@ export class CampaignCreatePanelComponent {
     if (!this.hasAiQualitySignal()) {
       return 'Pendente';
     }
-    return this.scoreStatusLabel(this.qualityScoreValue());
+    return this.qualityDecisionLabel(this.qualityScoreValue());
   }
 
   qualityScoreDetail(): string {
@@ -2086,6 +2424,97 @@ export class CampaignCreatePanelComponent {
     return 'Crítica';
   }
 
+  qualityDecisionLabel(score: number): string {
+    if (score >= 75) return 'Pronto para rodar';
+    if (score >= 45) return 'Pode melhorar';
+    return 'Não recomendado';
+  }
+
+  toggleAiExplanation(): void {
+    this.aiExplanationOpen.update((current) => !current);
+  }
+
+  canUseAiInCurrentWizardStep(): boolean {
+    return ['product', 'audience', 'creative', 'budget'].includes(this.currentStep());
+  }
+
+  hasAiExplanationPanel(): boolean {
+    return !!this.state.ui.aiLastSuggestion;
+  }
+
+  aiStrategyText(): string {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    return suggestion?.strategy || suggestion?.review.summary || '';
+  }
+
+  aiExplanationText(section: 'strategy' | 'audience' | 'copy' | 'budget'): string {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    if (!suggestion) {
+      return '';
+    }
+
+    const explanation = suggestion.explanation;
+    if (explanation?.[section]) {
+      return explanation[section];
+    }
+
+    if (section === 'strategy') {
+      return suggestion.review.summary || suggestion.strategy;
+    }
+
+    if (section === 'audience') {
+      return suggestion.planner.audienceIntent || 'O público foi sugerido a partir do contexto atual da store e do que você preencheu.';
+    }
+
+    if (section === 'copy') {
+      return suggestion.reasoning?.[2] || 'O texto busca deixar claro o benefício principal e o próximo passo.';
+    }
+
+    return suggestion.reasoning?.[3] || 'O orçamento foi sugerido como ponto de partida para um teste seguro.';
+  }
+
+  aiSuggestionRisks(): string[] {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    if (!suggestion) {
+      return [];
+    }
+
+    return (suggestion.risks?.length ? suggestion.risks : suggestion.review.risks || []).slice(0, 6);
+  }
+
+  aiSuggestionImprovements(): string[] {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    if (!suggestion) {
+      return [];
+    }
+
+    return (suggestion.improvements?.length ? suggestion.improvements : suggestion.review.recommendations || []).slice(0, 6);
+  }
+
+  aiSuggestionReasoning(): string[] {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    if (!suggestion) {
+      return [];
+    }
+
+    return (suggestion.reasoning || []).slice(0, 6);
+  }
+
+  aiSuggestedAudienceLabel(): string {
+    const suggestion = this.state.ui.aiLastSuggestion;
+    if (!suggestion) {
+      return 'Público sugerido pela IA';
+    }
+
+    const parts = [
+      suggestion.audience?.gender === 'male' ? 'Masculino' : suggestion.audience?.gender === 'female' ? 'Feminino' : 'Todos',
+      suggestion.audience?.ageRange || '',
+      suggestion.audience?.interests?.length ? suggestion.audience.interests.slice(0, 3).join(', ') : '',
+    ].filter(Boolean);
+
+    return parts.join(' • ') || 'Público sugerido pela IA';
+  }
+
   scoreColor(score: number): string {
     if (score >= 90) return '#16A34A';
     if (score >= 70) return '#2563EB';
@@ -2128,7 +2557,7 @@ export class CampaignCreatePanelComponent {
     return `: ${issues.slice(0, 3).join(', ')}`;
   }
 
-  private buildAiDetectedFields(result: CampaignSuggestionResponse): string[] {
+  private buildAiDetectedFields(result: CampaignAiStructuredResponse): string[] {
     return [
       result.planner.businessType ? 'Tipo de negócio' : '',
       result.planner.goal ? 'Objetivo comercial' : '',
@@ -2148,7 +2577,7 @@ export class CampaignCreatePanelComponent {
     ].filter(Boolean);
   }
 
-  private applyStructuredAiSuggestion(result: CampaignSuggestionResponse): { appliedCount: number; ignoredFields: string[] } {
+  private applyStructuredAiSuggestion(result: CampaignAiStructuredResponse): { appliedCount: number; ignoredFields: string[] } {
     let appliedCount = 0;
     const ignoredFields: string[] = [];
 
@@ -2812,12 +3241,14 @@ export class CampaignCreatePanelComponent {
   private normalizeCampaignCreationError(err: any): MetaCampaignCreationError {
     const details = err?.details && typeof err.details === 'object' ? err.details : err;
     const step = this.normalizeMetaStep(err?.step ?? details?.step);
+    const currentStep = this.normalizeMetaStep(err?.currentStep ?? details?.currentStep ?? step);
     const executionStatus = this.normalizeMetaExecutionStatus(
       err?.executionStatus ?? details?.executionStatus ?? details?.status,
     );
     const executionId = this.extractString(err?.executionId ?? details?.executionId ?? details?.id);
     const partialIds = this.normalizeMetaPartialIds(err?.partialIds ?? details?.partialIds ?? details?.ids);
     const hint = this.extractString(err?.hint ?? details?.hint);
+    const userMessage = this.extractString(err?.userMessage ?? details?.userMessage);
     const metaError = this.normalizeMetaError(err?.metaError ?? details?.metaError);
     const baseMessage = this.extractString(err?.message ?? details?.message)
       || 'Nao foi possivel criar a campanha na Meta.';
@@ -2825,9 +3256,14 @@ export class CampaignCreatePanelComponent {
     return {
       message: baseMessage,
       step,
+      currentStep,
       executionId,
       executionStatus,
       partialIds,
+      canRetry: typeof (err?.canRetry ?? details?.canRetry) === 'boolean' ? Boolean(err?.canRetry ?? details?.canRetry) : undefined,
+      retryCount: typeof (err?.retryCount ?? details?.retryCount) === 'number' ? Number(err?.retryCount ?? details?.retryCount) : undefined,
+      userMessage,
+      stepState: this.normalizeMetaStepState(err?.stepState ?? details?.stepState),
       hint,
       metaError,
     };
@@ -2876,6 +3312,38 @@ export class CampaignCreatePanelComponent {
     };
 
     return Object.values(normalized).some((entry) => entry != null && entry !== '') ? normalized : undefined;
+  }
+
+  private normalizeMetaStepState(value: unknown): MetaCampaignExecutionContext['stepState'] | undefined {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+
+    const raw = value as Record<string, unknown>;
+    const normalized: NonNullable<MetaCampaignExecutionContext['stepState']> = {};
+
+    for (const [step, entry] of Object.entries(raw)) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+
+      const entryRecord = entry as Record<string, unknown>;
+      const status = this.extractString(entryRecord['status']);
+      if (!status) {
+        continue;
+      }
+
+      normalized[step] = {
+        status: status as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED',
+        startedAt: this.extractString(entryRecord['startedAt']) ?? null,
+        completedAt: this.extractString(entryRecord['completedAt']) ?? null,
+        failedAt: this.extractString(entryRecord['failedAt']) ?? null,
+        errorMessage: this.extractString(entryRecord['errorMessage']) ?? null,
+        ids: this.normalizeMetaPartialIds(entryRecord['ids']),
+      };
+    }
+
+    return Object.keys(normalized).length ? normalized : undefined;
   }
 
   private extractString(value: unknown): string | undefined {
@@ -2986,7 +3454,7 @@ export class CampaignCreatePanelComponent {
     }
 
     if (!isLikelyDirectImageUrl(this.state.creative.imageUrl)) {
-      return 'A imagem precisa estar acessivel publicamente ou ser enviada em formato aceito pela Meta.';
+      return 'Envie ou selecione uma imagem válida da biblioteca da store antes de criar a campanha.';
     }
 
     if (!(Number(this.state.budget.value) > 0)) {

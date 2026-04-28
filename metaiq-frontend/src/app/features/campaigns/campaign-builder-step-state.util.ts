@@ -26,10 +26,11 @@ export class CampaignBuilderStepStateManager {
   private isAiModeSignal: Signal<boolean>;
   private submitAttemptedSignal = signal(false);
   private validationsSignal = signal<Record<StepId, StepValidation>>({
-    'briefing-ia': { errors: [], warnings: [], isComplete: false },
-    'configuration': { errors: [], warnings: [], isComplete: false },
+    'objective': { errors: [], warnings: [], isComplete: false },
+    'product': { errors: [], warnings: [], isComplete: false },
     'audience': { errors: [], warnings: [], isComplete: false },
     'creative': { errors: [], warnings: [], isComplete: false },
+    'budget': { errors: [], warnings: [], isComplete: false },
     'review': { errors: [], warnings: [], isComplete: false },
   });
 
@@ -159,10 +160,11 @@ export function buildAllStepValidations(
 ): Record<StepId, StepValidation> {
   const sequence = getStepSequence(isAiMode);
   const validations: Record<StepId, StepValidation> = {
-    'briefing-ia': { errors: [], warnings: [], isComplete: false },
-    'configuration': { errors: [], warnings: [], isComplete: false },
+    'objective': { errors: [], warnings: [], isComplete: false },
+    'product': { errors: [], warnings: [], isComplete: false },
     'audience': { errors: [], warnings: [], isComplete: false },
     'creative': { errors: [], warnings: [], isComplete: false },
+    'budget': { errors: [], warnings: [], isComplete: false },
     'review': { errors: [], warnings: [], isComplete: false },
   };
 

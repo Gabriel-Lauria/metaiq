@@ -1,11 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, inject, input, signal, effect, computed } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, input, signal } from '@angular/core';
 import { CampaignCreatePanelComponent } from './campaign-create-panel.component';
 import { CampaignBuilderStepperComponent, StepperItem } from './campaign-builder-stepper.component';
 import {
-  buildAllStepValidations,
-  buildStepStateContext,
   buildStepProgressLabel,
   CampaignBuilderStepStateManager,
 } from './campaign-builder-step-state.util';
@@ -17,37 +14,18 @@ import {
 import { CampaignBuilderState, StepId, CampaignCreationEntryMode } from './campaign-builder.types';
 import { CampaignBuilderReviewContext } from './campaign-builder-review.util';
 
-/**
- * FASE 7.1: CAMPAIGN BUILDER STEP-BY-STEP WRAPPER COMPONENT
- * 
- * Componente wrapper que fornece a UX step-by-step para o Campaign Builder existente.
- * 
- * Este componente:
- * 1. Gerencia o fluxo de steps (configuration → audience → creative → review)
- * 2. Renderiza o stepper visual
- * 3. Valida cada step antes de avançar
- * 4. Mostra/oculta seções baseado no step atual
- * 5. Mantém a compatibilidade com o componente existente
- * 
- * Estratégia:
- * - Não refatora o componente existente
- * - Adiciona camada de UI sobre componente existente
- * - Gerencia validações e transições de steps
- * - Preserva toda lógica de backend/Meta
- */
 @Component({
   selector: 'app-campaign-builder-step-flow',
   standalone: true,
   imports: [CommonModule, CampaignCreatePanelComponent, CampaignBuilderStepperComponent],
   template: `
     <div class="step-flow-container">
-      <!-- Header Compacto e Profissional -->
       <header class="step-flow-header">
         <div class="header-content">
           <div class="header-left">
             <h1 class="header-title">Criar campanha</h1>
             <span class="header-mode" [class.ai-mode]="isAiMode()">
-              {{ entryMode() === 'ai' ? '✨ Modo IA' : 'Modo Manual' }}
+              {{ entryMode() === 'ai' ? 'Assistente com IA' : 'Assistente guiado' }}
             </span>
           </div>
           <div class="header-progress">
@@ -56,196 +34,40 @@ import { CampaignBuilderReviewContext } from './campaign-builder-review.util';
         </div>
       </header>
 
-      <!-- Stepper Navigation Visual -->
       <app-campaign-builder-stepper
         [steps]="stepperItems()"
         [currentStepIndex]="currentStepIndex()"
         (stepSelected)="onStepSelected($event)"
       ></app-campaign-builder-stepper>
 
-      <!-- Conteúdo da Etapa Atual -->
-      <main class="step-content" [attr.data-step]="currentStep()">
-        <!-- ETAPA: Briefing IA (apenas modo IA) -->
-        <section class="step-section" *ngIf="currentStep() === 'briefing-ia'" [@fadeIn]>
+      <main class="step-content">
+        <section class="step-section">
           <div class="step-section-inner">
-            <h2 class="step-title">Briefing IA</h2>
-            <p class="step-description">Descreva sua campanha em linguagem natural e deixe a IA gerar uma primeira versão.</p>
-            
-            <!-- Componente existente renderizado aqui para briefing -->
-            <div class="ai-briefing-form">
-              <!-- Este será preenchido via content projection do componente existente -->
-              <!-- A lógica de IA permanece no componente existente -->
-              <p class="placeholder">Formulário de briefing IA será renderizado aqui</p>
-            </div>
+            <h2 class="step-title">{{ currentStepTitle() }}</h2>
+            <p class="step-description">
+              {{ currentStepDescription() }}
+            </p>
 
-            <!-- Botões de navegação -->
-            <div class="step-actions">
-              <button type="button" class="btn btn-secondary" (click)="goToPreviousStep()" [disabled]="!canGoPrevious()">
-                ← Voltar
-              </button>
-              <button type="button" class="btn btn-primary" (click)="goToNextStep()" [disabled]="!canAdvance()">
-                Próximo: Configuração →
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ETAPA: Configuração -->
-        <section class="step-section" *ngIf="currentStep() === 'configuration'" [@fadeIn]>
-          <div class="step-section-inner">
-            <h2 class="step-title">Configuração</h2>
-            <p class="step-description">Nome, objetivo, conta de anúncio e orçamento.</p>
-            
-            <div class="step-form">
-              <p class="placeholder">Seção "Configuração" do formulário será renderizada aqui</p>
-            </div>
-
-            <div class="step-validation" *ngIf="currentStepValidation()?.errors.length">
+            <div class="step-validation" *ngIf="currentStepValidation()?.errors?.length">
               <div class="validation-errors">
-                <h4>Erros obrigatórios:</h4>
+                <h4>Antes de avançar</h4>
                 <ul>
                   <li *ngFor="let error of currentStepValidation()?.errors">{{ error }}</li>
                 </ul>
               </div>
             </div>
 
-            <div class="step-validation" *ngIf="currentStepValidation()?.warnings.length">
+            <div class="step-validation" *ngIf="currentStepValidation()?.warnings?.length">
               <div class="validation-warnings">
-                <h4>Avisos:</h4>
+                <h4>Pontos de atenção</h4>
                 <ul>
                   <li *ngFor="let warning of currentStepValidation()?.warnings">{{ warning }}</li>
                 </ul>
               </div>
             </div>
 
-            <div class="step-actions">
-              <button type="button" class="btn btn-secondary" (click)="goToPreviousStep()" [disabled]="!canGoPrevious()">
-                ← Voltar
-              </button>
-              <button type="button" class="btn btn-primary" (click)="goToNextStep()" [disabled]="!canAdvance()">
-                Próximo: Público →
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ETAPA: Público -->
-        <section class="step-section" *ngIf="currentStep() === 'audience'" [@fadeIn]>
-          <div class="step-section-inner">
-            <h2 class="step-title">Público</h2>
-            <p class="step-description">País, localização, idade e interesses.</p>
-            
-            <div class="step-form">
-              <p class="placeholder">Seção "Público" do formulário será renderizada aqui</p>
-            </div>
-
-            <div class="step-validation" *ngIf="currentStepValidation()?.errors.length">
-              <div class="validation-errors">
-                <h4>Erros obrigatórios:</h4>
-                <ul>
-                  <li *ngFor="let error of currentStepValidation()?.errors">{{ error }}</li>
-                </ul>
-              </div>
-            </div>
-
-            <div class="step-validation" *ngIf="currentStepValidation()?.warnings.length">
-              <div class="validation-warnings">
-                <h4>Avisos:</h4>
-                <ul>
-                  <li *ngFor="let warning of currentStepValidation()?.warnings">{{ warning }}</li>
-                </ul>
-              </div>
-            </div>
-
-            <div class="step-actions">
-              <button type="button" class="btn btn-secondary" (click)="goToPreviousStep()">
-                ← Voltar
-              </button>
-              <button type="button" class="btn btn-primary" (click)="goToNextStep()" [disabled]="!canAdvance()">
-                Próximo: Criativo →
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- ETAPA: Criativo -->
-        <section class="step-section" *ngIf="currentStep() === 'creative'" [@fadeIn]>
-          <div class="step-section-container">
-            <div class="step-section-inner">
-              <h2 class="step-title">Criativo</h2>
-              <p class="step-description">Mensagem, headline, CTA, URL e imagem.</p>
-              
-              <div class="step-form">
-                <p class="placeholder">Seção "Criativo" do formulário será renderizada aqui</p>
-              </div>
-
-              <div class="step-validation" *ngIf="currentStepValidation()?.errors.length">
-                <div class="validation-errors">
-                  <h4>Erros obrigatórios:</h4>
-                  <ul>
-                    <li *ngFor="let error of currentStepValidation()?.errors">{{ error }}</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div class="step-validation" *ngIf="currentStepValidation()?.warnings.length">
-                <div class="validation-warnings">
-                  <h4>Avisos:</h4>
-                  <ul>
-                    <li *ngFor="let warning of currentStepValidation()?.warnings">{{ warning }}</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div class="step-actions">
-                <button type="button" class="btn btn-secondary" (click)="goToPreviousStep()">
-                  ← Voltar
-                </button>
-                <button type="button" class="btn btn-primary" (click)="goToNextStep()" [disabled]="!canAdvance()">
-                  Próximo: Revisão →
-                </button>
-              </div>
-            </div>
-
-            <!-- Preview do criativo à direita (desktop) -->
-            <aside class="step-preview" *ngIf="showPreview()">
-              <h3>Preview</h3>
-              <div class="preview-placeholder">Preview será renderizado aqui</div>
-            </aside>
-          </div>
-        </section>
-
-        <!-- ETAPA: Revisão -->
-        <section class="step-section" *ngIf="currentStep() === 'review'" [@fadeIn]>
-          <div class="step-section-inner">
-            <h2 class="step-title">Revisão Final</h2>
-            <p class="step-description">Confirme os detalhes antes de criar a campanha na Meta.</p>
-            
-            <div class="review-summary">
-              <p class="placeholder">Resumo completo da campanha será renderizado aqui</p>
-            </div>
-
-            <div class="step-validation" *ngIf="currentStepValidation()?.errors.length">
-              <div class="validation-errors">
-                <h4>Erros obrigatórios - Corrija antes de criar:</h4>
-                <ul>
-                  <li *ngFor="let error of currentStepValidation()?.errors">{{ error }}</li>
-                </ul>
-              </div>
-            </div>
-
-            <div class="step-actions step-actions-review">
-              <button type="button" class="btn btn-secondary" (click)="goToPreviousStep()">
-                ← Voltar
-              </button>
-              <button 
-                type="button" 
-                class="btn btn-success" 
-                (click)="onCreateCampaign()" 
-                [disabled]="!canCreate()"
-              >
-                ✓ Criar na Meta
-              </button>
+            <div class="embedded-builder-card">
+              <app-campaign-create-panel></app-campaign-create-panel>
             </div>
           </div>
         </section>
@@ -550,19 +372,14 @@ import { CampaignBuilderReviewContext } from './campaign-builder-review.util';
   `],
 })
 export class CampaignBuilderStepFlowComponent {
-  private destroyRef = inject(DestroyRef);
-
-  // Inputs
   readonly entryMode = input<CampaignCreationEntryMode>('manual');
 
-  // Signals
-  readonly currentStep = signal<StepId>('configuration');
+  readonly currentStep = signal<StepId>('objective');
   readonly isAiMode = computed(() => this.entryMode() === 'ai');
   readonly stepValidations = signal<Record<StepId, any>>({});
   readonly campaignState = signal<CampaignBuilderState | null>(null);
   readonly reviewContext = signal<CampaignBuilderReviewContext | null>(null);
 
-  // Computed values
   readonly currentStepIndex = computed(() => {
     const sequence = getStepSequence(this.isAiMode());
     return sequence.indexOf(this.currentStep());
@@ -588,10 +405,6 @@ export class CampaignBuilderStepFlowComponent {
     return this.stepValidations()[this.currentStep()];
   });
 
-  readonly showPreview = computed(() => {
-    return this.currentStep() === 'creative' && window.innerWidth >= 1024;
-  });
-
   readonly canAdvance = computed(() => {
     const validation = this.currentStepValidation();
     return validation && validation.isComplete;
@@ -607,9 +420,6 @@ export class CampaignBuilderStepFlowComponent {
     return validation && validation.isComplete;
   });
 
-  /**
-   * Avança para o próximo step
-   */
   goToNextStep(): void {
     if (!this.canAdvance()) {
       return;
@@ -622,9 +432,6 @@ export class CampaignBuilderStepFlowComponent {
     }
   }
 
-  /**
-   * Volta para o step anterior
-   */
   goToPreviousStep(): void {
     const previousStep = getPreviousStep(this.currentStep(), this.isAiMode());
     if (previousStep) {
@@ -633,9 +440,6 @@ export class CampaignBuilderStepFlowComponent {
     }
   }
 
-  /**
-   * Pula para um step específico (se for anterior)
-   */
   onStepSelected(stepId: StepId): void {
     const sequence = getStepSequence(this.isAiMode());
     const currentIndex = sequence.indexOf(this.currentStep());
@@ -647,9 +451,6 @@ export class CampaignBuilderStepFlowComponent {
     }
   }
 
-  /**
-   * Cria a campanha na Meta
-   */
   onCreateCampaign(): void {
     if (!this.canCreate()) {
       return;
@@ -660,5 +461,43 @@ export class CampaignBuilderStepFlowComponent {
 
   private scrollToTop(): void {
     document.querySelector('.step-content')?.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  currentStepTitle(): string {
+    switch (this.currentStep()) {
+      case 'objective':
+        return 'Objetivo';
+      case 'product':
+        return 'Produto';
+      case 'audience':
+        return 'Público';
+      case 'creative':
+        return 'Criativo';
+      case 'budget':
+        return 'Orçamento';
+      case 'review':
+        return 'Revisão';
+      default:
+        return 'Campanha';
+    }
+  }
+
+  currentStepDescription(): string {
+    switch (this.currentStep()) {
+      case 'objective':
+        return 'Defina o resultado desejado em linguagem simples.';
+      case 'product':
+        return 'Explique o que será anunciado com clareza para a IA e para o preview.';
+      case 'audience':
+        return 'Escolha o público ideal sem expor terminologia técnica.';
+      case 'creative':
+        return 'Suba a imagem, escreva a mensagem e acompanhe a prévia em tempo real.';
+      case 'budget':
+        return 'Informe um valor diário simples e valide a projeção rápida.';
+      case 'review':
+        return 'Revise tudo antes de publicar a campanha no backend existente.';
+      default:
+        return '';
+    }
   }
 }

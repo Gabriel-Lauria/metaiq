@@ -200,6 +200,19 @@ export interface AiCreativeOutput {
   destinationUrl: string | null;
 }
 
+export interface AiCampaignAudienceSummary {
+  gender: AiGenderOutput | null;
+  ageRange: string | null;
+  interests: string[];
+}
+
+export interface AiCampaignExplanationOutput {
+  strategy: string;
+  audience: string;
+  copy: string;
+  budget: string;
+}
+
 export interface AiReviewOutput {
   summary: string;
   strengths: string[];
@@ -216,19 +229,53 @@ export interface AiValidationOutput {
   recommendations: string[];
 }
 
+export type CampaignAiFailureReason = 'timeout' | 'api_error' | 'invalid_response' | 'missing_api_key';
+
+export interface CampaignAiFailureMeta {
+  promptVersion: string;
+  model: string;
+  usedFallback: boolean;
+  responseValid: boolean;
+}
+
+export interface CampaignAiFailureDebug {
+  hasRawText: boolean;
+  rawTextPreview: string;
+  candidateTextPreview: string;
+  parsedType: string;
+  normalizedKeys: string[];
+  validationError: string;
+  validationPath: string;
+}
+
+export interface CampaignAiFailureResponse {
+  status: 'AI_FAILED';
+  reason: CampaignAiFailureReason;
+  message: string;
+  meta: CampaignAiFailureMeta;
+  debug?: CampaignAiFailureDebug;
+}
+
 export interface CampaignAiStructuredResponse {
+  status: 'AI_SUCCESS';
+  strategy: string;
+  primaryText: string;
+  headline: string;
+  description: string;
+  cta: string;
+  audience: AiCampaignAudienceSummary;
+  budgetSuggestion: number | null;
+  risks: string[];
+  improvements: string[];
+  reasoning: string[];
+  explanation: AiCampaignExplanationOutput;
   planner: AiPlannerOutput;
   campaign: AiCampaignOutput;
   adSet: AiAdSetOutput;
   creative: AiCreativeOutput;
   review: AiReviewOutput;
   validation: AiValidationOutput;
-  meta: {
-    promptVersion: string;
-    model: string;
-    usedFallback: boolean;
-    responseValid: boolean;
-  };
+  meta: CampaignAiFailureMeta;
 }
 
 export interface AiCampaignCopilotAnalysis {
@@ -257,11 +304,7 @@ export interface AiCampaignCopilotImprovement {
 }
 
 export interface CampaignCopilotAnalysisResponse {
+  status: 'AI_SUCCESS';
   analysis: AiCampaignCopilotAnalysis;
-  meta: {
-    promptVersion: string;
-    model: string;
-    usedFallback: boolean;
-    responseValid: boolean;
-  };
+  meta: CampaignAiFailureMeta;
 }

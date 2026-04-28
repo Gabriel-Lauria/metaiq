@@ -2,8 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  CampaignAnalysisResponse,
   CampaignCopilotAnalysisRequest,
-  CampaignCopilotAnalysisResponse,
   CampaignSuggestionRequest,
   CampaignSuggestionResponse,
 } from '../../core/models';
@@ -19,7 +19,7 @@ export class CampaignAiService {
     return this.http.post<CampaignSuggestionResponse>(`${API}/ai/campaign-suggestions`, request);
   }
 
-  analyze(request: CampaignCopilotAnalysisRequest): Observable<CampaignCopilotAnalysisResponse> {
-    return this.http.post<CampaignCopilotAnalysisResponse>(`${API}/ai/campaign-analysis`, request);
+  analyze(request: CampaignCopilotAnalysisRequest): Observable<CampaignAnalysisResponse> {
+    return this.http.post<CampaignAnalysisResponse>(`${API}/ai/campaign-analysis`, request);
   }
 }

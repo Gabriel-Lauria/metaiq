@@ -16,6 +16,11 @@ interface BackendErrorBody {
   executionStatus?: string;
   partialIds?: Record<string, unknown>;
   metaError?: Record<string, unknown>;
+  currentStep?: string;
+  canRetry?: boolean;
+  retryCount?: number;
+  userMessage?: string;
+  stepState?: Record<string, unknown>;
   hint?: string;
   [key: string]: unknown;
 }
@@ -87,6 +92,11 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
         executionStatus: backendError?.executionStatus,
         partialIds: backendError?.partialIds,
         metaError: backendError?.metaError,
+        currentStep: backendError?.currentStep,
+        canRetry: backendError?.canRetry,
+        retryCount: backendError?.retryCount,
+        userMessage: typeof backendError?.userMessage === 'string' ? backendError.userMessage : undefined,
+        stepState: backendError?.stepState,
         hint: typeof backendError?.hint === 'string' ? backendError.hint : undefined,
         details: backendError,
         originalError: error

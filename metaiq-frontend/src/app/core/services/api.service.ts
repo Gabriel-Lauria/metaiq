@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpEvent, HttpParams } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { timeout, retry, catchError } from 'rxjs/operators';
 import {
@@ -34,6 +34,8 @@ import {
   IbgeCity,
   IbgeState,
   CompanyProfilePayload,
+  Asset,
+  AssetType,
 } from '../models';
 import { environment } from '../environment';
 
@@ -385,6 +387,25 @@ export class ApiService {
     return this.get<MetaPage[]>(`/integrations/meta/stores/${storeId}/pages`);
   }
 
+  getAssets(storeId: string, type: AssetType = 'image'): Observable<Asset[]> {
+    let params = new HttpParams().set('storeId', storeId);
+    if (type) {
+      params = params.set('type', type);
+    }
+    return this.get<Asset[]>('/assets', params);
+  }
+
+  uploadAsset(file: File, storeId: string): Observable<HttpEvent<Asset>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('storeId', storeId);
+
+    return this.http.post<Asset>(`${API}/assets/upload?storeId=${encodeURIComponent(storeId)}`, formData, {
+      observe: 'events',
+      reportProgress: true,
+    }).pipe(catchError((err) => this.handleError(err)));
+  }
+
   updateMetaPage(storeId: string, body: UpdateMetaPageRequest): Observable<StoreIntegration> {
     return this.patch<StoreIntegration>(`/integrations/meta/stores/${storeId}/page`, body);
   }
@@ -394,7 +415,10 @@ export class ApiService {
   }
 
   createMetaCampaign(storeId: string, body: CreateMetaCampaignRequest): Observable<CreateMetaCampaignResponse> {
-    return this.post<CreateMetaCampaignResponse>(`/integrations/meta/stores/${storeId}/campaigns`, body);
+    return this.request(
+      this.http.post<CreateMetaCampaignResponse>(`${API}/integrations/meta/stores/${storeId}/campaigns`, body),
+      true,
+    );
   }
 
   getMetaCampaignRecoveryStatus(storeId: string, executionId: string): Observable<MetaCampaignRecoveryStatusResponse> {
@@ -408,9 +432,12 @@ export class ApiService {
     executionId: string,
     body: Partial<CreateMetaCampaignRequest>,
   ): Observable<MetaCampaignRecoveryResponse> {
-    return this.post<MetaCampaignRecoveryResponse>(
-      `/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/retry`,
-      body,
+    return this.request(
+      this.http.post<MetaCampaignRecoveryResponse>(
+        `${API}/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/retry`,
+        body,
+      ),
+      true,
     );
   }
 

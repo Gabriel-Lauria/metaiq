@@ -13,6 +13,7 @@ import { Insight } from './modules/insights/insight.entity';
 import { StoreIntegration } from './modules/integrations/store-integration.entity';
 import { OAuthState } from './modules/integrations/oauth-state.entity';
 import { MetaCampaignCreation } from './modules/integrations/meta/meta-campaign-creation.entity';
+import { Asset } from './modules/assets/entities/asset.entity';
 
 dotenv.config({ quiet: true } as dotenv.DotenvConfigOptions & { quiet: true });
 
@@ -33,7 +34,7 @@ const getEnv = (...names: string[]): string | undefined => {
 };
 
 const commonOptions = {
-  entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation],
+  entities: [User, Manager, Tenant, Store, UserStore, AdAccount, Campaign, MetricDaily, Insight, StoreIntegration, OAuthState, MetaCampaignCreation, Asset],
   migrations: ['src/migrations/[0-9]*-*.{ts,js}'],
   synchronize: false,
   logging: parseBoolean(process.env.TYPEORM_LOGGING, false),

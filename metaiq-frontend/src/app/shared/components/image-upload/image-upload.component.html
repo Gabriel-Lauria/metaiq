@@ -1,0 +1,48 @@
+<div class="image-upload">
+  <div
+    class="upload-dropzone"
+    [class.drag-active]="dragActive()"
+    [class.is-loading]="uploading()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <input #fileInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onFileInput($event)" />
+    <button class="upload-trigger" type="button" (click)="fileInput.click()" [disabled]="uploading()">
+      {{ uploading() ? 'Enviando imagem...' : 'Selecionar imagem' }}
+    </button>
+    <p>Arraste uma imagem aqui ou clique para escolher.</p>
+    <small>Formatos: JPG, PNG ou WEBP. Tamanho máximo: 4MB. Mínimo: 600x314.</small>
+  </div>
+
+  <div class="upload-progress" *ngIf="uploading()">
+    <div class="progress-bar">
+      <span [style.width.%]="progress()"></span>
+    </div>
+    <strong>{{ progress() }}%</strong>
+  </div>
+
+  <p class="upload-feedback success" *ngIf="successMessage()">{{ successMessage() }}</p>
+  <p class="upload-feedback error" *ngIf="error()">{{ error() }}</p>
+
+  <div class="library-header">
+    <strong>Biblioteca da store</strong>
+    <button class="clear-btn" type="button" *ngIf="selectedAssetId" (click)="clearSelection()">Limpar seleção</button>
+  </div>
+
+  <p class="library-state" *ngIf="loading()">Carregando imagens da store...</p>
+  <p class="library-state" *ngIf="!loading() && !assets().length">Nenhuma imagem enviada ainda.</p>
+
+  <div class="asset-grid" *ngIf="assets().length">
+    <button
+      type="button"
+      class="asset-card"
+      *ngFor="let asset of assets(); trackBy: trackByAssetId"
+      [class.selected]="isSelected(asset)"
+      (click)="selectAsset(asset)"
+    >
+      <img [src]="asset.storageUrl" alt="Imagem enviada" />
+      <span>{{ asset.width || 0 }}x{{ asset.height || 0 }}</span>
+    </button>
+  </div>
+</div>

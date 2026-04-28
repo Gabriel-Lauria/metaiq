@@ -5,29 +5,31 @@
         <div class="builder-hero-row">
           <h2 id="campaign-builder-title">{{ panelTitle() }}</h2>
           <div class="header-actions">
-            <div class="mode-toggle" role="tablist" aria-label="Selecionar modo de criação">
-              <button class="mode-toggle-btn" type="button" [class.active]="creationEntryMode() === 'manual'" (click)="switchToManualMode()">Manual</button>
-              <button class="mode-toggle-btn" type="button" [class.active]="creationEntryMode() === 'ai'" (click)="switchToAiMode()">Usar IA</button>
+            <div class="mode-toggle" role="tablist" aria-label="Selecionar modo de criação" *ngIf="modeSelection() as selectedMode">
+              <button class="mode-toggle-btn" type="button" [class.active]="selectedMode === 'AI'" (click)="selectMode('AI')">IA</button>
+              <button class="mode-toggle-btn" type="button" [class.active]="selectedMode === 'GUIDED'" (click)="selectMode('GUIDED')">Guiado</button>
+              <button class="mode-toggle-btn" type="button" [class.active]="selectedMode === 'ADVANCED'" (click)="selectMode('ADVANCED')">Avançado</button>
             </div>
             <span class="hero-chip">{{ builderModeIndicator() }}</span>
           </div>
         </div>
       </div>
 
-      <div class="toolbar-secondary">
+      <div class="toolbar-secondary" *ngIf="!showModeSelector()">
         <label class="help-toggle">
           <input type="checkbox" [checked]="detailedHelpEnabled()" (change)="detailedHelpEnabled.set(!detailedHelpEnabled())" />
           <span>Ajuda detalhada</span>
         </label>
-        <button class="btn btn-secondary" type="button" (click)="openAdvancedBuilder()">
-          {{ creationMode() === 'advanced' ? 'Configurações avançadas abertas' : 'Mostrar configurações avançadas' }}
+        <button class="btn btn-secondary" type="button" (click)="resetMode()">
+          Trocar modo
         </button>
-        <button class="btn btn-secondary" type="button" *ngIf="creationMode() === 'advanced'" (click)="openLiteEditor()">Voltar ao essencial</button>
+        <button class="btn btn-secondary" type="button" *ngIf="modeSelection() !== 'ADVANCED'" (click)="openAdvancedBuilder()">Abrir modo avançado</button>
+        <button class="btn btn-secondary" type="button" *ngIf="modeSelection() === 'ADVANCED'" (click)="openLiteEditor()">Voltar ao guiado</button>
         <button class="btn btn-secondary" type="button" *ngIf="draftAvailable()" (click)="restoreDraft()">Restaurar rascunho</button>
         <button class="btn btn-secondary" type="button" (click)="goToIntegrations()">Integrações</button>
       </div>
 
-      <nav class="builder-nav" *ngIf="creationMode() === 'advanced'">
+      <nav class="builder-nav" *ngIf="modeSelection() === 'ADVANCED' && creationMode() === 'advanced'">
         <button
           type="button"
           class="nav-pill"
@@ -40,16 +42,26 @@
       </nav>
 
       <!-- FASE 7.1: Step-by-step stepper (quando habilitado) -->
-      <div class="step-flow-stepper-container" *ngIf="stepFlowEnabled()">
+      <div class="step-flow-stepper-container" *ngIf="modeSelection() === 'GUIDED' && stepFlowEnabled()">
         <app-campaign-builder-stepper
           [steps]="stepperItems()"
-          [currentStepIndex]="0"
+          [currentStepIndex]="stepperItems().findIndex(item => item.id === currentStep())"
           (stepSelected)="jumpToStep($event)"
         ></app-campaign-builder-stepper>
       </div>
     </header>
 
-    <div class="panel-grid">
+    <!-- NOVO: Tela de seleção de modo -->
+    <div class="panel-grid" *ngIf="showModeSelector()">
+      <div class="panel-main">
+        <app-campaign-mode-selector
+          (modeSelected)="selectMode($event)"
+        ></app-campaign-mode-selector>
+      </div>
+    </div>
+
+    <!-- Modo selecionado -->
+    <div class="panel-grid" *ngIf="!showModeSelector()">
       <div class="panel-main">
         <section class="section-block context-banner" *ngIf="loadingContext() || contextError()">
           <div class="context-banner-card is-loading" *ngIf="loadingContext()">
@@ -70,6 +82,272 @@
           </div>
         </section>
 
+        <section class="section-block wizard-shell" *ngIf="stepFlowEnabled()">
+          <div class="wizard-stage">
+            <span class="section-kicker">{{ stepProgressLabel() }}</span>
+            <h3>{{ stepperItems()[stepperItems().findIndex(item => item.id === currentStep())]?.label }}</h3>
+            <p *ngIf="getCurrentStepValidation()?.warnings?.length" class="wizard-helper">
+              {{ getCurrentStepValidation()?.warnings?.[0] }}
+            </p>
+          </div>
+
+          <div class="wizard-layout">
+            <div class="wizard-fields">
+              <ng-container *ngIf="stepIsCurrent('objective')">
+                <div class="wizard-choice-grid">
+                  <button
+                    type="button"
+                    class="wizard-choice-card"
+                    *ngFor="let option of wizardObjectiveOptions; trackBy: trackByValue"
+                    [class.selected]="state.ui.simpleObjective === option.id"
+                    (click)="selectWizardObjective(option.id)"
+                  >
+                    <strong>{{ option.label }}</strong>
+                    <span>{{ option.hint }}</span>
+                  </button>
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="stepIsCurrent('product')">
+                <div class="field-grid">
+                  <label class="form-field field-span-2">
+                    <span>Nome do produto ou serviço</span>
+                    <input type="text" [(ngModel)]="state.ui.productName" (ngModelChange)="syncProductDetails()" (blur)="markFieldTouched('ui.productName')" maxlength="120" placeholder="Ex.: Banho e tosa premium" />
+                    <small>Exemplo: Consultoria estratégica, pacote promocional, assinatura mensal.</small>
+                  </label>
+                  <label class="form-field field-span-2">
+                    <span>Descrição</span>
+                    <textarea [(ngModel)]="state.ui.productDescription" (ngModelChange)="touchState()" (blur)="markFieldTouched('ui.productDescription')" rows="4" maxlength="240" placeholder="Explique de forma simples o que você está oferecendo."></textarea>
+                    <small>{{ state.ui.productDescription.length }}/240</small>
+                  </label>
+                  <label class="form-field">
+                    <span>Diferencial</span>
+                    <input type="text" [(ngModel)]="state.ui.productDifferential" (ngModelChange)="syncProductDetails()" (blur)="markFieldTouched('ui.productDifferential')" maxlength="120" placeholder="Ex.: Atendimento no mesmo dia" />
+                  </label>
+                  <label class="form-field">
+                    <span>Preço</span>
+                    <input type="text" [(ngModel)]="state.ui.productPrice" (ngModelChange)="touchState()" (blur)="markFieldTouched('ui.productPrice')" maxlength="40" placeholder="Ex.: A partir de R$79" />
+                  </label>
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="stepIsCurrent('audience')">
+                <div class="field-grid">
+                  <label class="form-field">
+                    <span>Gênero</span>
+                    <select [(ngModel)]="state.audience.gender" (ngModelChange)="touchState()" (blur)="markFieldTouched('audience.gender')">
+                      <option *ngFor="let option of genderOptions" [value]="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
+                    <span>Idade inicial</span>
+                    <input type="number" [(ngModel)]="state.audience.ageMin" (ngModelChange)="touchState()" (blur)="markFieldTouched('audience.ageMin')" min="18" max="65" />
+                  </label>
+                  <label class="form-field">
+                    <span>Idade final</span>
+                    <input type="number" [(ngModel)]="state.audience.ageMax" (ngModelChange)="touchState()" (blur)="markFieldTouched('audience.ageMax')" min="18" max="80" />
+                  </label>
+                  <label class="form-field">
+                    <span>Estado</span>
+                    <select [(ngModel)]="state.audience.state" (ngModelChange)="selectAudienceState($event)" (blur)="markFieldTouched('audience.location')">
+                      <option value="">Selecione</option>
+                      <option *ngFor="let option of ibgeStates()" [value]="option.code">{{ option.name }}</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
+                    <span>Cidade</span>
+                    <select [(ngModel)]="state.audience.cityId" (ngModelChange)="selectAudienceCity($event)" (blur)="markFieldTouched('audience.location')">
+                      <option [ngValue]="null">Selecione</option>
+                      <option *ngFor="let city of ibgeCities()" [ngValue]="city.id">{{ city.name }}</option>
+                    </select>
+                  </label>
+                  <label class="form-field field-span-2">
+                    <span>Interesses</span>
+                    <textarea [(ngModel)]="state.audience.interests" (ngModelChange)="touchState()" (blur)="markFieldTouched('audience.interests')" rows="3" maxlength="180" placeholder="Ex.: beleza, pet shop, academias, restaurantes locais"></textarea>
+                    <small>{{ state.audience.interests.length }}/180</small>
+                  </label>
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="stepIsCurrent('creative')">
+                <div class="field-grid">
+                  <label class="form-field field-span-2">
+                    <span>Texto principal</span>
+                    <textarea [(ngModel)]="state.creative.message" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.message')" rows="4" maxlength="500" placeholder="Ex.: Agende hoje e ganhe atendimento prioritário."></textarea>
+                    <small>{{ state.creative.message.length }}/500</small>
+                  </label>
+                  <label class="form-field">
+                    <span>Título</span>
+                    <input type="text" [(ngModel)]="state.creative.headline" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.headline')" maxlength="80" placeholder="Ex.: Seu próximo resultado começa aqui" />
+                    <small>{{ state.creative.headline.length }}/80</small>
+                  </label>
+                  <label class="form-field">
+                    <span>CTA</span>
+                    <select [(ngModel)]="state.creative.cta" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.cta')">
+                      <option *ngFor="let option of ctaOptions" [value]="option.value">{{ option.label }}</option>
+                    </select>
+                  </label>
+                  <label class="form-field field-span-2">
+                    <span>Descrição curta</span>
+                    <input type="text" [(ngModel)]="state.creative.description" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.description')" maxlength="120" placeholder="Ex.: Oferta válida nesta semana" />
+                    <small>{{ state.creative.description.length }}/120</small>
+                  </label>
+                  <div class="form-field field-span-2">
+                    <span>Imagem</span>
+                    <app-image-upload
+                      [storeId]="storeContext.getValidSelectedStoreId()"
+                      [selectedAssetId]="state.creative.assetId || null"
+                      (assetSelected)="onCreativeAssetSelected($event)"
+                      (cleared)="clearCreativeAsset()"
+                    />
+                  </div>
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="stepIsCurrent('budget')">
+                <div class="field-grid">
+                  <label class="form-field field-span-2">
+                    <span>Valor por dia</span>
+                    <input type="number" [(ngModel)]="state.budget.value" (ngModelChange)="touchState()" (blur)="markFieldTouched('budget.value')" min="1" placeholder="Ex.: 50" />
+                    <small>{{ budgetProjectionLabel() }}</small>
+                  </label>
+                  <div class="wizard-preset-row field-span-2">
+                    <button class="btn btn-secondary" type="button" (click)="applyBudgetPreset(20)">R$20</button>
+                    <button class="btn btn-secondary" type="button" (click)="applyBudgetPreset(50)">R$50</button>
+                    <button class="btn btn-secondary" type="button" (click)="applyBudgetPreset(100)">R$100</button>
+                  </div>
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="stepIsCurrent('review')">
+                <div class="summary-list">
+                  <div class="summary-row"><span>Objetivo</span><strong>{{ selectedWizardObjectiveLabel() }}</strong></div>
+                  <div class="summary-row"><span>Produto</span><strong>{{ state.ui.productName || 'Não preenchido' }}</strong></div>
+                  <div class="summary-row"><span>Público</span><strong>{{ state.audience.city || 'Cidade não definida' }}{{ state.audience.state ? ' / ' + state.audience.state : '' }}</strong></div>
+                  <div class="summary-row"><span>Texto principal</span><strong>{{ state.creative.message || 'Não preenchido' }}</strong></div>
+                  <div class="summary-row"><span>Valor por dia</span><strong>{{ formatCurrency(state.budget.value) }}</strong></div>
+                </div>
+                <div class="wizard-checklist">
+                  <div class="wizard-check-item" *ngFor="let item of wizardReviewChecklist()">
+                    <span>{{ item.done ? '✔' : '•' }}</span>
+                    <strong>{{ item.label }}</strong>
+                  </div>
+                </div>
+              </ng-container>
+
+              <div class="wizard-errors" *ngIf="submitAttempted() && getCurrentStepValidation()?.errors?.length">
+                <strong>Antes de continuar:</strong>
+                <div class="problem-item" *ngFor="let error of getCurrentStepValidation()?.errors">{{ error }}</div>
+              </div>
+
+              <div class="wizard-inline-actions field-span-2" *ngIf="canUseAiInCurrentWizardStep()">
+                <button class="btn btn-secondary" type="button" (click)="generateWizardWithAi()" [disabled]="aiSuggesting()">
+                  {{ aiSuggesting() ? 'Gerando com IA...' : 'Gerar com IA' }}
+                </button>
+                <small>A IA pode sugerir público, texto, CTA e orçamento sem apagar o que você já revisou manualmente.</small>
+              </div>
+
+              <section class="wizard-ai-panel" *ngIf="hasAiExplanationPanel()">
+                <button class="wizard-ai-toggle" type="button" (click)="toggleAiExplanation()">
+                  <span>Por que essa campanha?</span>
+                  <strong>{{ aiExplanationOpen() ? 'Ocultar' : 'Mostrar' }}</strong>
+                </button>
+
+                <div class="wizard-ai-content" *ngIf="aiExplanationOpen()">
+                  <div class="wizard-ai-score" [attr.data-tone]="scoreTone(qualityScoreValue())">
+                    <span>Leitura da IA</span>
+                    <strong>{{ qualityScoreStatus() }}</strong>
+                    <small>{{ qualityScoreValue() ? (qualityScoreValue() + '/100') : 'Sem score ainda' }}</small>
+                  </div>
+
+                  <div class="wizard-ai-grid">
+                    <article class="wizard-ai-card">
+                      <span>Estratégia</span>
+                      <strong>{{ aiStrategyText() }}</strong>
+                      <p>{{ aiExplanationText('strategy') }}</p>
+                    </article>
+                    <article class="wizard-ai-card">
+                      <span>Público sugerido</span>
+                      <strong>{{ aiSuggestedAudienceLabel() }}</strong>
+                      <p>{{ aiExplanationText('audience') }}</p>
+                    </article>
+                    <article class="wizard-ai-card">
+                      <span>Lógica do texto</span>
+                      <strong>{{ state.creative.headline || state.ui.aiLastSuggestion?.headline || 'Mensagem em revisão' }}</strong>
+                      <p>{{ aiExplanationText('copy') }}</p>
+                    </article>
+                    <article class="wizard-ai-card">
+                      <span>Orçamento</span>
+                      <strong>{{ state.ui.aiLastSuggestion?.budgetSuggestion ? formatCurrency(state.ui.aiLastSuggestion?.budgetSuggestion || 0) : 'Pendente' }}</strong>
+                      <p>{{ aiExplanationText('budget') }}</p>
+                    </article>
+                  </div>
+
+                  <div class="wizard-ai-lists">
+                    <div class="wizard-ai-list" *ngIf="aiSuggestionReasoning().length">
+                      <span>Raciocínio</span>
+                      <ul>
+                        <li *ngFor="let item of aiSuggestionReasoning()">{{ item }}</li>
+                      </ul>
+                    </div>
+                    <div class="wizard-ai-list" *ngIf="aiSuggestionImprovements().length">
+                      <span>Melhorias sugeridas</span>
+                      <ul>
+                        <li *ngFor="let item of aiSuggestionImprovements()">{{ item }}</li>
+                      </ul>
+                    </div>
+                    <div class="wizard-ai-list" *ngIf="aiSuggestionRisks().length">
+                      <span>Riscos antes de publicar</span>
+                      <ul>
+                        <li *ngFor="let item of aiSuggestionRisks()">{{ item }}</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div class="context-banner-card is-error" *ngIf="state.ui.aiFailure as failure">
+                <div class="banner-icon" aria-hidden="true">!</div>
+                <div>
+                  <strong>Não conseguimos gerar a campanha com IA agora</strong>
+                  <p>{{ failure.message || 'Tente novamente em instantes.' }}</p>
+                </div>
+                <button class="btn btn-secondary" type="button" (click)="retryAiSuggestion()" [disabled]="aiSuggesting()">Tentar novamente</button>
+              </div>
+
+              <div class="builder-footer-actions wizard-footer">
+                <button class="btn btn-secondary" type="button" (click)="regressStep()" [disabled]="currentStep() === 'objective'">Voltar</button>
+                <button class="btn btn-secondary" type="button" (click)="saveDraft()">Salvar rascunho</button>
+                <button class="btn btn-primary" type="button" *ngIf="currentStep() !== 'review'" (click)="advanceStep()">Próximo</button>
+                <button class="btn btn-primary" type="button" *ngIf="currentStep() === 'review'" (click)="submit()" [disabled]="submitButtonDisabled()">Publicar campanha</button>
+              </div>
+            </div>
+
+            <aside class="wizard-preview-card">
+              <span class="section-kicker">Prévia do anúncio</span>
+              <div class="wizard-ad-preview">
+                <div class="wizard-ad-header">
+                  <strong>{{ selectedStoreName() }}</strong>
+                  <span>Patrocinado</span>
+                </div>
+                <div class="wizard-ad-media" *ngIf="state.creative.imageUrl; else previewPlaceholder">
+                  <img [src]="state.creative.imageUrl" alt="Prévia do criativo" />
+                </div>
+                <ng-template #previewPlaceholder>
+                  <div class="wizard-ad-placeholder">Sua imagem aparecerá aqui</div>
+                </ng-template>
+                <div class="wizard-ad-body">
+                  <p>{{ state.creative.message || state.ui.productDescription || 'Escreva o texto principal do anúncio.' }}</p>
+                  <strong>{{ state.creative.headline || state.ui.productName || 'Título do anúncio' }}</strong>
+                  <small>{{ state.creative.description || state.ui.productDifferential || 'Seu diferencial aparecerá aqui.' }}</small>
+                </div>
+                <button class="btn btn-primary wizard-ad-cta" type="button">{{ previewCta() }}</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <div class="legacy-builder" [class.wizard-hidden]="stepFlowEnabled()">
         <section class="section-block problems-block" *ngIf="hasCampaignProblems() && showPreviewSidebar()">
           <div class="section-heading">
             <div>
@@ -174,18 +452,27 @@
           </div>
 
           <div class="ai-actions">
-            <button class="btn btn-secondary" type="button" (click)="clearAiPrompt()">Limpar</button>
-            <button class="btn btn-primary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
-              {{ aiSuggesting() ? 'Gerando...' : 'Gerar sugestão' }}
+            <button class="btn btn-secondary" type="button" (click)="resetMode()">Voltar</button>
+            <button class="btn btn-primary" type="button" (click)="onAiBriefingSubmit(state.ui.aiPrompt)" [disabled]="aiSuggesting()">
+              {{ aiSuggesting() ? 'Gerando campanha...' : 'Gerar campanha com IA' }}
             </button>
           </div>
 
           <div class="ai-processing-card" *ngIf="aiSuggesting()">
             <div class="banner-spinner" aria-hidden="true"></div>
             <div>
-              <strong>Gerando sugestão</strong>
+              <strong>Gerando campanha</strong>
               <p>A IA está montando a primeira versão da campanha.</p>
             </div>
+          </div>
+
+          <div class="context-banner-card is-error" *ngIf="state.ui.aiFailure as failure">
+            <div class="banner-icon" aria-hidden="true">!</div>
+            <div>
+              <strong>Não conseguimos gerar a campanha com IA agora</strong>
+              <p>{{ failure.message || 'Tente novamente em instantes.' }}</p>
+            </div>
+            <button class="btn btn-secondary" type="button" (click)="retryAiSuggestion()" [disabled]="aiSuggesting()">Tentar novamente</button>
           </div>
         </section>
 
@@ -208,11 +495,13 @@
               <p>{{ suggestion.review.summary }}</p>
             </div>
             <div class="ai-result-actions">
-              <button class="btn btn-primary" type="button" (click)="applyCurrentAiSuggestion()">Usar essa sugestão</button>
+              <button class="btn btn-secondary" type="button" (click)="openAdvancedBuilder()">Editar manualmente</button>
               <button class="btn btn-secondary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
-                {{ aiSuggesting() ? 'Gerando...' : 'Gerar outra versão' }}
+                {{ aiSuggesting() ? 'Gerando...' : 'Gerar novamente' }}
               </button>
-              <button class="btn btn-secondary" type="button" (click)="adjustSuggestionBeforeUse()">Ajustar briefing</button>
+              <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="submitButtonDisabled()">
+                {{ submitting() ? 'Publicando campanha...' : 'Publicar campanha' }}
+              </button>
             </div>
           </div>
 
@@ -248,6 +537,118 @@
             <p>{{ suggestion.creative.primaryText }}</p>
             <strong>CTA: {{ formatCtaForDisplay(suggestion.creative.cta || '') || previewCta() }}</strong>
           </div>
+
+          <div class="field-grid">
+            <label class="form-field field-span-2">
+              <span>Nome da campanha</span>
+              <input type="text" [(ngModel)]="state.campaign.name" (ngModelChange)="touchState()" maxlength="120" />
+            </label>
+            <label class="form-field">
+              <span>Headline</span>
+              <input type="text" [(ngModel)]="state.creative.headline" (ngModelChange)="touchState()" maxlength="80" />
+            </label>
+            <label class="form-field">
+              <span>CTA</span>
+              <select [(ngModel)]="state.creative.cta" (ngModelChange)="touchState()">
+                <option *ngFor="let option of ctaOptions" [value]="option.value">{{ option.label }}</option>
+              </select>
+            </label>
+            <label class="form-field field-span-2">
+              <span>Texto principal</span>
+              <textarea [(ngModel)]="state.creative.message" (ngModelChange)="touchState()" rows="4" maxlength="500"></textarea>
+            </label>
+            <label class="form-field">
+              <span>URL de destino</span>
+              <input type="text" [(ngModel)]="state.destination.websiteUrl" (ngModelChange)="touchState()" maxlength="500" />
+            </label>
+            <label class="form-field">
+              <span>Orçamento diário</span>
+              <input type="number" [(ngModel)]="state.budget.value" (ngModelChange)="touchState()" min="1" />
+            </label>
+          </div>
+
+          <section class="sidebar-block preview-sidebar-block ai-review-preview">
+            <div class="sidebar-heading">
+              <strong>Preview do anúncio</strong>
+            </div>
+
+            <app-creative-preview
+              [pageName]="selectedPageName()"
+              [displayName]="state.identity.displayName"
+              [message]="previewMessage()"
+              [headline]="previewHeadline()"
+              [description]="previewDescription()"
+              [ctaLabel]="previewCta()"
+              [ctaValue]="state.creative.cta"
+              [imageUrl]="state.creative.imageUrl"
+              [destinationUrl]="state.destination.websiteUrl"
+              [objective]="state.campaign.objective"
+              [destinationType]="state.destination.type"
+              [carousel]="state.creative.carousel"
+              [selectedPlacements]="state.placements.selected"
+              [interests]="state.audience.interests"
+              [goals]="state.tracking.goals"
+            />
+          </section>
+
+          <section class="wizard-ai-panel">
+            <button class="wizard-ai-toggle" type="button" (click)="toggleAiExplanation()">
+              <span>Por que essa campanha?</span>
+              <strong>{{ aiExplanationOpen() ? 'Ocultar' : 'Mostrar' }}</strong>
+            </button>
+
+            <div class="wizard-ai-content" *ngIf="aiExplanationOpen()">
+              <div class="wizard-ai-score" [attr.data-tone]="scoreTone(suggestion.validation.qualityScore)">
+                <span>Leitura da IA</span>
+                <strong>{{ qualityScoreStatus() }}</strong>
+                <small>{{ suggestion.validation.qualityScore }}/100</small>
+              </div>
+
+              <div class="wizard-ai-grid">
+                <article class="wizard-ai-card">
+                  <span>Estratégia</span>
+                  <strong>{{ suggestion.strategy }}</strong>
+                  <p>{{ suggestion.explanation.strategy }}</p>
+                </article>
+                <article class="wizard-ai-card">
+                  <span>Público sugerido</span>
+                  <strong>{{ aiSuggestedAudienceLabel() }}</strong>
+                  <p>{{ suggestion.explanation.audience }}</p>
+                </article>
+                <article class="wizard-ai-card">
+                  <span>Lógica do texto</span>
+                  <strong>{{ suggestion.headline }}</strong>
+                  <p>{{ suggestion.explanation.copy }}</p>
+                </article>
+                <article class="wizard-ai-card">
+                  <span>Motivo do orçamento</span>
+                  <strong>{{ suggestion.budgetSuggestion ? formatCurrency(suggestion.budgetSuggestion) : 'Pendente' }}</strong>
+                  <p>{{ suggestion.explanation.budget }}</p>
+                </article>
+              </div>
+
+              <div class="wizard-ai-lists">
+                <div class="wizard-ai-list" *ngIf="suggestion.reasoning.length">
+                  <span>Raciocínio</span>
+                  <ul>
+                    <li *ngFor="let item of suggestion.reasoning">{{ item }}</li>
+                  </ul>
+                </div>
+                <div class="wizard-ai-list" *ngIf="suggestion.improvements.length">
+                  <span>Melhorias sugeridas</span>
+                  <ul>
+                    <li *ngFor="let item of suggestion.improvements">{{ item }}</li>
+                  </ul>
+                </div>
+                <div class="wizard-ai-list" *ngIf="suggestion.risks.length">
+                  <span>Riscos antes de publicar</span>
+                  <ul>
+                    <li *ngFor="let item of suggestion.risks">{{ item }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <div class="ai-detected-fields" *ngIf="suggestion.creative.imageSuggestion">
             <span class="section-kicker">Sugestão de imagem</span>
@@ -452,11 +853,16 @@
                 <small *ngIf="fieldInvalid('destination.websiteUrl')">Informe uma URL válida com https://</small>
               </label>
 
-              <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
+              <div class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
                 <span>Imagem</span>
-                <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
-                <small *ngIf="fieldInvalid('creative.imageUrl')">Adicione uma imagem pública válida.</small>
-              </label>
+                <app-image-upload
+                  [storeId]="storeContext.getValidSelectedStoreId()"
+                  [selectedAssetId]="state.creative.assetId || null"
+                  (assetSelected)="onCreativeAssetSelected($event)"
+                  (cleared)="clearCreativeAsset()"
+                />
+                <small *ngIf="fieldInvalid('creative.imageUrl')">Envie ou selecione uma imagem válida da biblioteca da store.</small>
+              </div>
             </div>
           </div>
 
@@ -1025,11 +1431,16 @@
                 <option *ngFor="let option of ctaOptions" [value]="option.value">{{ option.label }}</option>
               </select>
             </label>
-            <label class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
-              <span>URL da imagem</span>
-              <input type="url" [(ngModel)]="state.creative.imageUrl" (ngModelChange)="touchState()" (blur)="markFieldTouched('creative.imageUrl')" placeholder="https://..." />
-              <small *ngIf="fieldInvalid('creative.imageUrl')">A imagem precisa estar acessível publicamente ou ser enviada em formato aceito pela Meta.</small>
-            </label>
+            <div class="form-field field-span-2" [class.invalid]="fieldInvalid('creative.imageUrl')">
+              <span>Imagem do criativo</span>
+              <app-image-upload
+                [storeId]="storeContext.getValidSelectedStoreId()"
+                [selectedAssetId]="state.creative.assetId || null"
+                (assetSelected)="onCreativeAssetSelected($event)"
+                (cleared)="clearCreativeAsset()"
+              />
+              <small *ngIf="fieldInvalid('creative.imageUrl')">A imagem precisa ser enviada para a biblioteca da store.</small>
+            </div>
           </div>
 
           <label class="toggle-card">
@@ -1261,6 +1672,15 @@
             <small *ngIf="state.ui.aiCopilotStale">A análise está desatualizada e pode ser refeita antes de publicar.</small>
           </div>
 
+          <div class="context-banner-card is-error" *ngIf="!aiCopilotAnalyzing() && state.ui.aiCopilotFailure as failure">
+            <div class="banner-icon" aria-hidden="true">!</div>
+            <div>
+              <strong>Não conseguimos gerar a campanha com IA agora</strong>
+              <p>{{ failure.message || 'Tente novamente em instantes.' }}</p>
+            </div>
+            <button class="btn btn-secondary" type="button" (click)="retryAiCopilotAnalysis()">Tentar novamente</button>
+          </div>
+
           <div class="ai-detected-fields review-insights" *ngIf="state.ui.aiLastSuggestion?.validation as validation">
             <div class="score-summary-card" [attr.data-tone]="scoreTone(validation.qualityScore)">
               <div class="score-summary-header">
@@ -1301,6 +1721,7 @@
             <span class="section-kicker">Integração Meta</span>
             <strong>Não foi possível criar a campanha na Meta</strong>
             <p>{{ failure.message }}</p>
+            <p *ngIf="failure.userMessage">{{ failure.userMessage }}</p>
             <p *ngIf="failure.executionStatus === 'PARTIAL'">Parte da campanha foi criada na Meta, mas o fluxo parou antes de finalizar.</p>
 
             <div class="error-meta-grid">
@@ -1319,6 +1740,18 @@
               <div class="error-meta-item" *ngIf="failure.executionStatus">
                 <span>Status</span>
                 <strong>{{ failure.executionStatus }}</strong>
+              </div>
+              <div class="error-meta-item" *ngIf="failure.retryCount !== undefined">
+                <span>Retries</span>
+                <strong>{{ failure.retryCount }}</strong>
+              </div>
+            </div>
+
+            <div class="partial-resource-list" *ngIf="stepStateEntries(failure).length">
+              <span class="section-kicker">Estado por etapa</span>
+              <div class="summary-row" *ngFor="let item of stepStateEntries(failure); trackBy: trackByValue">
+                <span>{{ item.label }}</span>
+                <strong>{{ item.status }}</strong>
               </div>
             </div>
 
@@ -1376,9 +1809,10 @@
             </button>
           </div>
         </section>
+        </div>
       </div>
 
-      <aside class="summary-sidebar" *ngIf="showPreviewSidebar()">
+      <aside class="summary-sidebar" *ngIf="showPreviewSidebar() && !stepFlowEnabled()">
         <section class="sidebar-block readiness-sidebar-block">
           <div class="sidebar-heading">
             <strong>Resumo do builder</strong>
@@ -1430,7 +1864,7 @@
       </aside>
     </div>
 
-    <div class="mobile-submit-bar">
+    <div class="mobile-submit-bar" *ngIf="!stepFlowEnabled()">
       <div class="mobile-submit-copy">
         <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
         <span>{{ canSubmit() ? 'Pronta para envio' : nextPendingSection().label + ' pendente' }}</span>

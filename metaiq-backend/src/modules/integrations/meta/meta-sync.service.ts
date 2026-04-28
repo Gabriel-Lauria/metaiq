@@ -261,8 +261,12 @@ export class MetaSyncService {
     storeId: string,
     requester: AuthenticatedUser,
   ): Promise<AdAccount> {
-    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
-    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
+    const adAccount = await this.accessScope.validateAdAccountInStoreAccess(
+      requester,
+      storeId,
+      adAccountId,
+    );
+    if (adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 

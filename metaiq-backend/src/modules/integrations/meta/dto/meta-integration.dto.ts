@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min, ValidateIf } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
 import { META_CTA_TYPES, transformMetaCtaInput, type MetaCallToActionType } from '../meta-cta.constants';
 
@@ -121,10 +121,15 @@ export class CreateMetaCampaignDto {
   @MaxLength(500)
   message: string;
 
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @ValidateIf((dto) => !dto.assetId)
   @IsUrl({ require_protocol: true })
   @IsNotEmpty()
   @MaxLength(1000)
-  imageUrl: string;
+  imageUrl?: string;
 
   @IsOptional()
   @IsString()
@@ -199,6 +204,18 @@ export interface CreateMetaCampaignResponseDto {
   platform: 'META';
   step?: 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
   partialIds?: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
+  currentStep?: 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
+  canRetry?: boolean;
+  retryCount?: number;
+  userMessage?: string;
+  stepState?: Record<string, {
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    startedAt?: string | null;
+    completedAt?: string | null;
+    failedAt?: string | null;
+    errorMessage?: string | null;
+    ids?: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
+  }>;
   hint?: string;
 }
 
@@ -292,6 +309,11 @@ export class RetryPartialCampaignDto {
   @IsIn(META_CTA_TYPES)
   cta?: MetaCallToActionType;
 
+  @IsOptional()
+  @IsUUID()
+  assetId?: string;
+
+  @ValidateIf((dto) => !dto.assetId)
   @IsOptional()
   @IsUrl({ require_protocol: true })
   @MaxLength(1000)

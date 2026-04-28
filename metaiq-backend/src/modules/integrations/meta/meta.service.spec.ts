@@ -84,10 +84,13 @@ describe('MetaIntegrationService OAuth', () => {
   let campaignRepo: any;
   let campaignCreationRepo: any;
   let accessScope: any;
+  let assetsService: any;
   let config: ConfigService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedAxios.get.mockReset();
+    mockedAxios.post.mockReset();
     mockedAxios.get.mockImplementation(async (url: string) => {
       const normalizedUrl = String(url);
 
@@ -99,7 +102,11 @@ describe('MetaIntegrationService OAuth', () => {
         return { data: { id: 'provider-user-1' } } as any;
       }
 
-      if (normalizedUrl.includes('metaiq.dev') || normalizedUrl.includes('cdn.')) {
+      if (
+        normalizedUrl.includes('metaiq.dev')
+        || normalizedUrl.includes('cdn.')
+        || normalizedUrl.includes('localhost:3004/api/assets/')
+      ) {
         return {
           data: Buffer.from('fake-image'),
           headers: { 'content-type': 'image/jpeg' },
@@ -172,6 +179,23 @@ describe('MetaIntegrationService OAuth', () => {
 
         return adAccount;
       }),
+      validateAdAccountInStoreAccess: jest.fn(async (_requester: AuthenticatedUser, storeId: string, adAccountId: string) => {
+        const adAccount = await adAccountRepo.findOne({ where: { id: adAccountId } });
+        if (!adAccount || adAccount.storeId !== storeId) {
+          throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
+        }
+
+        return adAccount;
+      }),
+    };
+    assetsService = {
+      getAssetForStore: jest.fn(async () => ({
+        id: 'asset-1',
+        storeId: 'store-1',
+        type: 'image',
+        storageUrl: 'http://localhost:3004/api/assets/asset-1/content',
+        status: 'VALIDATED',
+      })),
     };
     config = {
       get: jest.fn((key: string) => {
@@ -203,6 +227,7 @@ describe('MetaIntegrationService OAuth', () => {
       campaignRepo,
       campaignCreationRepo,
       accessScope,
+      assetsService,
       config,
       graphApi,
       campaignOrchestrator,
@@ -578,7 +603,11 @@ describe('MetaIntegrationService OAuth', () => {
 
     const result = await service.fetchCampaignsForAdAccountForUser(user, 'store-1', 'ad-account-1');
 
-    expect(accessScope.validateAdAccountAccess).toHaveBeenCalledWith(user, 'ad-account-1');
+    expect(accessScope.validateAdAccountInStoreAccess).toHaveBeenCalledWith(
+      user,
+      'store-1',
+      'ad-account-1',
+    );
     expect(adAccountRepo.findOne).toHaveBeenCalledWith({
       where: {
         id: 'ad-account-1',
@@ -785,6 +814,46 @@ describe('MetaIntegrationService OAuth', () => {
       platform: 'META',
     });
     expect(result).not.toHaveProperty('accessToken');
+  });
+
+  it('aceita assetId e resolve storageUrl do asset sem exigir URL manual', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: '123456789',
+      metaId: '123456789',
+      active: true,
+      syncStatus: SyncStatus.SUCCESS,
+    });
+    campaignRepo.findOne.mockResolvedValue(null);
+    mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-campaign-1' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-adset-1' } } as any);
+    mockedAxios.post.mockResolvedValueOnce(metaImageUploadResponse() as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-creative-1' } } as any);
+    mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-ad-1' } } as any);
+
+    const result = await service.createCampaignForUser(user, 'store-1', {
+      name: 'Campanha com asset',
+      objective: 'OUTCOME_TRAFFIC',
+      dailyBudget: 80,
+      country: 'BR',
+      adAccountId: 'ad-account-1',
+      message: 'Mensagem principal',
+      assetId: 'asset-1',
+      destinationUrl: 'https://metaiq.dev/oferta',
+      headline: 'Headline',
+      initialStatus: 'PAUSED',
+    });
+
+    expect(result.status).toBe('CREATED');
+    expect(assetsService.getAssetForStore).toHaveBeenCalledWith('store-1', 'asset-1');
   });
 
   it('normaliza CTA amigavel da UI antes de enviar o creative para a Meta', async () => {
@@ -1253,7 +1322,7 @@ describe('MetaIntegrationService OAuth', () => {
     }));
   });
 
-  it('marca etapa PERSIST como FAILED quando a Meta cria tudo mas o banco falha', async () => {
+  it('marca etapa PERSIST como PARTIAL quando a Meta cria tudo mas o banco falha', async () => {
     integrationRepo.createQueryBuilder = jest.fn(() => ({
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -1293,7 +1362,8 @@ describe('MetaIntegrationService OAuth', () => {
     })).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'persist',
-        executionStatus: MetaCampaignCreationStatus.FAILED,
+        executionStatus: MetaCampaignCreationStatus.PARTIAL,
+        canRetry: true,
         partialIds: {
           campaignId: 'campaign-meta-1',
           adSetId: 'adset-meta-1',
@@ -1303,12 +1373,13 @@ describe('MetaIntegrationService OAuth', () => {
       }),
     });
     expect(campaignCreationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      status: MetaCampaignCreationStatus.FAILED,
+      status: MetaCampaignCreationStatus.PARTIAL,
       errorStep: 'persist',
       metaCampaignId: 'campaign-meta-1',
       metaAdSetId: 'adset-meta-1',
       metaCreativeId: 'creative-meta-1',
       metaAdId: 'ad-meta-1',
+      canRetry: true,
     }));
   });
 
@@ -1530,6 +1601,35 @@ describe('MetaIntegrationService OAuth', () => {
     });
 
     hashSpy.mockRestore();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia criação de campanha quando o ad account pertence a outra store', async () => {
+    integrationRepo.createQueryBuilder = jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    }));
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-2',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+
+    await expect(service.createCampaignForUser(user, 'store-1', {
+      name: 'Campanha MVP',
+      objective: 'OUTCOME_TRAFFIC',
+      dailyBudget: 25,
+      country: 'BR',
+      adAccountId: 'ad-account-1',
+      message: 'Mensagem do anuncio',
+      imageUrl: 'https://metaiq.dev/image.jpg',
+    })).rejects.toThrow('AdAccount Meta não encontrada para a store informada');
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 

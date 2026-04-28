@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { SelectQueryBuilder } from 'typeorm';
 import { Role } from '../enums';
 import { AuthenticatedUser } from '../interfaces';
@@ -215,6 +219,98 @@ describe('AccessScopeService', () => {
         'ad-account-2',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects an ad account that belongs to a different store even inside the same tenant', async () => {
+    const { service } = createServiceWithRepositories({
+      storeRepository: {
+        findOne: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'store-1',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          })
+          .mockResolvedValueOnce({
+            id: 'store-2',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          }),
+      },
+      adAccountRepository: {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'ad-account-2',
+          storeId: 'store-2',
+          provider: 'META',
+          store: {
+            id: 'store-2',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          },
+        }),
+      },
+    });
+
+    await expect(
+      service.validateAdAccountInStoreAccess(user, 'store-1', 'ad-account-2'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects a campaign whose ad account does not match the requested hierarchy', async () => {
+    const { service } = createServiceWithRepositories({
+      storeRepository: {
+        findOne: jest
+          .fn()
+          .mockResolvedValue({
+            id: 'store-1',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          }),
+      },
+      adAccountRepository: {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'ad-account-1',
+          storeId: 'store-1',
+          provider: 'META',
+          store: {
+            id: 'store-1',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          },
+        }),
+      },
+      campaignRepository: {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'campaign-1',
+          storeId: 'store-1',
+          adAccountId: 'ad-account-2',
+          store: {
+            id: 'store-1',
+            tenantId: 'tenant-1',
+            active: true,
+            deletedAt: null,
+          },
+          adAccount: {
+            id: 'ad-account-2',
+            storeId: 'store-1',
+          },
+        }),
+      },
+    });
+
+    await expect(
+      service.validateCampaignInAdAccountAccess(
+        user,
+        'store-1',
+        'ad-account-1',
+        'campaign-1',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('keeps platform admin with unrestricted access to any user in the system', async () => {

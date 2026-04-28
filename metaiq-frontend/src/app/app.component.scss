@@ -3,6 +3,7 @@
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
   background: var(--bg-page);
+  color: var(--text);
 }
 
 .app-layout.collapsed {
@@ -58,7 +59,7 @@
   grid-template-rows: auto 1fr auto auto;
   min-height: 100vh;
   padding: 20px 14px;
-  background: #1e3a8a;
+  background: var(--sidebar);
   color: #ffffff;
   z-index: 30;
 }
@@ -218,6 +219,8 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  background: var(--bg-page);
+  color: var(--text);
 }
 
 .app-header {
@@ -269,22 +272,29 @@
 
 .app-main {
   min-width: 0;
+  background: var(--bg-page);
+  color: var(--text);
   padding: 24px 28px 32px;
 }
 
 .main-container {
   width: min(1440px, 100%);
   margin: 0 auto;
+  min-height: 100%;
+  background: transparent;
 }
 
 .app-footer {
   padding: 16px 24px 24px;
+  background: var(--bg-page);
   color: var(--text-muted);
   font-size: 13px;
 }
 
 .auth-wrapper {
   min-height: 100vh;
+  background: var(--bg-page);
+  color: var(--text);
 }
 
 .sidebar-overlay {

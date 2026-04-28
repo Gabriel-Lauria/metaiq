@@ -16,3 +16,10 @@ coverage
 *.sqlite
 *.sqlite3
 metaiq-backend/data/
+
+# Local test/build outputs
+**/build-output.txt
+**/build_output.txt
+**/e2e-output.txt
+**/test-output.txt
+**/tmp-*.log

@@ -44,6 +44,7 @@ describe('CampaignsComponent', () => {
       'getIbgeCities',
       'getMetaIntegrationStatus',
       'getAdAccounts',
+      'getAssets',
       'createMetaCampaign',
       'retryMetaCampaignRecovery',
       'updateCampaign',
@@ -58,6 +59,7 @@ describe('CampaignsComponent', () => {
     api.getIbgeCities.and.returnValue(of([]));
     api.getMetaIntegrationStatus.and.returnValue(of(null as any));
     api.getAdAccounts.and.returnValue(of([]));
+    api.getAssets.and.returnValue(of([]));
     api.createMetaCampaign.and.returnValue(of({} as any));
     api.retryMetaCampaignRecovery.and.returnValue(of({} as any));
     api.updateCampaign.and.returnValue(of({} as any));

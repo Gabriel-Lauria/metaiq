@@ -50,16 +50,10 @@ export class ThemeService {
   private static currentTheme: ThemeConfig = LIGHT_THEME;
 
   /**
-   * Inicializa o tema baseado em preferência do usuário ou SO
+   * Inicializa o tema forçando o padrão claro atual do produto
    */
   static initialize(): void {
-    const savedTheme = localStorage.getItem(this.THEME_KEY);
-    
-    if (savedTheme === 'dark' || (!savedTheme && this.prefersDarkMode())) {
-      this.setTheme('dark');
-    } else {
-      this.setTheme('light');
-    }
+    this.setTheme('light');
   }
 
   /**
@@ -100,13 +94,6 @@ export class ThemeService {
    */
   static getCurrentTheme(): ThemeConfig {
     return this.currentTheme;
-  }
-
-  /**
-   * Verifica se o SO prefere dark mode
-   */
-  private static prefersDarkMode(): boolean {
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
 
   /**

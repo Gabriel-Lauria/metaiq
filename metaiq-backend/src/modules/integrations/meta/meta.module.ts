@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '../../../common/common.module';
 import { IbgeModule } from '../../ibge/ibge.module';
+import { AssetsModule } from '../../assets/assets.module';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
 import { OAuthState } from '../oauth-state.entity';
@@ -17,7 +18,7 @@ import { MetaIntegrationService } from './meta.service';
 import { MetaSyncService } from './meta-sync.service';
 
 @Module({
-  imports: [CommonModule, IbgeModule, TypeOrmModule.forFeature([StoreIntegration, OAuthState, AdAccount, Campaign, MetaCampaignCreation])],
+  imports: [CommonModule, IbgeModule, AssetsModule, TypeOrmModule.forFeature([StoreIntegration, OAuthState, AdAccount, Campaign, MetaCampaignCreation])],
   controllers: [MetaIntegrationController, MetaOAuthCallbackController, MetaCampaignCreationAuditController, MetaCampaignRecoveryController],
   providers: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaImageUploadService, MetaCampaignOrchestrator, MetaCampaignRecoveryService],
   exports: [MetaIntegrationService, MetaSyncService, MetaGraphApiClient, MetaImageUploadService, MetaCampaignOrchestrator, MetaCampaignRecoveryService],

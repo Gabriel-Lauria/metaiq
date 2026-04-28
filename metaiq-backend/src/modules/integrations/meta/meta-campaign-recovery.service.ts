@@ -10,6 +10,7 @@ import { isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from 
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
 import { IntegrationProvider, IntegrationStatus, Role } from '../../../common/enums';
+import { AssetsService } from '../../assets/assets.service';
 import { StoreIntegration } from '../store-integration.entity';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
@@ -39,6 +40,7 @@ export class MetaCampaignRecoveryService {
     private readonly campaignOrchestrator: MetaCampaignOrchestrator,
     private readonly graphApi: MetaGraphApiClient,
     private readonly accessScope: AccessScopeService,
+    private readonly assetsService: AssetsService,
   ) {}
 
   /**
@@ -81,7 +83,7 @@ export class MetaCampaignRecoveryService {
       );
     }
 
-    if (execution.status === MetaCampaignCreationStatus.FAILED) {
+    if (execution.status === MetaCampaignCreationStatus.FAILED && !execution.canRetry) {
       throw new BadRequestException({
         message: 'Esta campanha falhou completamente. Inicie uma nova criação.',
         executionId,
@@ -208,20 +210,20 @@ export class MetaCampaignRecoveryService {
    */
   async getExecutionStatusForUser(user: AuthenticatedUser, storeId: string, executionId: string) {
     await this.validateCanManage(storeId, user);
-    const execution = await this.campaignCreationRepository.findOne({
-      where: { id: executionId, storeId },
+    const execution = await this.getScopedExecution(executionId, storeId, user, {
       relations: ['store', 'adAccount', 'campaign'],
     });
-
-    if (!execution) {
-      throw new BadRequestException(`Execução ${executionId} não encontrada`);
-    }
 
     return {
       id: execution.id,
       status: this.normalizeExecutionStatus(execution.status),
       idempotencyKey: execution.idempotencyKey,
       step: execution.errorStep,
+      currentStep: execution.currentStep,
+      canRetry: execution.canRetry,
+      retryCount: execution.retryCount,
+      userMessage: execution.userMessage,
+      stepState: execution.stepState ?? undefined,
       message: execution.errorMessage,
       partialIds: {
         campaign: execution.metaCampaignId || null,
@@ -288,6 +290,11 @@ export class MetaCampaignRecoveryService {
     execution.status = MetaCampaignCreationStatus.IN_PROGRESS;
     execution.errorStep = null;
     execution.errorMessage = null;
+    execution.currentStep = execution.currentStep || execution.errorStep || this.resolveFailedStep(createdIds);
+    execution.canRetry = false;
+    execution.retryCount = (execution.retryCount ?? 0) + 1;
+    execution.lastRetryAt = new Date();
+    execution.userMessage = null;
     await this.campaignCreationRepository.save(execution);
 
     try {
@@ -316,6 +323,9 @@ export class MetaCampaignRecoveryService {
       this.applyCreatedIdsToExecution(execution, createdIds);
       const localCampaign = await this.recordRecoveredCampaign(execution, dto);
       execution.campaignId = localCampaign.id;
+      execution.currentStep = null;
+      execution.canRetry = false;
+      execution.userMessage = null;
       await this.campaignCreationRepository.save(execution);
       this.logRecovery('META_CAMPAIGN_RECOVERY_COMPLETED', {
         executionId: execution.id,
@@ -331,12 +341,15 @@ export class MetaCampaignRecoveryService {
         ids: createdIds,
       };
     } catch (error) {
+      const hint = this.buildRecoveryHint(execution.errorStep, dto, pageId, destinationUrl);
       execution.status = MetaCampaignCreationStatus.PARTIAL;
       execution.errorStep = this.resolveFailedStep(createdIds);
       execution.errorMessage = (error as Error).message;
+      execution.currentStep = execution.errorStep;
+      execution.canRetry = Boolean(createdIds.campaignId || createdIds.adSetId || createdIds.creativeId || createdIds.adId);
+      execution.userMessage = hint;
       this.applyCreatedIdsToExecution(execution, createdIds);
       await this.campaignCreationRepository.save(execution);
-      const hint = this.buildRecoveryHint(execution.errorStep, dto, pageId, destinationUrl);
       this.logRecovery('META_CAMPAIGN_RECOVERY_FAILED', {
         executionId: execution.id,
         storeId: execution.storeId,
@@ -397,15 +410,31 @@ export class MetaCampaignRecoveryService {
     executionId: string,
     storeId: string,
     user: AuthenticatedUser,
+    options: { relations?: string[] } = {},
   ): Promise<MetaCampaignCreation> {
     await this.accessScope.validateStoreAccess(user, storeId);
     const execution = await this.campaignCreationRepository.findOne({
       where: { id: executionId, storeId },
-      relations: ['adAccount'],
+      relations: options.relations ?? ['adAccount'],
     });
 
     if (!execution) {
       throw new BadRequestException(`Execução ${executionId} não encontrada`);
+    }
+
+    await this.accessScope.validateAdAccountInStoreAccess(
+      user,
+      storeId,
+      execution.adAccountId,
+    );
+
+    if (execution.campaignId) {
+      await this.accessScope.validateCampaignInAdAccountAccess(
+        user,
+        storeId,
+        execution.adAccountId,
+        execution.campaignId,
+      );
     }
 
     return execution;
@@ -428,7 +457,15 @@ export class MetaCampaignRecoveryService {
     }
 
     const requestPayload = (execution.requestPayload || {}) as Record<string, unknown>;
-    const imageUrl = this.stringValue(dto?.imageUrl) || this.stringValue(requestPayload.imageUrl);
+    const assetId = this.stringValue(dto?.assetId) || this.stringValue(requestPayload.assetId);
+    let imageUrl = this.stringValue(dto?.imageUrl) || this.stringValue(requestPayload.imageUrl);
+    if (assetId) {
+      const asset = await this.assetsService.getAssetForStore(execution.storeId, assetId);
+      if (asset.type !== 'image') {
+        throw new BadRequestException('O asset selecionado precisa ser uma imagem');
+      }
+      imageUrl = asset.storageUrl;
+    }
     const destinationUrl = this.stringValue(dto?.destinationUrl)
       || this.stringValue(requestPayload.destinationUrl)
       || this.stringValue(integration.metadata?.['destinationUrl'])
@@ -453,6 +490,7 @@ export class MetaCampaignRecoveryService {
       dailyBudget: Number(dto?.dailyBudget ?? requestPayload.dailyBudget),
       country: this.stringValue(dto?.country) || this.stringValue(requestPayload.country) || 'BR',
       adAccountId: adAccount.id,
+      assetId: assetId || undefined,
       message: this.stringValue(dto?.message) || this.stringValue(requestPayload.message),
       imageUrl,
       destinationUrl,

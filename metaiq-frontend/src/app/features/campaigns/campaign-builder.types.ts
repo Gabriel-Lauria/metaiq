@@ -1,4 +1,4 @@
-import { CampaignCopilotAnalysisResponse, CampaignSuggestionResponse, CreateMetaCampaignResponse } from '../../core/models';
+import { CampaignAiFailureResponse, CampaignAiStructuredResponse, CampaignCopilotAnalysisResponse, CreateMetaCampaignResponse } from '../../core/models';
 import { MetaCallToActionType } from './cta.constants';
 
 export type CampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
@@ -9,6 +9,8 @@ export type CampaignDestinationType = 'site' | 'messages' | 'form' | 'app' | 'ca
 export type CampaignBudgetType = 'daily' | 'lifetime';
 export type CampaignCreationMode = 'ai-entry' | 'ai-result' | 'edit-lite' | 'advanced';
 export type CampaignCreationEntryMode = 'manual' | 'ai';
+export type CampaignModeSelection = 'AI' | 'GUIDED' | 'ADVANCED';
+export type WizardObjectiveId = 'sell-more' | 'receive-messages' | 'drive-site' | 'promote-offer';
 
 export interface CampaignBuilderState {
   campaign: {
@@ -99,6 +101,7 @@ export interface CampaignBuilderState {
     headline: string;
     description: string;
     cta: MetaCallToActionType;
+    assetId: string;
     imageUrl: string;
     carousel: boolean;
   };
@@ -113,8 +116,15 @@ export interface CampaignBuilderState {
     notes: string;
   };
   ui: {
+    simpleObjective: WizardObjectiveId;
+    productName: string;
+    productDescription: string;
+    productDifferential: string;
+    productPrice: string;
+    modeSelection: CampaignModeSelection;
     aiFlowMode: CampaignCreationMode;
     builderMode: CampaignCreationEntryMode;
+    aiBriefing: string;
     aiPrompt: string;
     aiGoal: string;
     aiFunnelStage: 'top' | 'middle' | 'bottom' | 'remarketing' | 'retention' | '';
@@ -150,7 +160,9 @@ export interface CampaignBuilderState {
     aiGeoPendingNotice: string | null;
     aiIgnoredFields: string[];
     aiUsedFallback: boolean;
-    aiLastSuggestion: CampaignSuggestionResponse | null;
+    aiFailure: CampaignAiFailureResponse | null;
+    aiCopilotFailure: CampaignAiFailureResponse | null;
+    aiLastSuggestion: CampaignAiStructuredResponse | null;
   };
 }
 
@@ -208,7 +220,7 @@ export interface CampaignCreateSuccessEvent {
  * Modo IA:     Briefing IA → Configuração → Público → Criativo → Revisão
  */
 
-export type StepId = 'briefing-ia' | 'configuration' | 'audience' | 'creative' | 'review';
+export type StepId = 'objective' | 'product' | 'audience' | 'creative' | 'budget' | 'review';
 
 export interface StepValidation {
   /** Erros que bloqueiam o avanço */

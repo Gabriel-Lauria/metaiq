@@ -3,7 +3,6 @@ import {
   isValidCountry,
   isSecureHttpUrl,
   isLikelyDirectImageUrl,
-  identitySectionComplete,
   hasConsistentAudienceLocation,
 } from './campaign-builder-review.util';
 import { CampaignBuilderState, StepValidation, StepId } from './campaign-builder.types';
@@ -18,34 +17,18 @@ import { CampaignBuilderState, StepValidation, StepId } from './campaign-builder
  */
 
 /**
- * Valida a etapa "Briefing IA"
- * Apenas aparece em modo IA
- * 
- * Validação: O usuário preencheu o prompt com contexto suficiente
+ * Valida a etapa "Objetivo"
  */
-export function validateBriefingIaStep(state: CampaignBuilderState): StepValidation {
+export function validateObjectiveStep(state: CampaignBuilderState): StepValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const hasPrompt = (state.ui.aiPrompt || '').trim().length > 0;
-  const hasGoal = (state.ui.aiGoal || '').trim().length > 0;
-  const hasDestinationType = (state.ui.aiDestinationType || '').trim().length > 0;
-
-  if (!hasPrompt) {
-    errors.push('Descreva o objetivo da campanha');
+  if (!state.ui.simpleObjective) {
+    errors.push('Escolha o que você quer alcançar com a campanha');
   }
 
-  if (!hasGoal) {
-    errors.push('Defina o resultado principal que espera');
-  }
-
-  if (!hasDestinationType) {
-    errors.push('Indique para onde levará o tráfego');
-  }
-
-  const hasPrimaryOffer = (state.ui.aiPrimaryOffer || '').trim().length > 0;
-  if (!hasPrimaryOffer) {
-    warnings.push('Adicione informações sobre sua oferta/produto para melhores sugestões');
+  if (!state.campaign.objective.trim()) {
+    errors.push('O objetivo da campanha precisa ser definido');
   }
 
   return {
@@ -56,46 +39,26 @@ export function validateBriefingIaStep(state: CampaignBuilderState): StepValidat
 }
 
 /**
- * Valida a etapa "Configuração"
- * Modo: Manual e IA (após briefing)
- * 
- * Campos obrigatórios: Nome, Objetivo, Conta de anúncio, Orçamento, Status
+ * Valida a etapa "Produto"
  */
-export function validateConfigurationStep(
-  state: CampaignBuilderState,
-  context: CampaignBuilderReviewContext,
-): StepValidation {
+export function validateProductStep(state: CampaignBuilderState): StepValidation {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Nome da campanha
-  if (!state.campaign.name.trim()) {
-    errors.push('Nome da campanha é obrigatório');
-  } else if (state.campaign.name.length > 100) {
-    errors.push('Nome da campanha não pode exceder 100 caracteres');
+  if (!state.ui.productName.trim()) {
+    errors.push('Informe o nome do produto ou serviço');
   }
 
-  // Objetivo
-  if (!state.campaign.objective.trim()) {
-    errors.push('Escolha um objetivo para a campanha');
+  if (!state.ui.productDescription.trim()) {
+    errors.push('Descreva o produto ou serviço');
   }
 
-  // Conta de anúncio (validar contexto)
-  if (!identitySectionComplete(context)) {
-    errors.push('Selecione uma conta de anúncio válida');
+  if (!state.ui.productDifferential.trim()) {
+    warnings.push('Vale destacar um diferencial para melhorar a mensagem do anúncio');
   }
 
-  // Orçamento
-  const budgetValue = Number(state.budget.value);
-  if (!state.budget.value || budgetValue <= 0) {
-    errors.push('Orçamento deve ser maior que zero');
-  } else if (budgetValue < 5) {
-    warnings.push('Orçamentos abaixo de R$ 5,00 podem ter alcance limitado');
-  }
-
-  // Status inicial
-  if (!state.campaign.initialStatus) {
-    errors.push('Defina o status inicial da campanha');
+  if (!state.identity.adAccountId) {
+    errors.push('Selecione uma conta de anúncio da loja');
   }
 
   return {
@@ -107,9 +70,6 @@ export function validateConfigurationStep(
 
 /**
  * Valida a etapa "Público"
- * Modo: Manual e IA
- * 
- * Validações: País obrigatório, se BR e local: estado/cidade, idade coerente
  */
 export function validateAudienceStep(state: CampaignBuilderState): StepValidation {
   const errors: string[] = [];
@@ -154,9 +114,6 @@ export function validateAudienceStep(state: CampaignBuilderState): StepValidatio
 
 /**
  * Valida a etapa "Criativo"
- * Modo: Manual e IA
- * 
- * Validações: Mensagem, Headline, URL destino (HTTPS), Imagem, CTA
  */
 export function validateCreativeStep(state: CampaignBuilderState): StepValidation {
   const errors: string[] = [];
@@ -193,9 +150,9 @@ export function validateCreativeStep(state: CampaignBuilderState): StepValidatio
 
   // Imagem
   if (!state.creative.imageUrl.trim()) {
-    errors.push('Imagem é obrigatória');
+    errors.push('Selecione uma imagem para o anúncio');
   } else if (!isLikelyDirectImageUrl(state.creative.imageUrl)) {
-    errors.push('URL da imagem inválida. Use uma URL HTTP(S) direta.');
+    errors.push('Imagem inválida. Envie ou selecione uma imagem válida da biblioteca.');
   }
 
   return {
@@ -206,10 +163,29 @@ export function validateCreativeStep(state: CampaignBuilderState): StepValidatio
 }
 
 /**
+ * Valida a etapa "Orçamento"
+ */
+export function validateBudgetStep(state: CampaignBuilderState): StepValidation {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const budgetValue = Number(state.budget.value);
+  if (!budgetValue || budgetValue <= 0) {
+    errors.push('Defina um valor por dia maior que zero');
+  } else if (budgetValue < 20) {
+    warnings.push('Orçamentos abaixo de R$20 por dia podem limitar a entrega');
+  }
+
+  return {
+    errors,
+    warnings,
+    isComplete: errors.length === 0,
+  };
+}
+
+/**
+/**
  * Valida a etapa "Revisão"
- * Modo: Manual e IA
- * 
- * Validações: Tudo que foi validado nas etapas anteriores + checklist de prontidão
  */
 export function validateReviewStep(
   state: CampaignBuilderState,
@@ -218,24 +194,30 @@ export function validateReviewStep(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  // Executa validação de todas as etapas
-  const configValidation = validateConfigurationStep(state, context);
+  const objectiveValidation = validateObjectiveStep(state);
+  const productValidation = validateProductStep(state);
   const audienceValidation = validateAudienceStep(state);
   const creativeValidation = validateCreativeStep(state);
+  const budgetValidation = validateBudgetStep(state);
 
-  // Coleciona todos os erros
-  errors.push(...configValidation.errors);
+  errors.push(...objectiveValidation.errors);
+  errors.push(...productValidation.errors);
   errors.push(...audienceValidation.errors);
   errors.push(...creativeValidation.errors);
+  errors.push(...budgetValidation.errors);
 
-  // Avisos combinados
-  warnings.push(...configValidation.warnings);
+  warnings.push(...objectiveValidation.warnings);
+  warnings.push(...productValidation.warnings);
   warnings.push(...audienceValidation.warnings);
   warnings.push(...creativeValidation.warnings);
+  warnings.push(...budgetValidation.warnings);
 
-  // Avisos adicionais da revisão
-  if (!state.placements.selected || state.placements.selected.length === 0) {
-    warnings.push('Nenhum placement selecionado. Meta escolherá automaticamente.');
+  if (!context.validStoreId) {
+    errors.push('Selecione uma store válida para publicar');
+  }
+
+  if (!context.integration?.pageId) {
+    errors.push('Configure a página da loja antes de publicar');
   }
 
   return {
@@ -259,14 +241,16 @@ export function validateStep(
   }
 
   switch (stepId) {
-    case 'briefing-ia':
-      return validateBriefingIaStep(state);
-    case 'configuration':
-      return validateConfigurationStep(state, context);
+    case 'objective':
+      return validateObjectiveStep(state);
+    case 'product':
+      return validateProductStep(state);
     case 'audience':
       return validateAudienceStep(state);
     case 'creative':
       return validateCreativeStep(state);
+    case 'budget':
+      return validateBudgetStep(state);
     case 'review':
       return validateReviewStep(state, context);
     default:
@@ -297,36 +281,41 @@ function hasConsistentAudienceLocationHelper(state: CampaignBuilderState): boole
  * Metadados das etapas para navegação e UI
  */
 export const STEP_METADATA: Record<StepId, any> = {
-  'briefing-ia': {
-    id: 'briefing-ia',
-    label: 'Briefing IA',
-    description: 'Descreva sua campanha em linguagem natural',
+  'objective': {
+    id: 'objective',
+    label: 'Objetivo',
+    description: 'Escolha o resultado principal',
     order: 0,
-    requiresAiMode: true,
   },
-  'configuration': {
-    id: 'configuration',
-    label: 'Configuração',
-    description: 'Nome, objetivo, conta e orçamento',
+  'product': {
+    id: 'product',
+    label: 'Produto',
+    description: 'Explique o que será anunciado',
     order: 1,
   },
   'audience': {
     id: 'audience',
     label: 'Público',
-    description: 'País, localização, idade e interesse',
+    description: 'Defina quem você quer alcançar',
     order: 2,
   },
   'creative': {
     id: 'creative',
     label: 'Criativo',
-    description: 'Mensagem, headline, CTA e imagem',
+    description: 'Monte a peça do anúncio',
     order: 3,
+  },
+  'budget': {
+    id: 'budget',
+    label: 'Orçamento',
+    description: 'Defina o valor por dia',
+    order: 4,
   },
   'review': {
     id: 'review',
     label: 'Revisão',
     description: 'Confirme antes de criar na Meta',
-    order: 4,
+    order: 5,
   },
 };
 
@@ -334,10 +323,7 @@ export const STEP_METADATA: Record<StepId, any> = {
  * Obtém a sequência de steps baseada no modo (manual ou IA)
  */
 export function getStepSequence(isAiMode: boolean): StepId[] {
-  if (isAiMode) {
-    return ['briefing-ia', 'configuration', 'audience', 'creative', 'review'];
-  }
-  return ['configuration', 'audience', 'creative', 'review'];
+  return ['objective', 'product', 'audience', 'creative', 'budget', 'review'];
 }
 
 /**

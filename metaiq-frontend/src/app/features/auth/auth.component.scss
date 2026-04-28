@@ -3,8 +3,8 @@
   width: 100%;
   display: grid;
   grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 440px);
-  background: #101112;
-  color: #f4f7f5;
+  background: var(--bg-page);
+  color: var(--text);
 }
 
 .auth-panel {

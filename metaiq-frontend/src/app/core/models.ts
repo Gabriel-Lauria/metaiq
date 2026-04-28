@@ -184,6 +184,25 @@ export interface MetaPage {
   category?: string | null;
 }
 
+export type AssetType = 'image' | 'video';
+export type AssetStatus = 'UPLOADED' | 'VALIDATED' | 'REJECTED' | 'SENT_TO_META' | 'FAILED';
+
+export interface Asset {
+  id: string;
+  storeId: string;
+  uploadedByUserId?: string | null;
+  type: AssetType;
+  mimeType: string;
+  size: number;
+  width?: number | null;
+  height?: number | null;
+  storageUrl: string;
+  metaImageHash?: string | null;
+  status: AssetStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IbgeState {
   code: string;
   name: string;
@@ -207,7 +226,8 @@ export interface CreateMetaCampaignRequest {
   country: string;
   adAccountId: string;
   message: string;
-  imageUrl: string;
+  assetId?: string;
+  imageUrl?: string;
   state?: string;
   stateName?: string;
   city?: string;
@@ -246,9 +266,21 @@ export interface MetaCampaignErrorDetails {
 
 export interface MetaCampaignExecutionContext {
   step?: MetaCampaignExecutionStep;
+  currentStep?: MetaCampaignExecutionStep;
   executionId?: string;
   executionStatus?: MetaCampaignExecutionStatus;
   partialIds?: MetaCampaignPartialIds;
+  canRetry?: boolean;
+  retryCount?: number;
+  userMessage?: string;
+  stepState?: Record<string, {
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    startedAt?: string | null;
+    completedAt?: string | null;
+    failedAt?: string | null;
+    errorMessage?: string | null;
+    ids?: MetaCampaignPartialIds;
+  }>;
   hint?: string;
   metaError?: MetaCampaignErrorDetails;
 }
@@ -267,7 +299,19 @@ export interface CreateMetaCampaignResponse {
   adAccountId: string;
   platform: 'META';
   step?: MetaCampaignExecutionStep;
+  currentStep?: MetaCampaignExecutionStep;
   partialIds?: MetaCampaignPartialIds;
+  canRetry?: boolean;
+  retryCount?: number;
+  userMessage?: string;
+  stepState?: Record<string, {
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    startedAt?: string | null;
+    completedAt?: string | null;
+    failedAt?: string | null;
+    errorMessage?: string | null;
+    ids?: MetaCampaignPartialIds;
+  }>;
   hint?: string;
 }
 
@@ -279,6 +323,18 @@ export interface MetaCampaignRecoveryStatusResponse {
   id: string;
   status: MetaCampaignExecutionStatus;
   step?: MetaCampaignExecutionStep;
+  currentStep?: MetaCampaignExecutionStep;
+  canRetry?: boolean;
+  retryCount?: number;
+  userMessage?: string;
+  stepState?: Record<string, {
+    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    startedAt?: string | null;
+    completedAt?: string | null;
+    failedAt?: string | null;
+    errorMessage?: string | null;
+    ids?: MetaCampaignRecoveryPartialIds | MetaCampaignPartialIds;
+  }>;
   message?: string;
   partialIds?: MetaCampaignRecoveryPartialIds;
 }
@@ -359,6 +415,19 @@ export interface AiCreativeOutput {
   destinationUrl: string | null;
 }
 
+export interface AiCampaignAudienceSummary {
+  gender: AiGender | null;
+  ageRange: string | null;
+  interests: string[];
+}
+
+export interface AiCampaignExplanationOutput {
+  strategy: string;
+  audience: string;
+  copy: string;
+  budget: string;
+}
+
 export interface AiReviewOutput {
   summary: string;
   strengths: string[];
@@ -375,19 +444,42 @@ export interface AiValidationOutput {
   recommendations: string[];
 }
 
+export type CampaignAiFailureReason = 'timeout' | 'api_error' | 'invalid_response' | 'missing_api_key';
+
+export interface CampaignAiFailureMeta {
+  promptVersion: string;
+  model: string;
+  usedFallback: boolean;
+  responseValid: boolean;
+}
+
+export interface CampaignAiFailureResponse {
+  status: 'AI_FAILED';
+  reason: CampaignAiFailureReason;
+  message: string;
+  meta: CampaignAiFailureMeta;
+}
+
 export interface CampaignAiStructuredResponse {
+  status: 'AI_SUCCESS';
+  strategy: string;
+  primaryText: string;
+  headline: string;
+  description: string;
+  cta: string;
+  audience: AiCampaignAudienceSummary;
+  budgetSuggestion: number | null;
+  risks: string[];
+  improvements: string[];
+  reasoning: string[];
+  explanation: AiCampaignExplanationOutput;
   planner: AiPlannerOutput;
   campaign: AiCampaignOutput;
   adSet: AiAdSetOutput;
   creative: AiCreativeOutput;
   review: AiReviewOutput;
   validation: AiValidationOutput;
-  meta: {
-    promptVersion: string;
-    model: string;
-    usedFallback: boolean;
-    responseValid: boolean;
-  };
+  meta: CampaignAiFailureMeta;
 }
 
 export interface AiCampaignCopilotAnalysis {
@@ -416,13 +508,9 @@ export interface AiCampaignCopilotImprovement {
 }
 
 export interface CampaignCopilotAnalysisResponse {
+  status: 'AI_SUCCESS';
   analysis: AiCampaignCopilotAnalysis;
-  meta: {
-    promptVersion: string;
-    model: string;
-    usedFallback: boolean;
-    responseValid: boolean;
-  };
+  meta: CampaignAiFailureMeta;
 }
 
 export interface CampaignCopilotAnalysisRequest {
@@ -452,7 +540,8 @@ export interface CampaignAiRequest {
 }
 
 export type CampaignSuggestionRequest = CampaignAiRequest;
-export type CampaignSuggestionResponse = CampaignAiStructuredResponse;
+export type CampaignSuggestionResponse = CampaignAiStructuredResponse | CampaignAiFailureResponse;
+export type CampaignAnalysisResponse = CampaignCopilotAnalysisResponse | CampaignAiFailureResponse;
 
 export interface ConnectMetaIntegrationRequest {
   externalBusinessId?: string;

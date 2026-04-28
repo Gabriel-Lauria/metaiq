@@ -11,7 +11,7 @@ import { StoreContextService } from '../../core/services/store-context.service';
 import { UiService } from '../../core/services/ui.service';
 import { CampaignAiService } from './campaign-ai.service';
 import { Router } from '@angular/router';
-import { CampaignCopilotAnalysisResponse, CampaignSuggestionResponse, IntegrationProvider, IntegrationStatus, SyncStatus } from '../../core/models';
+import { CampaignAiStructuredResponse, CampaignCopilotAnalysisResponse, IntegrationProvider, IntegrationStatus, SyncStatus } from '../../core/models';
 
 describe('CampaignCreatePanelComponent', () => {
   let fixture: ComponentFixture<CampaignCreatePanelComponent>;
@@ -41,6 +41,8 @@ describe('CampaignCreatePanelComponent', () => {
       'getIbgeCities',
       'getMetaIntegrationStatus',
       'getAdAccounts',
+      'getAssets',
+      'uploadAsset',
       'createMetaCampaign',
       'retryMetaCampaignRecovery',
     ]);
@@ -83,6 +85,7 @@ describe('CampaignCreatePanelComponent', () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }]));
+    api.getAssets.and.returnValue(of([]));
     api.createMetaCampaign.and.returnValue(of({
       campaignId: 'campaign-1',
       adSetId: 'adset-1',
@@ -156,15 +159,28 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('renderiza erro enriquecido com hint, etapa traduzida e recursos parciais', () => {
+    openAdvancedMode(component, fixture);
+    component.reviewNow();
     component.submitFailure.set({
       message: 'Erro na criação do criativo: destination_url inválido',
       step: 'creative',
+      currentStep: 'creative',
       executionId: 'exec-123',
       executionStatus: 'PARTIAL',
+      canRetry: true,
+      retryCount: 1,
+      userMessage: 'A Meta recusou o criativo. Revise a URL final e continue a execução com segurança.',
       hint: 'Verifique se o pageId está configurado e se a URL é válida',
       partialIds: {
         campaignId: 'cmp-1',
         adSetId: 'set-1',
+      },
+      stepState: {
+        campaign: { status: 'COMPLETED' },
+        adset: { status: 'COMPLETED' },
+        creative: { status: 'FAILED', errorMessage: 'destination_url inválido' },
+        ad: { status: 'PENDING' },
+        persist: { status: 'PENDING' },
       },
       metaError: {
         message: 'Invalid parameter',
@@ -179,18 +195,24 @@ describe('CampaignCreatePanelComponent', () => {
     expect(text).toContain('Não foi possível criar a campanha na Meta');
     expect(text).toContain('Criativo');
     expect(text).toContain('Verifique se o pageId está configurado e se a URL é válida');
+    expect(text).toContain('A Meta recusou o criativo');
     expect(text).toContain('cmp-1');
     expect(text).toContain('set-1');
+    expect(text).toContain('COMPLETED');
+    expect(text).toContain('FAILED');
     expect(text).not.toContain('accessToken');
     expect(text).not.toContain('Bearer');
     expect(text).not.toContain('stack');
   });
 
   it('bloqueia retry normal quando existe execução parcial ativa', () => {
+    openAdvancedMode(component, fixture);
+    component.reviewNow();
     component.submitFailure.set({
       message: 'Execução parcial',
       executionId: 'exec-123',
       executionStatus: 'PARTIAL',
+      canRetry: true,
       partialIds: { campaignId: 'cmp-1' },
     });
     component.partialExecutionSignature.set(JSON.stringify(component.buildApiPayload()));
@@ -204,7 +226,35 @@ describe('CampaignCreatePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Continuar criação com segurança');
   });
 
+  it('aciona o recovery seguro ao continuar de onde parou', () => {
+    component.submitFailure.set({
+      message: 'Execução parcial',
+      executionId: 'exec-123',
+      executionStatus: 'PARTIAL',
+      canRetry: true,
+      partialIds: { campaignId: 'cmp-1' },
+    });
+    component.partialExecutionSignature.set(JSON.stringify(component.buildApiPayload()));
+
+    component.continuePartialCreation();
+
+    expect(api.retryMetaCampaignRecovery).toHaveBeenCalledWith(
+      'store-1',
+      'exec-123',
+      jasmine.objectContaining({
+        name: 'Campanha Meta segura',
+        adAccountId: 'ad-account-1',
+      }),
+    );
+    expect(ui.showSuccess).toHaveBeenCalledWith(
+      'Campanha retomada',
+      'Campanha retomada',
+    );
+    expect(component.successOverlay()).toBeTruthy();
+  });
+
   it('desabilita o botão principal durante loading', () => {
+    openAdvancedMode(component, fixture);
     component.reviewNow();
     component.submitting.set(true);
     fixture.detectChanges();
@@ -215,6 +265,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('renderiza planner e review estruturados da IA', () => {
+    openAiResultMode(component, fixture);
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
     component.state.ui.aiConfidence = 74;
     component.state.ui.aiQualityScore = 78;
@@ -233,6 +284,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('resume prontidão, qualidade e progresso com labels contextuais', () => {
+    openGuidedMode(component, fixture);
     component.state.campaign.name = '';
     component.state.destination.websiteUrl = '';
     component.state.creative.headline = '';
@@ -247,40 +299,42 @@ describe('CampaignCreatePanelComponent', () => {
     expect(cards[1].meta).toBe('Qualidade IA: 78/100');
     expect(cards[2].meta).toContain('Etapa');
 
-    const sidebar = fixture.nativeElement.querySelector('.readiness-sidebar-block') as HTMLElement | null;
-    expect(sidebar?.textContent).toContain('Resumo do builder');
-    expect(sidebar?.textContent).toContain('Prontidão da campanha');
-    expect(sidebar?.textContent).toContain('Qualidade IA');
+    const previewCard = fixture.nativeElement.querySelector('.wizard-preview-card') as HTMLElement | null;
+    expect(previewCard?.textContent).toContain('Prévia do anúncio');
+    expect(fixture.nativeElement.textContent).toContain('Objetivo');
   });
 
   it('inicia em modo manual sem exigir prompt da IA', () => {
-    expect(component.creationEntryMode()).toBe('manual');
-    expect(component.creationMode()).toBe('edit-lite');
+    expect(component.modeSelection()).toBeNull();
+    expect(component.state.ui.modeSelection).toBe('AI');
     expect(fixture.nativeElement.textContent).toContain('Criar campanha');
-    expect(fixture.nativeElement.textContent).toContain('Modo: Manual');
-    expect(fixture.nativeElement.textContent).toContain('Configuração');
-    expect(fixture.nativeElement.textContent).not.toContain('Briefing IA');
-    expect(fixture.nativeElement.querySelector('#builder-ai')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Como você quer criar sua campanha?');
+    expect(fixture.nativeElement.textContent).toContain('Criar com IA');
+    expect(fixture.nativeElement.textContent).toContain('Criação orientada');
+    expect(fixture.nativeElement.textContent).toContain('Criação avançada');
   });
 
   it('inicia em modo assistido por IA quando solicitado', () => {
     component.initialMode = 'ai';
     fixture.detectChanges();
 
+    expect(component.modeSelection()).toBe('AI');
     expect(component.creationEntryMode()).toBe('ai');
     expect(component.creationMode()).toBe('ai-entry');
     expect(fixture.nativeElement.textContent).toContain('Criar campanha');
-    expect(fixture.nativeElement.textContent).toContain('Modo: IA');
+    expect(fixture.nativeElement.textContent).toContain('Criar com IA');
     expect(fixture.nativeElement.querySelector('#builder-ai')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Briefing IA');
   });
 
   it('modo manual consegue seguir para revisao final sem gerar sugestao da IA', () => {
+    openGuidedMode(component, fixture);
     component.reviewNow();
 
     expect(component.creationEntryMode()).toBe('manual');
     expect(component.creationMode()).toBe('edit-lite');
-    expect(component.activeSection()).toBe('builder-review');
+    expect(component.currentStep()).toBe('review');
+    expect(component.showCreateButtonInReview()).toBeTrue();
   });
 
   it('alternar para manual remove o briefing IA como foco inicial', () => {
@@ -290,15 +344,143 @@ describe('CampaignCreatePanelComponent', () => {
     component.switchToManualMode();
     fixture.detectChanges();
 
+    expect(component.modeSelection()).toBe('GUIDED');
     expect(component.creationEntryMode()).toBe('manual');
     expect(component.creationMode()).toBe('edit-lite');
     expect(component.activeSection()).toBe('builder-lite');
     expect(fixture.nativeElement.querySelector('#builder-ai')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Criar campanha');
-    expect(fixture.nativeElement.textContent).toContain('Configuração');
+    expect(fixture.nativeElement.textContent).toContain('Objetivo');
+  });
+
+  it('bloqueia avançar quando a etapa atual está inválida', () => {
+    openGuidedMode(component, fixture);
+    component.state.campaign.objective = '' as any;
+    component.state.ui.simpleObjective = '' as any;
+    component.touchState();
+
+    component.advanceStep();
+    fixture.detectChanges();
+
+    expect(component.currentStep()).toBe('objective');
+    expect(component.submitAttempted()).toBeTrue();
+    expect(fixture.nativeElement.textContent).toContain('Antes de continuar');
+  });
+
+  it('permite navegar pelas etapas válidas do wizard', () => {
+    openGuidedMode(component, fixture);
+    component.selectWizardObjective('sell-more');
+    component.advanceStep();
+    expect(component.currentStep()).toBe('product');
+
+    component.state.ui.productName = 'Banho e tosa premium';
+    component.state.ui.productDescription = 'Serviço com agendamento rápido.';
+    component.state.ui.productDifferential = 'Atendimento no mesmo dia';
+    component.syncProductDetails();
+    component.advanceStep();
+
+    expect(component.currentStep()).toBe('audience');
+  });
+
+  it('atualiza a prévia do anúncio em tempo real', () => {
+    openGuidedMode(component, fixture);
+    component.currentStep.set('creative');
+    component.state.creative.message = 'Seu pet merece cuidado imediato.';
+    component.state.creative.headline = 'Agende hoje mesmo';
+    component.state.creative.imageUrl = 'https://metaiq.dev/preview.jpg';
+    fixture.detectChanges();
+
+    const preview = fixture.nativeElement.querySelector('.wizard-ad-preview') as HTMLElement | null;
+    const image = fixture.nativeElement.querySelector('.wizard-ad-media img') as HTMLImageElement | null;
+
+    expect(preview?.textContent).toContain('Seu pet merece cuidado imediato.');
+    expect(preview?.textContent).toContain('Agende hoje mesmo');
+    expect(image?.src).toContain('https://metaiq.dev/preview.jpg');
+  });
+
+  it('gera sugestões com IA sem quebrar o preenchimento manual', () => {
+    openGuidedMode(component, fixture);
+    component.currentStep.set('creative');
+    component.state.creative.headline = '';
+    component.state.creative.message = '';
+    component.state.creative.description = '';
+    component.generateWizardWithAi();
+
+    expect(campaignAi.suggest).toHaveBeenCalled();
+    expect(component.state.creative.headline).toBe('Agende banho e tosa');
+    expect(component.state.creative.message).toContain('Seu pet limpo, cheiroso');
+    expect(ui.showSuccess).toHaveBeenCalledWith(
+      'Sugestão aplicada',
+      'A IA preencheu texto, título, descrição e sugestões de público para você revisar.',
+    );
+  });
+
+  it('mostra aviso de AI_FAILED e não exibe score nem estratégia fake', () => {
+    campaignAi.suggest.and.returnValue(of({
+      status: 'AI_FAILED',
+      reason: 'timeout',
+      message: 'Não conseguimos gerar a campanha com IA agora.',
+      meta: {
+        promptVersion: 'campaign-structured-v3.1.0',
+        model: 'gemini-2.5-flash',
+        usedFallback: false,
+        responseValid: false,
+      },
+    }));
+
+    component.initialMode = 'ai';
+    fixture.detectChanges();
+    component.state.ui.aiPrompt = 'Gerar campanha para loja local';
+    component.applyAiSuggestions();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Não conseguimos gerar a campanha com IA agora');
+    expect(text).toContain('Tentar novamente');
+    expect(component.state.ui.aiLastSuggestion).toBeNull();
+    expect(component.state.ui.aiQualityScore).toBeNull();
+  });
+
+  it('mostra o painel explicativo da IA com estratégia, melhorias e riscos', () => {
+    openAiResultMode(component, fixture);
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
+    fixture.detectChanges();
+
+    const panel = fixture.nativeElement.querySelector('.wizard-ai-panel') as HTMLElement | null;
+    expect(panel?.textContent).toContain('Por que essa campanha?');
+    expect(panel?.textContent).toContain('Campanha local focada em conversas');
+    expect(panel?.textContent).toContain('Riscos antes de publicar');
+    expect(panel?.textContent).toContain('Melhorias sugeridas');
+  });
+
+  it('não sobrescreve headline já editada manualmente ao aplicar IA no wizard', () => {
+    openGuidedMode(component, fixture);
+    component.currentStep.set('creative');
+    component.state.creative.headline = 'Título manual mantido';
+    component.markFieldTouched('creative.headline');
+    component.state.creative.message = '';
+    component.state.creative.description = '';
+
+    component.generateWizardWithAi();
+
+    expect(component.state.creative.headline).toBe('Título manual mantido');
+    expect(component.state.creative.message).toContain('Seu pet limpo, cheiroso');
+  });
+
+  it('envia a campanha a partir da revisão mantendo compatibilidade do payload', () => {
+    openAdvancedMode(component, fixture);
+    component.reviewNow();
+    component.submit();
+
+    expect(api.createMetaCampaign).toHaveBeenCalledWith('store-1', jasmine.objectContaining({
+      name: 'Campanha Meta segura',
+      adAccountId: 'ad-account-1',
+      imageUrl: 'https://metaiq.dev/image.jpg',
+    }));
   });
 
   it('renderiza tooltips apenas nos campos estratégicos', () => {
+    openAdvancedMode(component, fixture);
     const labels = Array.from(fixture.nativeElement.querySelectorAll('.form-field span')) as HTMLElement[];
     const tooltipTexts = Array.from(
       fixture.nativeElement.querySelectorAll('.tooltip-bubble') as NodeListOf<HTMLElement>,
@@ -459,6 +641,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('renderiza blockingIssues, warnings e recommendations da validacao', () => {
+    openAiResultMode(component, fixture);
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
       validation: {
         isReadyToPublish: false,
@@ -533,8 +716,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('mostra o botao de analisar campanha nas etapas de criativo e revisao', () => {
-    component.openAdvancedBuilder();
-    fixture.detectChanges();
+    openAdvancedMode(component, fixture);
 
     expect(fixture.nativeElement.textContent).toContain('✨ Analisar campanha');
 
@@ -575,6 +757,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('renderiza a resposta do copiloto de campanha corretamente', () => {
+    openAdvancedMode(component, fixture);
     component.analyzeCampaignWithAi();
     fixture.detectChanges();
 
@@ -587,6 +770,7 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('renderiza botao aplicar para melhorias estruturadas do copiloto', () => {
+    openAdvancedMode(component, fixture);
     component.analyzeCampaignWithAi();
     fixture.detectChanges();
 
@@ -706,6 +890,11 @@ function applyValidState(component: CampaignCreatePanelComponent): void {
   component.state.campaign.name = 'Campanha Meta segura';
   component.state.campaign.objective = 'OUTCOME_LEADS';
   component.state.identity.adAccountId = 'ad-account-1';
+  component.state.ui.simpleObjective = 'sell-more';
+  component.state.ui.productName = 'Banho e tosa premium';
+  component.state.ui.productDescription = 'Serviço com agendamento rápido pelo WhatsApp.';
+  component.state.ui.productDifferential = 'Atendimento no mesmo dia';
+  component.state.ui.productPrice = 'A partir de R$79';
   component.state.audience.country = 'BR';
   component.state.audience.state = 'PR';
   component.state.audience.stateName = 'Paraná';
@@ -719,8 +908,61 @@ function applyValidState(component: CampaignCreatePanelComponent): void {
   component.state.tracking.mainEvent = 'Lead';
 }
 
-function buildStructuredSuggestion(overrides: Partial<CampaignSuggestionResponse> = {}): CampaignSuggestionResponse {
+function openGuidedMode(
+  component: CampaignCreatePanelComponent,
+  fixture: ComponentFixture<CampaignCreatePanelComponent>,
+): void {
+  component.selectMode('GUIDED');
+  fixture.detectChanges();
+}
+
+function openAdvancedMode(
+  component: CampaignCreatePanelComponent,
+  fixture: ComponentFixture<CampaignCreatePanelComponent>,
+): void {
+  component.selectMode('ADVANCED');
+  fixture.detectChanges();
+}
+
+function openAiResultMode(
+  component: CampaignCreatePanelComponent,
+  fixture: ComponentFixture<CampaignCreatePanelComponent>,
+): void {
+  component.selectMode('AI');
+  component.creationMode.set('ai-result');
+  fixture.detectChanges();
+}
+
+function buildStructuredSuggestion(
+  overrides: Partial<CampaignAiStructuredResponse> = {},
+): CampaignAiStructuredResponse {
   return {
+    status: 'AI_SUCCESS',
+    strategy: 'Campanha local focada em conversas com intenção imediata e benefício claro.',
+    primaryText: 'Seu pet limpo, cheiroso e bem cuidado em Curitiba. Fale com a equipe e agende.',
+    headline: 'Agende banho e tosa',
+    description: 'Atendimento rápido para bairros próximos.',
+    cta: 'LEARN_MORE',
+    audience: {
+      gender: 'all',
+      ageRange: '25-55',
+      interests: ['pet shop', 'banho e tosa'],
+    },
+    budgetSuggestion: 80,
+    risks: ['Sem prova social validada na landing page'],
+    improvements: ['Revisar bairros atendidos antes de enviar'],
+    reasoning: [
+      'A estratégia usa o contexto local da store.',
+      'O público prioriza tutores com intenção de agendar.',
+      'A copy reforça benefício imediato e próximo passo simples.',
+      'O orçamento parte de um teste controlado antes de escalar.',
+    ],
+    explanation: {
+      strategy: 'A campanha foi montada para gerar conversas rápidas com quem já tem intenção de contratar.',
+      audience: 'A segmentação busca tutores de pets em Curitiba com sinais de interesse em cuidado recorrente.',
+      copy: 'O texto destaca dor, benefício e CTA direto para reduzir fricção.',
+      budget: 'O orçamento inicial foi tratado como teste seguro para validar resposta real.',
+    },
     planner: {
       businessType: 'serviço local',
       goal: 'Gerar agendamentos no WhatsApp',
@@ -799,6 +1041,7 @@ function buildStructuredSuggestion(overrides: Partial<CampaignSuggestionResponse
 
 function buildCopilotAnalysis(overrides: Partial<CampaignCopilotAnalysisResponse> = {}): CampaignCopilotAnalysisResponse {
   return {
+    status: 'AI_SUCCESS',
     analysis: {
       summary: 'A campanha está bem montada, mas ainda pode ganhar precisão no público e no CTA.',
       strengths: ['Objetivo, URL e headline estão alinhados.'],

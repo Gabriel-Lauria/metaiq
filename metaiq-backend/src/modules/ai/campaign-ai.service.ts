@@ -14,11 +14,16 @@ import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 import { LoggerService } from '../../common/services/logger.service';
 import { IntegrationProvider, IntegrationStatus } from '../../common/enums';
+import { Campaign } from '../campaigns/campaign.entity';
 import { StoreIntegration } from '../integrations/store-integration.entity';
+import { MetricDaily } from '../metrics/metric-daily.entity';
 import { Store } from '../stores/store.entity';
 import {
   AiAdSetOutput,
   AiCampaignBudgetOutput,
+  CampaignAiFailureDebug,
+  CampaignAiFailureReason,
+  CampaignAiFailureResponse,
   AiCampaignCopilotAnalysis,
   AiCampaignCopilotImprovement,
   AiCampaignCopilotImprovementType,
@@ -74,8 +79,8 @@ export interface CampaignAiSuggestionResponse {
 
 type AiConfidence = 'low' | 'medium' | 'high';
 
-export type CampaignSuggestionResponse = CampaignAiStructuredResponse;
-export type CampaignAnalysisResponse = CampaignCopilotAnalysisResponse;
+export type CampaignSuggestionResponse = CampaignAiStructuredResponse | CampaignAiFailureResponse;
+export type CampaignAnalysisResponse = CampaignCopilotAnalysisResponse | CampaignAiFailureResponse;
 
 interface StoreAiContext {
   storeId: string;
@@ -83,10 +88,13 @@ interface StoreAiContext {
   companyName: string;
   segment: string;
   description: string;
+  website: string | null;
   targetAudience: string;
   businessType: string;
   managerName: string | null;
   tenantName: string | null;
+  tenantNotes: string | null;
+  managerNotes: string | null;
   contextSources: string[];
   storeProfile: {
     name: string;
@@ -100,6 +108,14 @@ interface StoreAiContext {
     differentiators: string[];
     notesSummary: string;
   };
+  tenantProfile: {
+    businessType: string | null;
+    notes: string | null;
+    accountType: string | null;
+  };
+  managerProfile: {
+    notes: string | null;
+  };
   campaignIntent: {
     goal: string | null;
     funnelStage: string | null;
@@ -110,10 +126,27 @@ interface StoreAiContext {
     primaryOffer: string | null;
     region: string | null;
     extraContext: string | null;
+    communicationTone: string | null;
+  };
+  historicalContext: {
+    campaignCount: number;
+    recentCampaigns: Array<{
+      name: string;
+      objective: string | null;
+      dailyBudget: number | null;
+      score: number | null;
+      status: string | null;
+    }>;
+    metrics: {
+      ctr: number | null;
+      cpa: number | null;
+      roas: number | null;
+    };
+    audienceSignals: string[];
   };
   dataAvailability: {
-    hasHistoricalCampaigns: false;
-    hasPerformanceMetrics: false;
+    hasHistoricalCampaigns: boolean;
+    hasPerformanceMetrics: boolean;
     hasConnectedMetaAccount: boolean;
     hasConnectedPage: boolean;
   };
@@ -123,18 +156,31 @@ interface ParsedCampaignSuggestion {
   payload: unknown;
   error?: string;
   truncated?: boolean;
+  rawText?: string;
+  candidateText?: string;
+  validationPath?: string;
+  normalizedKeys?: string[];
+}
+
+interface GeminiTextResponse {
+  text: string;
+  rawText: string;
+  candidateText: string;
+  finishReason: string | null;
 }
 
 @Injectable()
 export class CampaignAiService {
   private readonly logger = new Logger(CampaignAiService.name);
   private readonly aiFeature = 'campaign_suggestions';
-  private readonly promptVersion = 'campaign-structured-v3.0.0';
+  private readonly promptVersion = 'campaign-structured-v3.1.0';
   private readonly analysisPromptVersion = 'campaign-copilot-v1.0.0';
   private readonly model: string;
   private readonly apiVersion: string;
   private readonly ai?: GoogleGenAI;
   private readonly defaultModel = 'gemini-2.5-flash';
+  private readonly aiTimeoutMs: number;
+  private readonly isDevelopment: boolean;
   private readonly supportedModels = new Set([
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -158,6 +204,12 @@ export class CampaignAiService {
     private readonly accessScope?: AccessScopeService,
     @Optional()
     private readonly structuredLogger?: LoggerService,
+    @Optional()
+    @InjectRepository(Campaign)
+    private readonly campaignRepository?: Repository<Campaign>,
+    @Optional()
+    @InjectRepository(MetricDaily)
+    private readonly metricDailyRepository?: Repository<MetricDaily>,
   ) {
     const apiKey = this.readEnv('GEMINI_API_KEY');
     const configuredModel = this.readEnv('GEMINI_MODEL');
@@ -165,6 +217,8 @@ export class CampaignAiService {
     this.model = configuredModel && this.supportedModels.has(configuredModel)
       ? configuredModel
       : this.defaultModel;
+    this.aiTimeoutMs = Math.max(5000, Number(this.readEnv('GEMINI_TIMEOUT_MS')) || 15000);
+    this.isDevelopment = (this.readEnv('NODE_ENV') || this.readEnv('APP_NODE_ENV') || 'development') !== 'production';
 
     if (configuredModel && configuredModel !== this.model) {
       this.logger.warn(
@@ -236,29 +290,23 @@ export class CampaignAiService {
     const requestId = this.asString(input.requestId) || undefined;
 
     if (!this.ai) {
-      this.logger.warn('GEMINI_API_KEY not configured. Returning safe campaign suggestion fallback.');
       const normalizedPrompt = this.normalizePrompt(input.prompt);
       const storeId = this.asString(input.storeId);
       if (!normalizedPrompt || !storeId) {
         throw new UnprocessableEntityException('Prompt e storeId são obrigatórios para sugestão da campanha');
       }
       await this.validateStoreScopeIfPossible(storeId, requester);
-      const fallback = this.buildSafeCampaignSuggestionFallback(normalizedPrompt, this.buildStoreAiContextFromMetadata({
-        storeId,
-        prompt: normalizedPrompt,
-        input,
-        storeName: 'Store não identificada',
-      }), { model: this.model, usedFallback: true, responseValid: true });
-      this.logAiEvent('Campaign AI fallback returned because API key is missing', {
+      const failure = this.buildAiFailureResponse('missing_api_key', this.promptVersion, this.model);
+      this.logAiEvent('Campaign AI unavailable because API key is missing', {
         requestId,
         storeId,
         durationMs: Date.now() - startedAt,
         model: this.model,
-        usedFallback: true,
-        responseValid: true,
+        usedFallback: false,
+        responseValid: false,
         failureReason: 'missing_api_key',
       });
-      return fallback;
+      return failure;
     }
 
     const normalizedPrompt = this.normalizePrompt(input.prompt);
@@ -280,15 +328,16 @@ export class CampaignAiService {
         const model = modelsToTry[index];
 
         try {
-          const text = await this.generateGeminiCampaignSuggestionText(normalizedPrompt, storeContext, model);
-          const parsed = this.parseCampaignSuggestionJson(text);
+          const geminiResponse = await this.generateGeminiCampaignSuggestionText(normalizedPrompt, storeContext, model);
+          const text = geminiResponse.text || geminiResponse.rawText || geminiResponse.candidateText || '';
+          const parsed = this.parseCampaignSuggestionJson(text, geminiResponse.rawText, geminiResponse.candidateText);
 
-          if (parsed.payload && this.isValidCampaignSuggestionPayload(parsed.payload)) {
+          if (parsed.payload && typeof parsed.payload === 'object') {
             const response = this.normalizeCampaignSuggestionResponse(
               parsed.payload,
               normalizedPrompt,
               storeContext,
-              { model, usedFallback: false, responseValid: true },
+              { model, usedFallback: false, responseValid: !parsed.error },
             );
             this.logAiEvent('Campaign AI suggestion generated', {
               requestId,
@@ -296,7 +345,32 @@ export class CampaignAiService {
               durationMs: Date.now() - startedAt,
               model,
               usedFallback: false,
-              responseValid: true,
+              responseValid: !parsed.error,
+              failureReason: parsed.error || undefined,
+            });
+            return response;
+          }
+
+          const textualDraftPayload = this.buildTextualDraftCampaignPayload(
+            text || geminiResponse.rawText || geminiResponse.candidateText,
+            normalizedPrompt,
+            storeContext,
+          );
+          if (textualDraftPayload) {
+            const response = this.normalizeCampaignSuggestionResponse(
+              textualDraftPayload,
+              normalizedPrompt,
+              storeContext,
+              { model, usedFallback: false, responseValid: false },
+            );
+            this.logAiEvent('Campaign AI suggestion generated from textual fallback', {
+              requestId,
+              storeId,
+              durationMs: Date.now() - startedAt,
+              model,
+              usedFallback: false,
+              responseValid: false,
+              failureReason: parsed.error || 'textual_draft_fallback',
             });
             return response;
           }
@@ -323,47 +397,36 @@ export class CampaignAiService {
     }
 
     if (lastInvalidResponse) {
-      this.logger.warn(
-        `Returning safe campaign suggestion fallback after invalid Gemini JSON. reason=${lastInvalidResponse.error}; truncated=${!!lastInvalidResponse.truncated}`,
+      const failure = this.buildAiFailureResponse(
+        'invalid_response',
+        this.promptVersion,
+        this.model,
+        this.buildSafeAiFailureDebug(lastInvalidResponse),
       );
-      const fallback = this.buildSafeCampaignSuggestionFallback(normalizedPrompt, storeContext, {
-        model: this.model,
-        usedFallback: true,
-        responseValid: false,
-      });
-      this.logAiEvent('Campaign AI fallback returned after invalid model response', {
+      this.logAiEvent('Campaign AI failed after invalid model response', {
         requestId,
         storeId,
         durationMs: Date.now() - startedAt,
         model: this.model,
-        usedFallback: true,
+        usedFallback: false,
         responseValid: false,
         failureReason: lastInvalidResponse.error || 'invalid_model_response',
       });
-      return fallback;
+      return failure;
     }
 
-    if (lastError) {
-      this.logger.warn(
-        `Returning safe campaign suggestion fallback after Gemini failures: ${this.getGeminiErrorMessage(lastError)}`,
-      );
-    }
-
-    const fallback = this.buildSafeCampaignSuggestionFallback(normalizedPrompt, storeContext, {
-      model: this.model,
-      usedFallback: true,
-      responseValid: !lastError,
-    });
-    this.logAiEvent('Campaign AI fallback returned', {
+    const reason = this.classifyAiFailureReason(undefined, lastError);
+    const failure = this.buildAiFailureResponse(reason, this.promptVersion, this.model);
+    this.logAiEvent('Campaign AI failed', {
       requestId,
       storeId,
       durationMs: Date.now() - startedAt,
       model: this.model,
-      usedFallback: true,
-      responseValid: !lastError,
-      failureReason: lastError ? this.getGeminiErrorMessage(lastError) : undefined,
+      usedFallback: false,
+      responseValid: false,
+      failureReason: lastError ? this.getGeminiErrorMessage(lastError) : 'unknown_ai_failure',
     });
-    return fallback;
+    return failure;
   }
 
   async analyzeCampaign(
@@ -384,21 +447,17 @@ export class CampaignAiService {
     const storeContext = await this.resolveStoreAiContext(storeId, contextPrompt);
 
     if (!this.ai) {
-      const fallback = this.buildSafeCampaignAnalysisFallback(input, {
-        model: this.model,
-        usedFallback: true,
-        responseValid: true,
-      });
-      this.logAiEvent('Campaign copilot fallback returned because API key is missing', {
+      const failure = this.buildAiFailureResponse('missing_api_key', this.analysisPromptVersion, this.model);
+      this.logAiEvent('Campaign copilot unavailable because API key is missing', {
         requestId,
         storeId,
         durationMs: Date.now() - startedAt,
         model: this.model,
-        usedFallback: true,
-        responseValid: true,
+        usedFallback: false,
+        responseValid: false,
         failureReason: 'missing_api_key',
       });
-      return fallback;
+      return failure;
     }
 
     const modelsToTry = [this.model, ...this.getFallbackModels(this.model)].filter(
@@ -412,11 +471,11 @@ export class CampaignAiService {
         const text = await this.generateGeminiCampaignAnalysisText(input, storeContext, model);
         const parsed = this.parseCampaignAnalysisJson(text);
 
-        if (parsed.payload && this.isValidCampaignAnalysisPayload(parsed.payload)) {
+        if (parsed.payload && typeof parsed.payload === 'object') {
           const response = this.normalizeCampaignAnalysisResponse(parsed.payload, input, {
             model,
             usedFallback: false,
-            responseValid: true,
+            responseValid: !parsed.error,
           });
           this.logAiEvent('Campaign copilot analysis generated', {
             requestId,
@@ -424,7 +483,8 @@ export class CampaignAiService {
             durationMs: Date.now() - startedAt,
             model,
             usedFallback: false,
-            responseValid: true,
+            responseValid: !parsed.error,
+            failureReason: parsed.error || undefined,
           });
           return response;
         }
@@ -442,25 +502,25 @@ export class CampaignAiService {
     }
 
     const failureReason = lastInvalidResponse?.error || (lastError ? this.getGeminiErrorMessage(lastError) : undefined);
-    const fallback = this.buildSafeCampaignAnalysisFallback(input, {
-      model: this.model,
-      usedFallback: true,
-      responseValid: !lastInvalidResponse,
-    });
-    this.logAiEvent('Campaign copilot fallback returned', {
+    const failure = this.buildAiFailureResponse(
+      this.classifyAiFailureReason(lastInvalidResponse?.error, lastError),
+      this.analysisPromptVersion,
+      this.model,
+    );
+    this.logAiEvent('Campaign copilot failed', {
       requestId,
       storeId,
       durationMs: Date.now() - startedAt,
       model: this.model,
-      usedFallback: true,
-      responseValid: !lastInvalidResponse,
+      usedFallback: false,
+      responseValid: false,
       failureReason,
     });
-    return fallback;
+    return failure;
   }
 
   private async generateGeminiText(prompt: string, model: string): Promise<string> {
-    const response = await this.ai!.models.generateContent({
+    const response = await this.executeGeminiRequest('legacy_campaign_suggestion', {
       model,
       contents: this.buildPrompt(prompt),
       config: {
@@ -474,12 +534,159 @@ export class CampaignAiService {
     return (response.text || '').trim();
   }
 
+  private async executeGeminiRequest(
+    operation: 'legacy_campaign_suggestion' | 'campaign_suggestion' | 'campaign_analysis',
+    requestPayload: {
+      model: string;
+      contents: string;
+      config: Record<string, unknown>;
+    },
+  ): Promise<GeminiTextResponse> {
+    const startedAt = Date.now();
+    this.logger.log(JSON.stringify({
+      operation,
+      stage: 'gemini_request_started',
+      timeoutMs: this.aiTimeoutMs,
+      payload: this.sanitizeAiLogPayload(requestPayload),
+    }));
+
+    try {
+      const response = await this.withAiTimeout(
+        this.ai!.models.generateContent(requestPayload),
+        this.aiTimeoutMs,
+      );
+      const durationMs = Date.now() - startedAt;
+      const rawText = this.extractTextFromGeminiResponse(response);
+      const candidateText = this.extractCandidateTextFromGeminiResponse(response);
+      const finishReason = this.extractFinishReasonFromGeminiResponse(response);
+      this.logger.log(JSON.stringify({
+        operation,
+        stage: 'gemini_response_received',
+        durationMs,
+        payload: this.sanitizeAiLogPayload(requestPayload),
+        responseText: this.truncateForLog(rawText),
+      }));
+      if (this.isDevelopment) {
+        this.logger.log(JSON.stringify({
+          operation,
+          stage: 'gemini_response_debug',
+          promptVersion: this.promptVersionForOperation(operation),
+          model: requestPayload.model,
+          finishReason,
+          rawText,
+          candidateText,
+        }));
+      }
+      return {
+        text: (response as { text?: string }).text || rawText || candidateText || '',
+        rawText,
+        candidateText,
+        finishReason,
+      };
+    } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      this.logger.error(JSON.stringify({
+        operation,
+        stage: 'gemini_request_failed',
+        durationMs,
+        payload: this.sanitizeAiLogPayload(requestPayload),
+        error: this.getErrorDetails(error),
+      }));
+      throw error;
+    }
+  }
+
+  private async withAiTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`AI request timeout after ${timeoutMs}ms`));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  private sanitizeAiLogPayload(value: unknown): unknown {
+    if (typeof value === 'string') {
+      return this.truncateForLog(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.sanitizeAiLogPayload(entry));
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, this.sanitizeAiLogPayload(entry)]),
+      );
+    }
+
+    return value;
+  }
+
+  private truncateForLog(value: string, maxLength = 4000): string {
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    return normalized.length > maxLength
+      ? `${normalized.slice(0, maxLength)}...[truncated]`
+      : normalized;
+  }
+
+  private promptVersionForOperation(
+    operation: 'legacy_campaign_suggestion' | 'campaign_suggestion' | 'campaign_analysis',
+  ): string {
+    return operation === 'campaign_analysis'
+      ? this.analysisPromptVersion
+      : this.promptVersion;
+  }
+
+  private extractTextFromGeminiResponse(response: unknown): string {
+    const directText = this.asString((response as { text?: unknown })?.text);
+    if (directText) {
+      return directText;
+    }
+
+    return this.extractCandidateTextFromGeminiResponse(response);
+  }
+
+  private extractCandidateTextFromGeminiResponse(response: unknown): string {
+    const candidates = Array.isArray((response as { candidates?: unknown[] })?.candidates)
+      ? (response as { candidates?: unknown[] }).candidates as Array<Record<string, unknown>>
+      : [];
+    const firstCandidate = candidates[0];
+    const parts = Array.isArray(firstCandidate?.content && (firstCandidate.content as Record<string, unknown>).parts)
+      ? ((firstCandidate.content as Record<string, unknown>).parts as Array<Record<string, unknown>>)
+      : [];
+
+    return parts
+      .map((part) => this.asString(part?.text))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+  }
+
+  private extractFinishReasonFromGeminiResponse(response: unknown): string | null {
+    const candidates = Array.isArray((response as { candidates?: unknown[] })?.candidates)
+      ? (response as { candidates?: unknown[] }).candidates as Array<Record<string, unknown>>
+      : [];
+    const finishReason = candidates[0]?.finishReason;
+    return typeof finishReason === 'string' && finishReason.trim() ? finishReason.trim() : null;
+  }
+
   private async generateGeminiCampaignSuggestionText(
     prompt: string,
     storeContext: StoreAiContext,
     model: string,
-  ): Promise<string> {
-    const response = await this.ai!.models.generateContent({
+  ): Promise<GeminiTextResponse> {
+    const requestPayload = {
       model,
       contents: this.buildCampaignSuggestionPrompt(prompt, storeContext),
       config: {
@@ -488,9 +695,15 @@ export class CampaignAiService {
         responseMimeType: 'application/json',
         responseJsonSchema: this.campaignSuggestionSchema(),
       },
-    });
+    };
+    const response = await this.executeGeminiRequest('campaign_suggestion', requestPayload);
 
-    return (response.text || '').trim();
+    return {
+      ...response,
+      text: (response.text || '').trim(),
+      rawText: (response.rawText || '').trim(),
+      candidateText: (response.candidateText || '').trim(),
+    };
   }
 
   private async generateGeminiCampaignAnalysisText(
@@ -498,7 +711,7 @@ export class CampaignAiService {
     storeContext: StoreAiContext,
     model: string,
   ): Promise<string> {
-    const response = await this.ai!.models.generateContent({
+    const requestPayload = {
       model,
       contents: this.buildCampaignAnalysisPrompt(input, storeContext),
       config: {
@@ -507,7 +720,8 @@ export class CampaignAiService {
         responseMimeType: 'application/json',
         responseJsonSchema: this.campaignAnalysisSchema(),
       },
-    });
+    };
+    const response = await this.executeGeminiRequest('campaign_analysis', requestPayload);
 
     return (response.text || '').trim();
   }
@@ -534,6 +748,10 @@ export class CampaignAiService {
     tenantName?: string | null;
     managerNotes?: string | null;
     tenantNotes?: string | null;
+    tenantWebsite?: string | null;
+    tenantBusinessType?: string | null;
+    tenantAccountType?: string | null;
+    historicalContext?: StoreAiContext['historicalContext'];
     hasConnectedMetaAccount?: boolean;
     hasConnectedPage?: boolean;
   }): StoreAiContext {
@@ -542,10 +760,19 @@ export class CampaignAiService {
     const tenantName = this.asString(input.tenantName) || null;
     const managerNotes = this.asString(input.managerNotes);
     const tenantNotes = this.asString(input.tenantNotes);
+    const tenantWebsite = this.asNullableString(input.tenantWebsite);
+    const tenantBusinessType = this.asNullableString(input.tenantBusinessType);
+    const tenantAccountType = this.asNullableString(input.tenantAccountType);
     const commercialInput = input.input;
     const extraContext = this.asString(commercialInput?.extraContext);
     const primaryOffer = this.firstSpecificText(commercialInput?.primaryOffer, this.inferMainOffer(input.prompt));
     const region = this.firstSpecificText(commercialInput?.region, this.inferRegionText(input.prompt));
+    const historicalContext = input.historicalContext || {
+      campaignCount: 0,
+      recentCampaigns: [],
+      metrics: { ctr: null, cpa: null, roas: null },
+      audienceSignals: [],
+    };
     const sourceText = [
       input.prompt,
       extraContext,
@@ -556,10 +783,13 @@ export class CampaignAiService {
       tenantName,
       tenantNotes,
       managerNotes,
+      tenantWebsite,
+      tenantBusinessType,
+      ...historicalContext.audienceSignals,
     ].filter(Boolean).join('\n');
     const companyName = this.firstSpecificText(storeName, tenantName, managerName) || 'Store não identificada';
     const segment = this.inferStoreSegment(sourceText);
-    const businessType = this.inferBusinessType(sourceText, segment);
+    const businessType = this.firstSpecificText(tenantBusinessType) || this.inferBusinessType(sourceText, segment);
     const description = this.firstSpecificText(tenantNotes, managerNotes)
       || `Empresa ${companyName} no segmento ${segment}, com operação de ${businessType}.`;
     const targetAudience = this.inferTargetAudience(sourceText, segment, businessType);
@@ -589,10 +819,13 @@ export class CampaignAiService {
       companyName,
       segment,
       description,
+      website: tenantWebsite,
       targetAudience,
       businessType,
       managerName,
       tenantName,
+      tenantNotes: tenantNotes || null,
+      managerNotes: managerNotes || null,
       contextSources,
       storeProfile: {
         name: companyName,
@@ -606,6 +839,14 @@ export class CampaignAiService {
         differentiators,
         notesSummary,
       },
+      tenantProfile: {
+        businessType: tenantBusinessType,
+        notes: tenantNotes || null,
+        accountType: tenantAccountType,
+      },
+      managerProfile: {
+        notes: managerNotes || null,
+      },
       campaignIntent: {
         goal: this.firstSpecificText(commercialInput?.goal, this.inferFallbackObjective(input.prompt)),
         funnelStage: this.normalizeFunnelStage(commercialInput?.funnelStage, input.prompt),
@@ -616,10 +857,14 @@ export class CampaignAiService {
         primaryOffer: primaryOffer || null,
         region: region || null,
         extraContext: extraContext || null,
+        communicationTone: this.inferCommunicationTone(sourceText, businessType),
       },
+      historicalContext,
       dataAvailability: {
-        hasHistoricalCampaigns: false,
-        hasPerformanceMetrics: false,
+        hasHistoricalCampaigns: historicalContext.campaignCount > 0,
+        hasPerformanceMetrics: historicalContext.metrics.ctr !== null
+          || historicalContext.metrics.cpa !== null
+          || historicalContext.metrics.roas !== null,
         hasConnectedMetaAccount: !!input.hasConnectedMetaAccount,
         hasConnectedPage: !!input.hasConnectedPage,
       },
@@ -632,11 +877,13 @@ export class CampaignAiService {
     input?: CampaignAiRequest,
   ): Promise<StoreAiContext> {
     const integrationSignals = await this.resolveIntegrationSignals(storeId);
+    const historicalContext = await this.resolveHistoricalContext(storeId);
     const fallback = this.buildStoreAiContextFromMetadata({
       storeId,
       prompt,
       input,
       storeName: 'Store não identificada',
+      historicalContext,
       ...integrationSignals,
     });
 
@@ -664,6 +911,10 @@ export class CampaignAiService {
           tenantName: store.tenant?.name || null,
           managerNotes: store.manager?.notes || null,
           tenantNotes: store.tenant?.notes || null,
+          tenantWebsite: store.tenant?.website || null,
+          tenantBusinessType: store.tenant?.businessSegment || null,
+          tenantAccountType: store.tenant?.accountType || null,
+          historicalContext,
           ...integrationSignals,
         }),
       };
@@ -706,6 +957,72 @@ export class CampaignAiService {
     }
   }
 
+  private async resolveHistoricalContext(storeId: string): Promise<StoreAiContext['historicalContext']> {
+    const emptyContext: StoreAiContext['historicalContext'] = {
+      campaignCount: 0,
+      recentCampaigns: [],
+      metrics: {
+        ctr: null,
+        cpa: null,
+        roas: null,
+      },
+      audienceSignals: [],
+    };
+
+    if (!this.campaignRepository) {
+      return emptyContext;
+    }
+
+    try {
+      const recentCampaigns = await this.campaignRepository.find({
+        where: { storeId },
+        order: { createdAt: 'DESC' },
+        take: 6,
+      });
+
+      const metricAggregate = this.metricDailyRepository
+        ? await this.metricDailyRepository
+          .createQueryBuilder('metric')
+          .innerJoin(Campaign, 'campaign', 'campaign.id = metric.campaignId')
+          .select('AVG(metric.ctr)', 'avgCtr')
+          .addSelect('AVG(metric.cpa)', 'avgCpa')
+          .addSelect('AVG(metric.roas)', 'avgRoas')
+          .where('campaign.storeId = :storeId', { storeId })
+          .getRawOne<{ avgCtr?: string | null; avgCpa?: string | null; avgRoas?: string | null }>()
+        : null;
+
+      const audienceSignals = Array.from(new Set(
+        recentCampaigns
+          .flatMap((campaign) => [
+            campaign.objective ? `Histórico com objetivo ${campaign.objective}.` : '',
+            campaign.dailyBudget ? `Faixa recorrente de orçamento perto de R$ ${Math.round(Number(campaign.dailyBudget))}.` : '',
+            campaign.score ? `Score histórico observado em torno de ${Math.round(Number(campaign.score))}.` : '',
+          ])
+          .filter(Boolean),
+      )).slice(0, 5);
+
+      return {
+        campaignCount: recentCampaigns.length,
+        recentCampaigns: recentCampaigns.map((campaign) => ({
+          name: campaign.name,
+          objective: campaign.objective,
+          dailyBudget: campaign.dailyBudget !== null ? Number(campaign.dailyBudget) : null,
+          score: campaign.score !== null ? Number(campaign.score) : null,
+          status: campaign.status || null,
+        })),
+        metrics: {
+          ctr: this.parseAggregateMetric(metricAggregate?.avgCtr),
+          cpa: this.parseAggregateMetric(metricAggregate?.avgCpa),
+          roas: this.parseAggregateMetric(metricAggregate?.avgRoas),
+        },
+        audienceSignals,
+      };
+    } catch (error) {
+      this.logger.warn(`Unable to load historical AI context for ${storeId}: ${this.getErrorDetails(error)}`);
+      return emptyContext;
+    }
+  }
+
   private async validateStoreScopeIfPossible(
     storeId: string,
     requester?: AuthenticatedUser,
@@ -717,7 +1034,7 @@ export class CampaignAiService {
     await this.accessScope.validateStoreAccess(requester, storeId);
   }
 
-  private firstSpecificText(...values: Array<string | null | undefined>): string {
+  private firstSpecificText(...values: unknown[]): string {
     return values
       .map((value) => this.asString(value))
       .find((value) => !!value && !/^store n[aã]o identificada$/i.test(value) && !/^n[aã]o informado$/i.test(value))
@@ -906,6 +1223,26 @@ NUNCA explique fora do JSON.
 
 Formato obrigatório:
 {
+  "strategy": "string",
+  "primaryText": "string",
+  "headline": "string",
+  "description": "string",
+  "cta": "string",
+  "audience": {
+    "gender": "all | male | female | null",
+    "ageRange": "string | null",
+    "interests": ["string"]
+  },
+  "budgetSuggestion": "number | null",
+  "risks": ["string"],
+  "improvements": ["string"],
+  "reasoning": ["string"],
+  "explanation": {
+    "strategy": "string",
+    "audience": "string",
+    "copy": "string",
+    "budget": "string"
+  },
   "planner": {
     "businessType": "string | null",
     "goal": "string | null",
@@ -970,6 +1307,12 @@ Formato obrigatório:
 
 Regras:
 - Retorne sempre JSON válido e previsível.
+- strategy deve resumir a linha mestra da campanha em linguagem humana e sem jargão excessivo.
+- primaryText, headline, description e cta não podem vir vazios.
+- audience deve explicar gênero, faixa etária e interesses em formato útil para preenchimento do builder.
+- budgetSuggestion deve repetir a recomendação de orçamento principal.
+- risks, improvements e reasoning devem ser específicos ao contexto real da store e do briefing.
+- explanation.strategy, explanation.audience, explanation.copy e explanation.budget devem responder "por que essa campanha?" de forma simples.
 - Use null quando não souber um campo.
 - campaign.campaignName deve ter até 80 caracteres, citar nicho/oferta/objetivo e evitar nomes genéricos.
 - campaign.objective só pode ser OUTCOME_TRAFFIC, OUTCOME_LEADS ou REACH.
@@ -1006,20 +1349,68 @@ Regras:
 - Nunca invente métricas, histórico, CPA, CTR, ROAS, criativo vencedor ou benchmark.
 - Quando não houver histórico real, trate tudo como configuração inicial/exploratória.
 
-Contexto real/derivado da store:
-- Empresa: ${storeContext.companyName}
-- Segmento: ${storeContext.segment}
-- Descrição: ${storeContext.description}
-- Público-alvo base: ${storeContext.targetAudience}
-- Tipo de negócio: ${storeContext.businessType}
-- Fontes usadas: ${storeContext.contextSources.join(', ') || 'briefing'}
-- Store: ${storeContext.storeName}
-- Manager: ${storeContext.managerName || 'não informado'}
-- Tenant: ${storeContext.tenantName || 'não informado'}
-- Store profile: ${JSON.stringify(storeContext.storeProfile)}
-- Campaign intent: ${JSON.stringify(storeContext.campaignIntent)}
-- Data availability: ${JSON.stringify(storeContext.dataAvailability)}
-- Prompt version: ${this.promptVersion}
+Seções que você deve considerar explicitamente:
+1. contexto da empresa
+2. objetivo da campanha
+3. público esperado
+4. tipo de produto
+5. diferencial
+6. tom de comunicação
+
+Contexto da empresa:
+${JSON.stringify({
+      companyName: storeContext.companyName,
+      segment: storeContext.segment,
+      description: storeContext.description,
+      website: storeContext.website,
+      storeName: storeContext.storeName,
+      tenantName: storeContext.tenantName,
+      managerName: storeContext.managerName,
+      storeProfile: storeContext.storeProfile,
+    }, null, 2)}
+
+Objetivo da campanha:
+${JSON.stringify(storeContext.campaignIntent, null, 2)}
+
+Público esperado:
+${JSON.stringify({
+      targetAudience: storeContext.targetAudience,
+      audienceSignals: storeContext.historicalContext?.audienceSignals || [],
+    }, null, 2)}
+
+Tipo de produto:
+${JSON.stringify({
+      primaryOffer: storeContext.campaignIntent.primaryOffer,
+      salesModel: storeContext.storeProfile.salesModel,
+      recentCampaigns: storeContext.historicalContext?.recentCampaigns || [],
+    }, null, 2)}
+
+Diferencial:
+${JSON.stringify({
+      differentiators: storeContext.storeProfile.differentiators,
+      notesSummary: storeContext.storeProfile.notesSummary,
+      tenantNotes: storeContext.tenantNotes,
+      managerNotes: storeContext.managerNotes,
+    }, null, 2)}
+
+Tom de comunicação:
+${JSON.stringify({
+      tone: storeContext.campaignIntent.communicationTone,
+      businessType: storeContext.businessType,
+    }, null, 2)}
+
+Dados históricos:
+${JSON.stringify(storeContext.historicalContext || {
+      campaignCount: 0,
+      recentCampaigns: [],
+      metrics: { ctr: null, cpa: null, roas: null },
+      audienceSignals: [],
+    }, null, 2)}
+
+Disponibilidade operacional:
+${JSON.stringify(storeContext.dataAvailability, null, 2)}
+
+Prompt version: ${this.promptVersion}
 
 Briefing:
 ${prompt}
@@ -1141,8 +1532,38 @@ ${JSON.stringify({
     return {
       type: 'object',
       additionalProperties: false,
-      required: ['planner', 'campaign', 'adSet', 'creative', 'review', 'validation'],
+      required: ['strategy', 'primaryText', 'headline', 'description', 'cta', 'audience', 'budgetSuggestion', 'risks', 'improvements', 'reasoning', 'explanation', 'planner', 'campaign', 'adSet', 'creative', 'review', 'validation'],
       properties: {
+        strategy: { type: 'string', minLength: 1 },
+        primaryText: { type: 'string', minLength: 1 },
+        headline: { type: 'string', minLength: 1 },
+        description: { type: 'string', minLength: 1 },
+        cta: { type: 'string', minLength: 1 },
+        audience: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['gender', 'ageRange', 'interests'],
+          properties: {
+            gender: { type: ['string', 'null'], enum: ['all', 'male', 'female', null] },
+            ageRange: { type: ['string', 'null'] },
+            interests: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        budgetSuggestion: { type: ['number', 'null'] },
+        risks: { type: 'array', items: { type: 'string' } },
+        improvements: { type: 'array', items: { type: 'string' } },
+        reasoning: { type: 'array', items: { type: 'string' } },
+        explanation: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['strategy', 'audience', 'copy', 'budget'],
+          properties: {
+            strategy: { type: 'string', minLength: 1 },
+            audience: { type: 'string', minLength: 1 },
+            copy: { type: 'string', minLength: 1 },
+            budget: { type: 'string', minLength: 1 },
+          },
+        },
         planner: {
           type: 'object',
           additionalProperties: false,
@@ -1351,6 +1772,12 @@ ${JSON.stringify({
     storeContext?: StoreAiContext,
     metadata: { model?: string; usedFallback?: boolean; responseValid?: boolean } = {},
   ): CampaignSuggestionResponse {
+    const normalizedPayload = this.normalizeCampaignAiResponse(payload) as Record<string, any>;
+    const normalizedPlanner = this.firstObject(normalizedPayload.planner);
+    const normalizedCampaign = this.firstObject(normalizedPayload.campaign);
+    const normalizedAdSet = this.firstObject(normalizedPayload.adSet);
+    const normalizedCreative = this.firstObject(normalizedPayload.creative);
+    const normalizedReview = this.firstObject(normalizedPayload.review);
     const vertical = this.inferVertical([
       prompt,
       storeContext?.segment,
@@ -1361,68 +1788,72 @@ ${JSON.stringify({
     const storeName = storeContext?.companyName && storeContext.companyName !== 'Store não identificada'
       ? storeContext.companyName
       : '';
-    const normalizedAssumptions = this.normalizeStringArray(payload?.planner?.assumptions).length
-      ? this.normalizeStringArray(payload?.planner?.assumptions)
+    const normalizedAssumptions = this.normalizeStringArray(normalizedPlanner.assumptions).length
+      ? this.normalizeStringArray(normalizedPlanner.assumptions)
       : this.buildFallbackAssumptions(segment, storeContext);
-    const normalizedMissingInputs = this.normalizeStringArray(payload?.planner?.missingInputs).length
-      ? this.normalizeStringArray(payload?.planner?.missingInputs)
+    const normalizedMissingInputs = this.normalizeStringArray(normalizedPlanner.missingInputs).length
+      ? this.normalizeStringArray(normalizedPlanner.missingInputs)
       : this.buildFallbackMissingInputs(prompt, storeContext);
-    const normalizedRisks = this.normalizeStringArray(payload?.review?.risks).length
-      ? this.normalizeStringArray(payload?.review?.risks)
+    const normalizedRisks = this.normalizeStringArray(normalizedReview.risks).length
+      ? this.normalizeStringArray(normalizedReview.risks)
       : this.buildFallbackRiskWarnings(metadata.usedFallback, normalizedMissingInputs);
-    const normalizedStrengths = this.normalizeStringArray(payload?.review?.strengths).length
-      ? this.normalizeStringArray(payload?.review?.strengths)
+    const normalizedStrengths = this.normalizeStringArray(normalizedReview.strengths).length
+      ? this.normalizeStringArray(normalizedReview.strengths)
       : this.buildKnownFacts(storeContext, prompt);
-    const normalizedRecommendations = this.normalizeStringArray(payload?.review?.recommendations).length
-      ? this.normalizeStringArray(payload?.review?.recommendations)
+    const normalizedRecommendations = this.normalizeStringArray(normalizedReview.recommendations).length
+      ? this.normalizeStringArray(normalizedReview.recommendations)
       : [
           this.buildFallbackDestinationRecommendation(prompt, storeContext),
           this.buildFallbackBudgetRationale(prompt, storeContext),
           ...this.buildFallbackNextDataNeeded().slice(0, 2),
         ].filter(Boolean);
-    const objective = this.normalizeStructuredObjective(payload?.campaign?.objective, prompt);
+    const objective = this.normalizeStructuredObjective(normalizedCampaign.objective, prompt);
     const funnelStage = this.normalizeStructuredFunnelStage(
-      payload?.planner?.funnelStage ?? storeContext?.campaignIntent.funnelStage,
+      normalizedPlanner.funnelStage ?? storeContext?.campaignIntent.funnelStage,
       prompt,
     );
-    const budget = this.normalizeStructuredBudget(payload?.campaign?.budget, prompt, storeContext);
+    const budget = this.normalizeStructuredBudget(
+      normalizedCampaign.budget ?? normalizedPayload.budgetSuggestion ?? normalizedPayload.budget,
+      prompt,
+      storeContext,
+    );
     const normalizedCampaignName = this.normalizeStructuredText(
-      payload?.campaign?.campaignName,
+      normalizedCampaign.campaignName,
       this.buildFallbackCampaignName(segment, storeName, prompt),
       80,
     );
     const primaryText = this.normalizeStructuredText(
-      payload?.creative?.primaryText,
+      normalizedCreative.primaryText,
       this.buildFallbackCopy(segment, storeContext),
       260,
     );
     const headline = this.normalizeStructuredText(
-      payload?.creative?.headline,
+      normalizedCreative.headline,
       normalizedCampaignName,
       80,
     );
     const audienceIntent = this.normalizeStructuredText(
-      payload?.planner?.audienceIntent,
+      normalizedPlanner.audienceIntent,
       this.buildFallbackAudience(segment, storeContext),
       260,
     );
-    const description = this.normalizeOptionalStructuredText(payload?.creative?.description, 120);
-    const cta = this.normalizeStructuredCta(payload?.creative?.cta, prompt, storeContext);
-    const destinationUrl = this.normalizeHttpsUrl(payload?.creative?.destinationUrl);
+    const description = this.normalizeOptionalStructuredText(normalizedCreative.description, 120);
+    const cta = this.normalizeStructuredCta(normalizedCreative.cta, prompt, storeContext);
+    const destinationUrl = this.normalizeHttpsUrl(normalizedCreative.destinationUrl);
     const interestFallbacks = this.buildInterestFallbacks(segment, storeContext);
-    const targeting = this.normalizeStructuredTargeting(payload?.adSet?.targeting, prompt, storeContext, interestFallbacks);
+    const targeting = this.normalizeStructuredTargeting(normalizedAdSet.targeting, prompt, storeContext, interestFallbacks);
     const planner: AiPlannerOutput = {
       businessType: this.normalizeOptionalStructuredText(
-        payload?.planner?.businessType,
+        normalizedPlanner.businessType,
         120,
       ) || this.normalizeOptionalStructuredText(storeContext?.businessType, 120),
       goal: this.normalizeOptionalStructuredText(
-        payload?.planner?.goal,
+        normalizedPlanner.goal,
         160,
       ) || this.normalizeOptionalStructuredText(storeContext?.campaignIntent.goal, 160),
       funnelStage,
       offer: this.normalizeOptionalStructuredText(
-        payload?.planner?.offer,
+        normalizedPlanner.offer,
         180,
       ) || this.normalizeOptionalStructuredText(
         storeContext?.campaignIntent.primaryOffer || storeContext?.storeProfile.mainOffer,
@@ -1441,23 +1872,23 @@ ${JSON.stringify({
     };
     const adSet: AiAdSetOutput = {
       name: this.normalizeStructuredText(
-        payload?.adSet?.name,
+        normalizedAdSet.name,
         `${normalizedCampaignName} | Publico 1`,
         120,
       ),
       optimizationGoal: this.normalizeOptionalStructuredText(
-        payload?.adSet?.optimizationGoal,
+        normalizedAdSet.optimizationGoal,
         80,
       ) || this.buildFallbackOptimizationGoal(objective),
       billingEvent: this.normalizeOptionalStructuredText(
-        payload?.adSet?.billingEvent,
+        normalizedAdSet.billingEvent,
         80,
       ) || this.buildFallbackBillingEvent(objective),
       targeting,
     };
     const creative: AiCreativeOutput = {
       name: this.normalizeStructuredText(
-        payload?.creative?.name,
+        normalizedCreative.name,
         `${normalizedCampaignName} | Criativo 1`,
         120,
       ),
@@ -1466,36 +1897,105 @@ ${JSON.stringify({
       description,
       cta,
       imageSuggestion: this.normalizeOptionalStructuredText(
-        payload?.creative?.imageSuggestion,
+        normalizedCreative.imageSuggestion,
         220,
-      ) || this.buildFallbackCreativeIdeas(segment, [], storeContext)[0],
+      ) || null,
       destinationUrl,
     };
     const review: AiReviewOutput = {
       summary: this.normalizeStructuredText(
-        payload?.review?.summary,
+        normalizedReview.summary,
         this.buildFallbackCampaignAngle(segment, prompt, storeContext),
         320,
       ),
       strengths: normalizedStrengths,
       risks: normalizedRisks,
       recommendations: normalizedRecommendations,
-      confidence: this.normalizeConfidenceScore(payload?.review?.confidence)
+      confidence: this.normalizeConfidenceScore(normalizedReview.confidence)
         ?? this.inferConfidenceScore(normalizedMissingInputs, normalizedAssumptions, storeContext),
     };
     const validation = this.normalizeValidationOutput(
-      payload?.validation,
-      { planner, campaign, adSet, creative, review },
+      normalizedPayload?.validation,
+      { planner, campaign, adSet, creative, review, strategy: this.asString(normalizedPayload?.strategy) },
       storeContext,
       metadata,
     );
-
-    return {
+    const strategy = this.normalizeStructuredText(
+      normalizedPayload?.strategy,
+      this.buildFallbackStrategy(segment, storeContext),
+      260,
+    );
+    const rootPrimaryText = this.normalizeStructuredText(
+      normalizedPayload?.primaryText,
+      creative.primaryText || this.buildFallbackCopy(segment, storeContext),
+      260,
+    );
+    const rootHeadline = this.normalizeStructuredText(
+      normalizedPayload?.headline,
+      creative.headline || normalizedCampaignName,
+      80,
+    );
+    const rootDescription = this.normalizeStructuredText(
+      normalizedPayload?.description,
+      creative.description || this.buildFallbackDifferentialText(storeContext, segment),
+      120,
+    );
+    const rootCta = this.normalizeCtaValue(normalizedPayload?.cta)
+      || creative.cta
+      || this.inferFallbackCta(prompt, storeContext);
+    const reasoning = this.normalizeStringArrayUnique(
+      Array.isArray(normalizedPayload?.reasoning) ? normalizedPayload.reasoning : this.buildFallbackReasoningLines(storeContext, planner, campaign, adSet, creative),
+      6,
+    );
+    const improvements = this.normalizeStringArrayUnique(
+      Array.isArray(normalizedPayload?.improvements) ? normalizedPayload.improvements : validation.recommendations,
+      6,
+    );
+    const risks = this.normalizeStringArrayUnique(
+      Array.isArray(normalizedPayload?.risks) ? normalizedPayload.risks : review.risks,
+      6,
+    );
+    const explanation = this.normalizeExplanationOutput(
+      normalizedPayload?.explanation,
+      storeContext,
       planner,
       campaign,
       adSet,
       creative,
-      review,
+      strategy,
+    );
+    const audienceSummary = this.normalizeAudienceSummary(normalizedPayload?.audience, adSet.targeting);
+    const completenessImprovements = this.buildCampaignSuggestionCompletenessImprovements(normalizedPayload);
+    const degradedResponseRisk = metadata.responseValid === false
+      ? ['A resposta da IA exige revisão manual antes da publicação.']
+      : [];
+    const effectiveConfidence = metadata.responseValid === false
+      ? Math.min(review.confidence, 45)
+      : review.confidence;
+
+    return {
+      status: 'AI_SUCCESS',
+      strategy,
+      primaryText: rootPrimaryText,
+      headline: rootHeadline,
+      description: rootDescription,
+      cta: rootCta,
+      audience: audienceSummary,
+      budgetSuggestion: campaign.budget.amount,
+      risks: this.normalizeStringArrayUnique([...risks, ...degradedResponseRisk], 6),
+      improvements: this.normalizeStringArrayUnique([...improvements, ...completenessImprovements], 6),
+      reasoning,
+      explanation,
+      planner,
+      campaign,
+      adSet,
+      creative,
+      review: {
+        ...review,
+        confidence: effectiveConfidence,
+        risks: this.normalizeStringArrayUnique([...review.risks, ...degradedResponseRisk], 6),
+        recommendations: this.normalizeStringArrayUnique([...review.recommendations, ...completenessImprovements], 6),
+      },
       validation,
       meta: {
         promptVersion: this.promptVersion,
@@ -1506,29 +2006,168 @@ ${JSON.stringify({
     };
   }
 
-  private parseCampaignSuggestionJson(raw: string): ParsedCampaignSuggestion {
+  private parseCampaignSuggestionJson(
+    raw: string,
+    rawText = raw,
+    candidateText = '',
+  ): ParsedCampaignSuggestion {
     const sanitized = this.sanitizeJson(raw);
     const truncated = this.looksTruncatedJson(sanitized);
-
-    if (!sanitized) {
-      return { payload: null, error: 'empty_response', truncated };
+    const extracted = this.extractJsonFromAiText(raw);
+    if (extracted === null) {
+      return {
+        payload: null,
+        error: sanitized ? (truncated ? 'parse_failed' : 'parse_failed') : 'empty_response',
+        truncated,
+        rawText,
+        candidateText,
+        validationPath: 'extractJsonFromAiText',
+      };
+    }
+    const payload = extracted;
+    const validationError = this.getCampaignSuggestionValidationError(payload);
+    if (this.isDevelopment) {
+      const normalizedPreview = typeof payload === 'object' && payload !== null
+        ? this.normalizeCampaignAiResponse(payload)
+        : null;
+      this.logger.log(JSON.stringify({
+        operation: 'campaign_suggestion',
+        stage: 'campaign_parse_debug',
+        rawText,
+        candidateText,
+        parsedResult: payload,
+        normalizedResult: normalizedPreview,
+        validationError: validationError || null,
+      }));
+    }
+    if (validationError) {
+      const normalized = this.normalizeCampaignAiResponse(payload);
+      return {
+        payload,
+        error: validationError,
+        truncated: false,
+        rawText,
+        candidateText,
+        validationPath: 'getCampaignSuggestionValidationError',
+        normalizedKeys: Object.keys(normalized),
+      };
     }
 
-    if (truncated) {
-      return { payload: null, error: 'truncated_json', truncated };
+    return {
+      payload,
+      truncated: false,
+      rawText,
+      candidateText,
+      normalizedKeys: payload && typeof payload === 'object' ? Object.keys(this.normalizeCampaignAiResponse(payload)) : [],
+    };
+  }
+
+  private buildSafeAiFailureDebug(parsed: ParsedCampaignSuggestion): CampaignAiFailureDebug | undefined {
+    if (!this.isDevelopment) {
+      return undefined;
     }
 
-    try {
-      const payload = JSON.parse(sanitized);
-      const validationError = this.getCampaignSuggestionValidationError(payload);
-      if (validationError) {
-        return { payload, error: validationError, truncated: false };
-      }
+    const normalized = parsed.payload && typeof parsed.payload === 'object'
+      ? this.normalizeCampaignAiResponse(parsed.payload)
+      : {};
 
-      return { payload, truncated: false };
-    } catch {
-      return { payload: null, error: 'invalid_json', truncated };
+    return {
+      hasRawText: !!this.asString(parsed.rawText || parsed.candidateText),
+      rawTextPreview: this.previewAiText(parsed.rawText),
+      candidateTextPreview: this.previewAiText(parsed.candidateText),
+      parsedType: this.describeParsedType(parsed.payload),
+      normalizedKeys: Object.keys(normalized),
+      validationError: parsed.error || 'invalid_response',
+      validationPath: parsed.validationPath || 'unknown',
+    };
+  }
+
+  private previewAiText(value?: string): string {
+    return this.asString(value).slice(0, 1000);
+  }
+
+  private describeParsedType(value: unknown): string {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return 'array';
+    return typeof value;
+  }
+
+  private buildTextualDraftCampaignPayload(
+    rawText: string,
+    prompt: string,
+    storeContext?: StoreAiContext,
+  ): Record<string, unknown> | null {
+    const usefulText = this.extractUsefulAiText(rawText);
+    if (!usefulText) {
+      return null;
     }
+
+    const segment = this.firstSpecificText(storeContext?.segment) || this.inferVertical(prompt);
+    const generatedHeadline = this.normalizeStructuredText(
+      this.buildFallbackCampaignName(segment, storeContext?.companyName || '', prompt),
+      'Rascunho de campanha com revisão manual',
+      80,
+    );
+
+    return {
+      strategy: usefulText.slice(0, 220),
+      primaryText: usefulText.slice(0, 260),
+      headline: generatedHeadline,
+      description: this.buildFallbackDifferentialText(storeContext, segment),
+      cta: this.inferFallbackCta(prompt, storeContext),
+      audience: storeContext?.targetAudience || storeContext?.storeProfile.targetAudienceBase || segment,
+      budgetSuggestion: null,
+      risks: ['A IA respondeu fora do formato ideal. Revise antes de publicar.'],
+      improvements: [
+        'Revise a headline antes de publicar.',
+        'Confirme público, orçamento e destino final manualmente.',
+      ],
+      reasoning: ['A resposta da IA foi aproveitada como rascunho textual com baixa confiança.'],
+      explanation: {
+        strategy: 'O texto foi convertido em rascunho para evitar descarte de uma resposta potencialmente útil.',
+        audience: 'O público pode exigir revisão manual antes da publicação.',
+        copy: 'A copy foi extraída diretamente do texto retornado pela IA.',
+        budget: 'O orçamento deve ser confirmado manualmente.',
+      },
+      planner: {
+        goal: this.firstSpecificText(storeContext?.campaignIntent.goal, prompt),
+        audienceIntent: storeContext?.targetAudience || null,
+        missingInputs: ['Validar estrutura final da resposta da IA.', 'Revisar campos obrigatórios manualmente.'],
+        assumptions: ['A resposta foi aproveitada fora do formato JSON esperado.'],
+      },
+      review: {
+        summary: 'Rascunho aproveitado de resposta textual fora do JSON esperado.',
+        strengths: ['Houve conteúdo textual suficiente para iniciar o rascunho.'],
+        risks: ['A IA respondeu fora do formato ideal. Revise antes de publicar.'],
+        recommendations: ['Complete os campos faltantes antes de enviar a campanha.'],
+        confidence: 32,
+      },
+      validation: {
+        isReadyToPublish: false,
+        qualityScore: 42,
+        blockingIssues: [],
+        warnings: ['Resposta aproveitada em modo degradado; revisão manual obrigatória.'],
+        recommendations: ['Revise texto, público, orçamento e URL antes de publicar.'],
+      },
+    };
+  }
+
+  private extractUsefulAiText(rawText: string): string | null {
+    const normalized = this.asString(rawText)
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized || normalized.length < 12) {
+      return null;
+    }
+
+    if (/^(null|undefined|n\/a|nao e json|não é json)$/i.test(normalized)) {
+      return null;
+    }
+
+    return normalized;
   }
 
   private parseCampaignAnalysisJson(raw: string): ParsedCampaignSuggestion {
@@ -1564,6 +2203,108 @@ ${JSON.stringify({
       .trim();
   }
 
+  private extractJsonFromAiText(raw: string): unknown {
+    const sanitized = this.sanitizeJson(raw);
+    if (!sanitized) {
+      return null;
+    }
+
+    const directParse = this.tryParseJsonWithCommonFixes(sanitized);
+    if (directParse !== null) {
+      return directParse;
+    }
+
+    const unwrappedQuoted = this.unwrapQuotedJsonString(sanitized);
+    if (unwrappedQuoted) {
+      const parsedQuoted = this.tryParseJsonWithCommonFixes(unwrappedQuoted);
+      if (parsedQuoted !== null) {
+        return parsedQuoted;
+      }
+    }
+
+    const balancedObject = this.findBalancedJsonObject(sanitized);
+    if (balancedObject) {
+      const parsedBalanced = this.tryParseJsonWithCommonFixes(balancedObject);
+      if (parsedBalanced !== null) {
+        return parsedBalanced;
+      }
+    }
+
+    return null;
+  }
+
+  private tryParseJsonWithCommonFixes(value: string): unknown {
+    const attempts = [
+      value,
+      value.replace(/,\s*([}\]])/g, '$1'),
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        return JSON.parse(attempt);
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private unwrapQuotedJsonString(value: string): string | null {
+    const trimmed = value.trim();
+    if (!(trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      return null;
+    }
+
+    try {
+      const unwrapped = JSON.parse(trimmed);
+      return typeof unwrapped === 'string' ? unwrapped.trim() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private findBalancedJsonObject(value: string): string | null {
+    const start = value.indexOf('{');
+    if (start < 0) {
+      return null;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = start; index < value.length; index += 1) {
+      const char = value[index];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) {
+        continue;
+      }
+      if (char === '{') {
+        depth += 1;
+      } else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return value.slice(start, index + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
   private looksTruncatedJson(raw: string): boolean {
     if (!raw) return false;
     if (!raw.startsWith('{')) return false;
@@ -1573,66 +2314,34 @@ ${JSON.stringify({
     return quotes % 2 !== 0;
   }
 
-  private isValidCampaignSuggestionPayload(payload: unknown): payload is CampaignSuggestionResponse {
-    return !this.getCampaignSuggestionValidationError(payload);
-  }
-
-  private isValidCampaignAnalysisPayload(payload: unknown): payload is CampaignAnalysisResponse {
-    return !this.getCampaignAnalysisValidationError(payload);
-  }
-
   private getCampaignSuggestionValidationError(payload: unknown): string | null {
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    if (payload === null || payload === undefined) {
+      return 'empty_response';
+    }
+    if (typeof payload !== 'object' || Array.isArray(payload)) {
       return 'payload_not_object';
     }
+    const normalized = this.normalizeCampaignAiResponse(payload);
+    const candidate = normalized as Record<string, unknown>;
+    const creative = candidate.creative as Record<string, unknown> | undefined;
+    const campaign = candidate.campaign as Record<string, unknown> | undefined;
+    const audience = candidate.audience as Record<string, unknown> | string | undefined;
 
-    const candidate = payload as Record<string, unknown>;
-    const requiredObjects = ['planner', 'campaign', 'adSet', 'creative', 'review'];
-    const missingObject = requiredObjects.find((field) => typeof candidate[field] !== 'object' || candidate[field] === null || Array.isArray(candidate[field]));
-    if (missingObject) {
-      return `missing_or_invalid_${missingObject}`;
-    }
+    const primaryText = this.asString(candidate.primaryText) || this.asString(creative?.primaryText);
+    const headline = this.asString(candidate.headline) || this.asString(creative?.headline);
+    const strategy = this.asString(candidate.strategy);
+    const objective = this.asString(campaign?.objective);
+    const hasAudience = this.hasUsefulAudience(audience)
+      || this.hasUsefulAudience((candidate.adSet as Record<string, unknown> | undefined)?.targeting);
 
-    const planner = candidate.planner as Record<string, unknown>;
-    const campaign = candidate.campaign as Record<string, unknown>;
-    const adSet = candidate.adSet as Record<string, unknown>;
-    const creative = candidate.creative as Record<string, unknown>;
-    const review = candidate.review as Record<string, unknown>;
-    const validation = candidate.validation as Record<string, unknown> | undefined;
-    const targeting = adSet.targeting as Record<string, unknown> | undefined;
-
-    if (!Array.isArray(planner.missingInputs) || !Array.isArray(planner.assumptions)) {
-      return 'missing_or_invalid_planner_arrays';
+    if (!Object.keys(candidate).length) return 'normalized_empty';
+    if (objective && !this.isObjective(objective)) return 'invalid_objective';
+    if (!primaryText && !headline && !strategy) {
+      return 'missing_primaryText_headline_strategy';
     }
-    if (!campaign.budget || typeof campaign.budget !== 'object' || Array.isArray(campaign.budget)) {
-      return 'missing_or_invalid_campaign_budget';
-    }
-    if (!targeting || typeof targeting !== 'object' || Array.isArray(targeting)) {
-      return 'missing_or_invalid_targeting';
-    }
-    if (!Array.isArray(targeting.interests) || !Array.isArray(targeting.excludedInterests) || !Array.isArray(targeting.placements)) {
-      return 'missing_or_invalid_targeting_arrays';
-    }
-    if (!Array.isArray(review.strengths) || !Array.isArray(review.risks) || !Array.isArray(review.recommendations)) {
-      return 'missing_or_invalid_review_arrays';
-    }
-    if (!this.asString(review.summary)) {
-      return 'missing_or_empty_review_summary';
-    }
-    if (typeof review.confidence !== 'number') {
-      return 'missing_or_invalid_confidence';
-    }
-    if (validation) {
-      if (!Array.isArray(validation.blockingIssues) || !Array.isArray(validation.warnings) || !Array.isArray(validation.recommendations)) {
-        return 'missing_or_invalid_validation_arrays';
-      }
-      if (typeof validation.qualityScore !== 'number') {
-        return 'missing_or_invalid_validation_qualityScore';
-      }
-      if (typeof validation.isReadyToPublish !== 'boolean') {
-        return 'missing_or_invalid_validation_isReadyToPublish';
-      }
-    }
+    if (!primaryText) return 'missing_primaryText';
+    if (!headline) return 'missing_headline';
+    if (!hasAudience) return 'missing_audience';
 
     return null;
   }
@@ -1663,6 +2372,34 @@ ${JSON.stringify({
     }
 
     return null;
+  }
+
+  private buildCampaignSuggestionCompletenessImprovements(
+    normalizedPayload: Record<string, unknown>,
+  ): string[] {
+    const improvements: string[] = [];
+    const creative = this.firstObject(normalizedPayload.creative);
+    const campaign = this.firstObject(normalizedPayload.campaign);
+    const audience = normalizedPayload.audience as Record<string, unknown> | string | undefined;
+
+    if (!this.asString(normalizedPayload.primaryText) && !this.asString(creative?.primaryText)) {
+      improvements.push('Adicione ou revise o texto principal da campanha.');
+    }
+    if (!this.asString(normalizedPayload.headline) && !this.asString(creative?.headline)) {
+      improvements.push('Adicione ou revise a headline da campanha.');
+    }
+    if (!this.asString(normalizedPayload.strategy) && !this.asString(campaign?.objective)) {
+      improvements.push('Defina a estratégia ou objetivo principal da campanha.');
+    }
+    if (!this.hasUsefulAudience(audience)
+      && !this.hasUsefulAudience((normalizedPayload.adSet as Record<string, unknown> | undefined)?.targeting)) {
+      improvements.push('Revise o público-alvo antes de publicar.');
+    }
+    if (!this.normalizeHttpsUrl(creative?.destinationUrl)) {
+      improvements.push('Inclua uma URL final em https se a campanha depender de destino externo.');
+    }
+
+    return improvements;
   }
 
   private normalizeCampaignAnalysisResponse(
@@ -1698,6 +2435,7 @@ ${JSON.stringify({
     };
 
     return {
+      status: 'AI_SUCCESS',
       analysis,
       meta: {
         promptVersion: this.analysisPromptVersion,
@@ -1708,27 +2446,160 @@ ${JSON.stringify({
     };
   }
 
-  private buildSafeCampaignSuggestionFallback(
-    prompt: string,
-    storeContext?: StoreAiContext,
-    metadata: { model?: string; usedFallback?: boolean; responseValid?: boolean } = {},
-  ): CampaignSuggestionResponse {
-    return this.normalizeCampaignSuggestionResponse({}, prompt, storeContext, {
-      usedFallback: true,
-      responseValid: true,
-      ...metadata,
-    });
+  private normalizeCampaignAiResponse(parsed: unknown): Record<string, unknown> {
+    const candidate = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
+    const creativeSource = this.firstObject(candidate.creative, candidate.ad, candidate.copy);
+    const campaignSource = this.firstObject(candidate.campaign);
+    const adSetSource = this.firstObject(candidate.adSet, candidate.adset, candidate.targeting);
+    const plannerSource = this.firstObject(candidate.planner);
+    const reviewSource = this.firstObject(candidate.review);
+    const validationSource = this.firstObject(candidate.validation);
+
+    const primaryText = this.firstSpecificText(
+      candidate.primaryText,
+      creativeSource?.primaryText,
+      creativeSource?.message,
+      creativeSource?.mainText,
+      creativeSource?.adText,
+      candidate.message,
+      candidate.mainText,
+      candidate.adText,
+    );
+    const headline = this.firstSpecificText(
+      candidate.headline,
+      creativeSource?.headline,
+      creativeSource?.adHeadline,
+      candidate.adHeadline,
+      campaignSource?.title,
+      campaignSource?.name,
+    );
+    const description = this.firstSpecificText(
+      candidate.description,
+      creativeSource?.description,
+      creativeSource?.desc,
+      candidate.desc,
+    );
+    const cta = this.firstSpecificText(
+      candidate.cta,
+      creativeSource?.cta,
+      candidate.callToAction,
+      creativeSource?.callToAction,
+    );
+    const destinationUrl = this.firstSpecificText(
+      creativeSource?.destinationUrl,
+      candidate.destinationUrl,
+      creativeSource?.url,
+      candidate.url,
+      creativeSource?.landingPage,
+      candidate.landingPage,
+    );
+    const campaignName = this.firstSpecificText(
+      campaignSource?.campaignName,
+      campaignSource?.name,
+      campaignSource?.title,
+      candidate.campaignName,
+      candidate.name,
+      candidate.title,
+    );
+    const budgetValue = campaignSource?.budget ?? candidate.budgetSuggestion ?? candidate.budget ?? candidate.dailyBudget;
+    const audienceValue = candidate.audience ?? adSetSource?.targeting ?? candidate.targeting;
+
+    return {
+      ...candidate,
+      strategy: this.firstSpecificText(candidate.strategy, reviewSource?.summary, plannerSource?.goal),
+      primaryText,
+      headline,
+      description,
+      cta,
+      audience: this.normalizeAudienceSource(audienceValue),
+      budgetSuggestion: budgetValue,
+      risks: this.normalizeArrayOrDelimitedString(candidate.risks),
+      improvements: this.normalizeArrayOrDelimitedString(candidate.improvements),
+      reasoning: this.normalizeArrayOrDelimitedString(candidate.reasoning),
+      explanation: this.firstObject(candidate.explanation),
+      planner: {
+        ...plannerSource,
+        goal: this.firstSpecificText(plannerSource?.goal, candidate.strategy),
+      },
+      campaign: {
+        ...campaignSource,
+        campaignName,
+        objective: this.firstSpecificText(campaignSource?.objective, candidate.objective),
+        budget: this.normalizeBudgetSource(budgetValue, campaignSource?.budgetType),
+      },
+      adSet: {
+        ...adSetSource,
+        targeting: this.normalizeTargetingSource(adSetSource?.targeting ?? candidate.targeting ?? audienceValue),
+      },
+      creative: {
+        ...creativeSource,
+        primaryText,
+        headline,
+        description,
+        cta,
+        destinationUrl,
+        imageSuggestion: this.firstSpecificText(creativeSource?.imageSuggestion, candidate.imageSuggestion),
+      },
+      review: {
+        ...reviewSource,
+        summary: this.firstSpecificText(reviewSource?.summary, candidate.strategy, primaryText),
+        strengths: this.normalizeArrayOrDelimitedString(reviewSource?.strengths),
+        risks: this.normalizeArrayOrDelimitedString(reviewSource?.risks ?? candidate.risks),
+        recommendations: this.normalizeArrayOrDelimitedString(reviewSource?.recommendations ?? candidate.improvements),
+        confidence: this.normalizePositiveNumber(reviewSource?.confidence),
+      },
+      validation: validationSource,
+    };
   }
 
-  private buildSafeCampaignAnalysisFallback(
-    input: CampaignCopilotAnalysisRequest,
-    metadata: { model?: string; usedFallback?: boolean; responseValid?: boolean } = {},
-  ): CampaignAnalysisResponse {
-    return this.normalizeCampaignAnalysisResponse({}, input, {
-      usedFallback: true,
-      responseValid: true,
-      ...metadata,
-    });
+  private buildAiFailureResponse(
+    reason: CampaignAiFailureReason,
+    promptVersion: string,
+    model: string,
+    debug?: CampaignAiFailureDebug,
+  ): CampaignAiFailureResponse {
+    return {
+      status: 'AI_FAILED',
+      reason,
+      message: this.failureReasonMessage(reason),
+      meta: {
+        promptVersion,
+        model,
+        usedFallback: false,
+        responseValid: false,
+      },
+      debug: this.isDevelopment ? debug : undefined,
+    };
+  }
+
+  private classifyAiFailureReason(
+    invalidResponseReason?: string,
+    error?: unknown,
+  ): CampaignAiFailureReason {
+    if (invalidResponseReason) {
+      return 'invalid_response';
+    }
+
+    const details = String(this.getErrorDetails(error)).toLowerCase();
+    if (details.includes('timeout') || details.includes('timed out') || details.includes('deadline exceeded')) {
+      return 'timeout';
+    }
+
+    return 'api_error';
+  }
+
+  private failureReasonMessage(reason: CampaignAiFailureReason): string {
+    switch (reason) {
+      case 'timeout':
+        return 'Não conseguimos gerar a campanha com IA agora.';
+      case 'invalid_response':
+        return 'A IA respondeu em um formato inválido no momento.';
+      case 'missing_api_key':
+        return 'A integração de IA não está disponível no momento.';
+      case 'api_error':
+      default:
+        return 'Não conseguimos gerar a campanha com IA agora.';
+    }
   }
 
   private logAiEvent(message: string, metadata: {
@@ -2206,6 +3077,7 @@ ${JSON.stringify({
       adSet: AiAdSetOutput;
       creative: AiCreativeOutput;
       review: AiReviewOutput;
+      strategy?: string;
     },
     storeContext?: StoreAiContext,
     metadata: { usedFallback?: boolean } = {},
@@ -2261,16 +3133,14 @@ ${JSON.stringify({
       campaign: AiCampaignOutput;
       adSet: AiAdSetOutput;
       creative: AiCreativeOutput;
+      strategy?: string;
     },
     storeContext?: StoreAiContext,
   ): string[] {
     const issues = [
       storeContext?.dataAvailability.hasConnectedPage ? '' : 'A página da Meta não está conectada para esta store.',
-      response.creative.destinationUrl ? '' : 'A campanha precisa de uma destinationUrl válida em https.',
       response.creative.headline ? '' : 'A campanha precisa de headline antes da publicação.',
       response.creative.primaryText ? '' : 'A campanha precisa de primaryText antes da publicação.',
-      response.campaign.budget.amount && response.campaign.budget.amount > 0 ? '' : 'O orçamento da campanha está inválido ou zerado.',
-      response.campaign.objective ? '' : 'O objetivo da campanha não pôde ser validado.',
       response.adSet.targeting.country ? '' : 'O país do público precisa ser definido.',
       response.adSet.targeting.country !== 'BR' || !response.adSet.targeting.city || response.adSet.targeting.stateCode
         ? ''
@@ -2464,8 +3334,9 @@ ${JSON.stringify({
       : /por dia|\/dia|di[aá]rio/i.test(prompt)
       ? 'daily'
       : null;
-    const amount = this.normalizePositiveNumber(candidate.amount)
+    const amount = this.parseBudgetValue(candidate.amount ?? budget)
       ?? this.normalizePositiveNumber(storeContext?.campaignIntent.budgetRange?.match(/\d+/)?.[0] || null)
+      ?? this.parseBudgetValue(prompt.match(/r\$\s*\d[\d.,]*/i)?.[0] || null)
       ?? this.normalizePositiveNumber(prompt.match(/\d{2,6}/)?.[0] || null);
 
     return {
@@ -2480,8 +3351,8 @@ ${JSON.stringify({
     prompt: string,
     storeContext?: StoreAiContext,
   ): string {
-    return this.normalizeOptionalStructuredText(value, 40)
-      || this.inferFallbackCta(prompt, storeContext);
+    const normalized = this.normalizeCtaValue(value);
+    return normalized || this.inferFallbackCta(prompt, storeContext);
   }
 
   private normalizeHttpsUrl(value: unknown): string | null {
@@ -2594,7 +3465,225 @@ ${JSON.stringify({
       return ['feed'];
     }
 
-    return [];
+      return [];
+  }
+
+  private normalizeAudienceSummary(
+    audience: unknown,
+    targeting: AiAdSetOutput['targeting'],
+  ): { gender: AiGenderOutput | null; ageRange: string | null; interests: string[] } {
+    const candidate = this.normalizeAudienceSource(audience);
+    const gender = this.normalizeStructuredGender((candidate as Record<string, unknown>)?.gender) || targeting.gender;
+    const explicitAgeRange = this.normalizeAudienceAgeRange(candidate);
+    const ageRange = explicitAgeRange
+      || (typeof targeting.ageMin === 'number' && typeof targeting.ageMax === 'number'
+        ? `${targeting.ageMin}-${targeting.ageMax}`
+        : null);
+    const interests = this.normalizeStringArrayUnique(
+      Array.isArray((candidate as Record<string, unknown>)?.interests)
+        ? (candidate as Record<string, unknown>).interests
+        : this.normalizeArrayOrDelimitedString((candidate as Record<string, unknown>)?.interests),
+      6,
+    );
+
+    return {
+      gender,
+      ageRange,
+      interests,
+    };
+  }
+
+  private firstObject(...values: unknown[]): Record<string, unknown> {
+    return values.find((value) => !!value && typeof value === 'object' && !Array.isArray(value)) as Record<string, unknown> || {};
+  }
+
+  private normalizeArrayOrDelimitedString(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.asString(item)).filter(Boolean);
+    }
+
+    const text = this.asString(value);
+    if (!text) {
+      return [];
+    }
+
+    return text
+      .split(/\n|;|,|•| - /)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  private normalizeAudienceSource(value: unknown): Record<string, unknown> {
+    if (typeof value === 'string') {
+      return {
+        summary: value.trim(),
+        interests: this.normalizeArrayOrDelimitedString(value),
+      };
+    }
+
+    const candidate = this.firstObject(value);
+    const ageRangeObject = this.firstObject(candidate.ageRange);
+    const min = this.normalizePositiveNumber(ageRangeObject.min ?? candidate.ageMin);
+    const max = this.normalizePositiveNumber(ageRangeObject.max ?? candidate.ageMax);
+    const ageRange = this.asString(candidate.ageRange) || (
+      min !== null || max !== null
+        ? `${min ?? 18}-${max ?? 65}`
+        : ''
+    );
+
+    return {
+      ...candidate,
+      interests: Array.isArray(candidate.interests)
+        ? candidate.interests
+        : this.normalizeArrayOrDelimitedString(candidate.interests ?? candidate.summary),
+      ageRange,
+      ageMin: min,
+      ageMax: max,
+    };
+  }
+
+  private normalizeAudienceAgeRange(value: unknown): string | null {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      return normalized || null;
+    }
+
+    const candidate = this.firstObject(value);
+    const direct = this.normalizeOptionalStructuredText(candidate.ageRange, 80);
+    if (direct) {
+      return direct;
+    }
+
+    const min = this.normalizePositiveNumber(candidate.ageMin ?? this.firstObject(candidate.ageRange).min);
+    const max = this.normalizePositiveNumber(candidate.ageMax ?? this.firstObject(candidate.ageRange).max);
+    return min !== null || max !== null ? `${min ?? 18}-${max ?? 65}` : null;
+  }
+
+  private normalizeBudgetSource(value: unknown, budgetType?: unknown): Record<string, unknown> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+
+    return {
+      type: this.asString(budgetType) || 'daily',
+      amount: value,
+      currency: 'BRL',
+    };
+  }
+
+  private normalizeTargetingSource(value: unknown): Record<string, unknown> {
+    const candidate = this.normalizeAudienceSource(value);
+    return {
+      ...candidate,
+      interests: Array.isArray(candidate.interests) ? candidate.interests : this.normalizeArrayOrDelimitedString(candidate.interests),
+      excludedInterests: Array.isArray(candidate.excludedInterests) ? candidate.excludedInterests : this.normalizeArrayOrDelimitedString(candidate.excludedInterests),
+    };
+  }
+
+  private parseBudgetValue(value: unknown): number | null {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 ? value : null;
+    }
+
+    const text = this.asString(value);
+    if (!text) {
+      return null;
+    }
+
+    const cleaned = text
+      .replace(/r\$/gi, '')
+      .replace(/por dia|\/dia|di[aá]rio|diaria|diário/gi, '')
+      .replace(/[^\d,.-]/g, '')
+      .trim();
+
+    if (!cleaned) {
+      return null;
+    }
+
+    if (cleaned.includes(',') && cleaned.includes('.')) {
+      const parsed = Number(cleaned.replace(/\./g, '').replace(',', '.'));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    if (cleaned.includes(',') && !cleaned.includes('.')) {
+      const commaParts = cleaned.split(',');
+      if (commaParts[1] && commaParts[1].length === 2) {
+        const parsed = Number(cleaned.replace(',', '.'));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      }
+      return this.normalizePositiveNumber(cleaned.replace(/,/g, ''));
+    }
+
+    return this.normalizePositiveNumber(cleaned);
+  }
+
+  private normalizeCtaValue(value: unknown): string | null {
+    const normalized = this.normalizeOptionalStructuredText(value, 60)?.toLowerCase() || '';
+    if (!normalized) {
+      return null;
+    }
+
+    if (/(saiba mais|learn more)/i.test(normalized)) return 'LEARN_MORE';
+    if (/(fale conosco|contact us|entre em contato)/i.test(normalized)) return 'CONTACT_US';
+    if (/(comprar agora|shop now)/i.test(normalized)) return 'SHOP_NOW';
+    if (/(enviar mensagem|mandar mensagem|mensagem|whatsapp|message)/i.test(normalized)) return 'MESSAGE_PAGE';
+
+    const upper = normalized.toUpperCase();
+    if (['LEARN_MORE', 'CONTACT_US', 'SHOP_NOW', 'MESSAGE_PAGE', 'SIGN_UP', 'BOOK_NOW', 'DOWNLOAD'].includes(upper)) {
+      return upper;
+    }
+
+    return 'LEARN_MORE';
+  }
+
+  private hasUsefulAudience(value: unknown): boolean {
+    if (typeof value === 'string') {
+      return value.trim().length >= 3;
+    }
+
+    const candidate = this.firstObject(value);
+    const interests = this.normalizeArrayOrDelimitedString(candidate.interests);
+    const summary = this.asString(candidate.summary);
+    const ageRange = this.normalizeAudienceAgeRange(candidate);
+    const city = this.asString(candidate.city);
+    const state = this.asString(candidate.state);
+
+    return !!(interests.length || summary || ageRange || city || state);
+  }
+
+  private normalizeExplanationOutput(
+    explanation: unknown,
+    storeContext: StoreAiContext | undefined,
+    planner: AiPlannerOutput,
+    campaign: AiCampaignOutput,
+    adSet: AiAdSetOutput,
+    creative: AiCreativeOutput,
+    strategy: string,
+  ): { strategy: string; audience: string; copy: string; budget: string } {
+    const candidate = typeof explanation === 'object' && explanation !== null ? explanation as Record<string, unknown> : {};
+
+    return {
+      strategy: this.normalizeStructuredText(
+        candidate.strategy,
+        strategy,
+        220,
+      ),
+      audience: this.normalizeStructuredText(
+        candidate.audience,
+        `O público foi pensado para ${planner.audienceIntent || storeContext?.targetAudience || 'pessoas com intenção real de resposta'}, usando ${adSet.targeting.interests.slice(0, 3).join(', ') || 'interesses do contexto da store'}.`,
+        220,
+      ),
+      copy: this.normalizeStructuredText(
+        candidate.copy,
+        `A mensagem prioriza ${planner.goal || 'um próximo passo claro'}, destaca ${creative.headline || 'o benefício principal'} e evita promessas não confirmadas.`,
+        220,
+      ),
+      budget: this.normalizeStructuredText(
+        candidate.budget,
+        `${campaign.budget.amount ? `O orçamento sugerido começa em R$ ${campaign.budget.amount}` : 'O orçamento precisa ser revisado'} para testar a campanha sem extrapolar o contexto disponível.`,
+        220,
+      ),
+    };
   }
 
   private inferStructuredCountry(prompt: string): string | null {
@@ -2733,9 +3822,15 @@ ${JSON.stringify({
       storeContext?.contextSources?.length
         ? `Fontes usadas: ${storeContext.contextSources.join(', ')}.`
         : '',
+      storeContext?.website ? `Website identificado: ${storeContext.website}.` : '',
       storeContext?.dataAvailability.hasConnectedMetaAccount ? 'Conta Meta conectada disponível.' : '',
       storeContext?.dataAvailability.hasConnectedPage ? 'Página Meta conectada disponível.' : '',
-      'Não há histórico real de campanhas ou métricas de performance disponível para esta recomendação.',
+      storeContext?.historicalContext?.campaignCount
+        ? `${storeContext.historicalContext.campaignCount} campanha(s) histórica(s) recente(s) entraram como contexto qualitativo.`
+        : 'Não há histórico real de campanhas disponível para esta recomendação.',
+      storeContext?.dataAvailability.hasPerformanceMetrics
+        ? `Métricas agregadas disponíveis: CTR ${storeContext?.historicalContext?.metrics?.ctr ?? 'n/d'}, CPA ${storeContext?.historicalContext?.metrics?.cpa ?? 'n/d'} e ROAS ${storeContext?.historicalContext?.metrics?.roas ?? 'n/d'}.`
+        : 'Não há métricas reais de performance disponíveis para esta recomendação.',
     ].filter(Boolean);
 
     return facts.length ? facts.slice(0, 6) : ['A sugestão foi baseada apenas no briefing enviado.'];
@@ -2932,6 +4027,15 @@ ${JSON.stringify({
     return null;
   }
 
+  private parseAggregateMetric(value: string | null | undefined): number | null {
+    if (value == null || value === '') {
+      return null;
+    }
+
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : null;
+  }
+
   private inferStoreSegment(text: string): string {
     const normalized = text.toLowerCase();
     if (/(moda feminina|vestido|look|roupa|fashion|calçado|calcado|acess[oó]rio)/i.test(normalized)) return 'moda feminina';
@@ -2956,6 +4060,20 @@ ${JSON.stringify({
     if (/(servi[cç]o|instala[cç][aã]o|manuten[cç][aã]o|banho e tosa|cl[ií]nica|advocacia|contabilidade)/i.test(normalized)) return 'serviço local';
     if (/(moda|suplementos|pet shop|eletr[oô]nicos)/i.test(normalized)) return 'e-commerce';
     return 'operação comercial';
+  }
+
+  private inferCommunicationTone(text: string, businessType: string): string {
+    const normalized = `${text} ${businessType}`.toLowerCase();
+    if (/(premium|alto padr[aã]o|sofisticad|luxo|exclusiv)/i.test(normalized)) {
+      return 'consultivo e premium, com sensação de exclusividade';
+    }
+    if (/(oferta|promo[cç][aã]o|desconto|urg[eê]ncia|agora)/i.test(normalized)) {
+      return 'direto, claro e orientado à ação';
+    }
+    if (/(sa[úu]de|cl[ií]nica|diagn[oó]stico|jur[ií]dico|financeiro|consultoria)/i.test(normalized)) {
+      return 'didático, confiável e humano';
+    }
+    return 'simples, próximo e focado no benefício principal';
   }
 
   private inferTargetAudience(text: string, segment: string, businessType: string): string {
@@ -3035,6 +4153,30 @@ ${JSON.stringify({
   private buildFallbackStrategy(segment: string, storeContext?: StoreAiContext): string {
     const businessType = this.firstSpecificText(storeContext?.businessType) || 'operação comercial';
     return `Campanha de conversão/leads para ${segment} em modelo ${businessType}, começando por público frio qualificado e remarketing leve, com CTA direto e otimização por intenção real.`;
+  }
+
+  private buildFallbackDifferentialText(storeContext: StoreAiContext | undefined, segment: string): string {
+    const differentiator = storeContext?.storeProfile.differentiators?.[0];
+    if (differentiator) {
+      return differentiator.slice(0, 120);
+    }
+
+    return `Destaque o principal diferencial de ${segment} para aumentar clareza e confiança.`.slice(0, 120);
+  }
+
+  private buildFallbackReasoningLines(
+    storeContext: StoreAiContext | undefined,
+    planner: AiPlannerOutput,
+    campaign: AiCampaignOutput,
+    adSet: AiAdSetOutput,
+    creative: AiCreativeOutput,
+  ): string[] {
+    return [
+      `A estratégia parte do contexto de ${storeContext?.segment || planner.businessType || 'negócio local'} e do objetivo ${planner.goal || campaign.objective || 'comercial'} informado.`,
+      `O público foi desenhado com base em ${storeContext?.targetAudience || planner.audienceIntent || 'intenção de compra ou resposta'} e nos interesses ${adSet.targeting.interests.slice(0, 3).join(', ') || 'mais aderentes ao briefing'}.`,
+      `A copy usa ${creative.headline || 'um benefício central'} como gancho para reduzir ambiguidade e facilitar o próximo passo.`,
+      `${campaign.budget.amount ? `O orçamento de R$ ${campaign.budget.amount} foi tratado como ponto de partida.` : 'O orçamento precisa de revisão manual.'} A ideia é testar com segurança antes de escalar.`,
+    ].filter(Boolean).slice(0, 6);
   }
 
   private buildFallbackCopy(segment: string, storeContext?: StoreAiContext): string {

@@ -53,7 +53,13 @@ export function isLikelyDirectImageUrl(value: string): boolean {
       return true;
     }
 
-    if (pathname.includes('/image') || pathname.includes('/images/') || pathname.includes('/media/') || pathname.includes('/uploads/')) {
+    if (
+      pathname.includes('/image')
+      || pathname.includes('/images/')
+      || pathname.includes('/media/')
+      || pathname.includes('/uploads/')
+      || pathname.includes('/assets/')
+    ) {
       return true;
     }
 

@@ -85,6 +85,14 @@ describe('MetaSyncService', () => {
 
         return adAccount;
       }),
+      validateAdAccountInStoreAccess: jest.fn(async (_requester: AuthenticatedUser, storeId: string, adAccountId: string) => {
+        const adAccount = await adAccountRepo.findOne({ where: { id: adAccountId } });
+        if (!adAccount || adAccount.storeId !== storeId) {
+          throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
+        }
+
+        return adAccount;
+      }),
     };
     metaService = {
       fetchAdAccountsRaw: jest.fn(),
@@ -266,5 +274,25 @@ describe('MetaSyncService', () => {
       dailyBudget: 90,
       startTime: new Date('2026-04-01T00:00:00Z'),
     }));
+    expect(accessScope.validateAdAccountInStoreAccess).toHaveBeenCalledWith(
+      user,
+      'store-1',
+      'ad-account-1',
+    );
+  });
+
+  it('bloqueia sync de campanhas quando o ad account pertence a outra store', async () => {
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-9',
+      storeId: 'store-2',
+      provider: IntegrationProvider.META,
+      externalId: 'act_999',
+      metaId: 'act_999',
+    });
+
+    await expect(
+      service.syncCampaignsForUser(user, 'store-1', 'ad-account-9'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(metaService.fetchCampaignsRaw).not.toHaveBeenCalled();
   });
 });

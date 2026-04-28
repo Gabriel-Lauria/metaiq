@@ -7,6 +7,7 @@ import { IsNull, Repository } from 'typeorm';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../../common/enums';
+import { AssetsService } from '../../assets/assets.service';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
 import { IbgeService } from '../../ibge/ibge.service';
@@ -16,6 +17,8 @@ import {
   MetaCampaignCreation,
   MetaCampaignCreationStatus,
   MetaCampaignCreationStep,
+  MetaCampaignExecutionIds,
+  MetaCampaignExecutionStepStateMap,
 } from './meta-campaign-creation.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { normalizeCampaignLocation } from './meta-audience-location.util';
@@ -37,6 +40,7 @@ import {
 } from './dto/meta-integration.dto';
 
 type MetaCampaignCreationIds = Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
+const META_CAMPAIGN_EXECUTION_STEPS: MetaCampaignCreationStep[] = ['campaign', 'adset', 'creative', 'ad', 'persist'];
 
 interface ValidatedMetaCampaignContext {
   adAccount: AdAccount;
@@ -63,6 +67,7 @@ export class MetaIntegrationService {
     @InjectRepository(MetaCampaignCreation)
     private readonly campaignCreationRepository: Repository<MetaCampaignCreation>,
     private readonly accessScope: AccessScopeService,
+    private readonly assetsService: AssetsService,
     private readonly config: ConfigService,
     private readonly graphApi: MetaGraphApiClient,
     private readonly campaignOrchestrator: MetaCampaignOrchestrator,
@@ -478,7 +483,10 @@ export class MetaIntegrationService {
     requestId?: string,
   ): Promise<CreateMetaCampaignResponseDto> {
     await this.validateCanManage(storeId, requester);
-    const normalizedDto = this.normalizeCreateCampaignDto(dto);
+    const normalizedDto = await this.resolveAssetBackedCampaignDto(
+      storeId,
+      this.normalizeCreateCampaignDto(dto),
+    );
     const requestPayload = this.buildCampaignCreationPayload(storeId, requester.id, normalizedDto);
     const payloadHash = this.hashPayload(requestPayload);
     const idempotencyKey = this.resolveIdempotencyKey(payloadHash, normalizedDto);
@@ -769,7 +777,7 @@ export class MetaIntegrationService {
       throw new BadRequestException('description excede o limite de 120 caracteres.');
     }
 
-    if (!isValidMetaHttpUrl(dto.imageUrl)) {
+    if (!dto.imageUrl || !isValidMetaHttpUrl(dto.imageUrl)) {
       throw new BadRequestException('imageUrl deve ser uma URL http(s) válida');
     }
 
@@ -787,8 +795,12 @@ export class MetaIntegrationService {
     storeId: string,
     requester: AuthenticatedUser,
   ): Promise<AdAccount> {
-    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
-    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
+    const adAccount = await this.accessScope.validateAdAccountInStoreAccess(
+      requester,
+      storeId,
+      adAccountId,
+    );
+    if (adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 
@@ -804,8 +816,12 @@ export class MetaIntegrationService {
     storeId: string,
     requester: AuthenticatedUser,
   ): Promise<AdAccount> {
-    const adAccount = await this.accessScope.validateAdAccountAccess(requester, adAccountId);
-    if (adAccount.storeId !== storeId || adAccount.provider !== IntegrationProvider.META) {
+    const adAccount = await this.accessScope.validateAdAccountInStoreAccess(
+      requester,
+      storeId,
+      adAccountId,
+    );
+    if (adAccount.provider !== IntegrationProvider.META) {
       throw new BadRequestException('AdAccount Meta não encontrada para a store informada');
     }
 
@@ -1102,7 +1118,8 @@ export class MetaIntegrationService {
       country: dto.country.trim().toUpperCase(),
       adAccountId: dto.adAccountId,
       message: dto.message.trim(),
-      imageUrl: dto.imageUrl.trim(),
+      assetId: dto.assetId?.trim() || null,
+      imageUrl: dto.imageUrl?.trim() || null,
       state: dto.state?.trim().toUpperCase() || null,
       stateName: dto.stateName?.trim() || null,
       region: dto.region?.trim() || null,
@@ -1119,12 +1136,36 @@ export class MetaIntegrationService {
   private normalizeCreateCampaignDto(dto: CreateMetaCampaignDto): CreateMetaCampaignDto {
     return {
       ...dto,
+      assetId: dto.assetId?.trim() || undefined,
+      imageUrl: dto.imageUrl?.trim() || undefined,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : undefined,
       state: dto.state?.trim().toUpperCase() || undefined,
       stateName: dto.stateName?.trim() || undefined,
       region: dto.region?.trim() || undefined,
       city: dto.city?.trim() || undefined,
       cityId: dto.cityId ? Number(dto.cityId) : undefined,
+    };
+  }
+
+  private async resolveAssetBackedCampaignDto(
+    storeId: string,
+    dto: CreateMetaCampaignDto,
+  ): Promise<CreateMetaCampaignDto> {
+    if (!dto.assetId) {
+      if (!dto.imageUrl?.trim()) {
+        throw new BadRequestException('assetId ou imageUrl é obrigatório');
+      }
+      return dto;
+    }
+
+    const asset = await this.assetsService.getAssetForStore(storeId, dto.assetId);
+    if (asset.type !== 'image') {
+      throw new BadRequestException('O asset selecionado precisa ser uma imagem');
+    }
+
+    return {
+      ...dto,
+      imageUrl: asset.storageUrl,
     };
   }
 
@@ -1208,6 +1249,7 @@ export class MetaIntegrationService {
     const partialIds = this.executionIds(execution);
     const step = this.normalizeExecutionStep(execution.errorStep);
     const hint = this.buildMetaCreationHint(step, undefined, execution.requestPayload || {});
+    const currentStep = this.normalizeExecutionStep(execution.currentStep);
 
     if (this.isCompletedCampaignCreation(execution.status)) {
       if (!execution.metaCampaignId || !execution.metaAdSetId || !execution.metaCreativeId || !execution.metaAdId) {
@@ -1232,6 +1274,11 @@ export class MetaIntegrationService {
         storeId: execution.storeId,
         adAccountId: execution.adAccountId,
         platform: 'META',
+        currentStep,
+        canRetry: execution.canRetry,
+        retryCount: execution.retryCount,
+        userMessage: execution.userMessage ?? 'A execução da campanha já foi concluída com sucesso.',
+        stepState: execution.stepState ?? undefined,
         hint,
       };
     }
@@ -1244,6 +1291,10 @@ export class MetaIntegrationService {
         idempotencyKey: execution.idempotencyKey,
         step,
         partialIds,
+        currentStep,
+        canRetry: false,
+        retryCount: execution.retryCount,
+        userMessage: execution.userMessage ?? 'Já existe uma execução em andamento para esta campanha.',
         hint: 'Aguarde a finalização desta execução ou consulte o status da execução existente antes de reenviar a campanha.',
       });
     }
@@ -1255,6 +1306,11 @@ export class MetaIntegrationService {
       idempotencyKey: execution.idempotencyKey,
       step,
       partialIds,
+      currentStep,
+      canRetry: execution.canRetry,
+      retryCount: execution.retryCount,
+      userMessage: execution.userMessage ?? 'Parte da campanha já foi criada. Retome a execução existente para evitar duplicação.',
+      stepState: execution.stepState ?? undefined,
       errorMessage: execution.errorMessage,
       hint,
     });
@@ -1276,6 +1332,12 @@ export class MetaIntegrationService {
           adAccountId: adAccount.id,
           idempotencyKey,
           status: MetaCampaignCreationStatus.IN_PROGRESS,
+          currentStep: 'campaign',
+          stepState: this.buildInitialExecutionStepState(),
+          retryCount: 0,
+          lastRetryAt: null,
+          canRetry: false,
+          userMessage: null,
           requestPayload,
           payloadHash,
         }),
@@ -1290,6 +1352,11 @@ export class MetaIntegrationService {
             executionId: existing.id,
             executionStatus: this.normalizeCampaignCreationStatus(existing.status),
             idempotencyKey,
+            currentStep: this.normalizeExecutionStep(existing.currentStep),
+            canRetry: existing.canRetry,
+            retryCount: existing.retryCount,
+            userMessage: existing.userMessage ?? null,
+            stepState: existing.stepState ?? undefined,
           });
         }
       }
@@ -1319,6 +1386,15 @@ export class MetaIntegrationService {
       execution.adCreated = true;
       execution.metaAdId = ids.adId ?? execution.metaAdId;
     }
+    execution.currentStep = this.nextExecutionStep(step);
+    execution.canRetry = false;
+    execution.userMessage = null;
+    execution.stepState = this.completeExecutionStep(execution.stepState, step, ids);
+
+    const nextStep = this.normalizeExecutionStep(execution.currentStep);
+    if (nextStep) {
+      execution.stepState = this.markExecutionStepInProgress(execution.stepState, nextStep);
+    }
 
     await this.campaignCreationRepository.save(execution);
   }
@@ -1340,6 +1416,14 @@ export class MetaIntegrationService {
     execution.metaAdId = ids.adId ?? execution.metaAdId;
     execution.errorStep = null;
     execution.errorMessage = null;
+    execution.currentStep = null;
+    execution.canRetry = false;
+    execution.userMessage = null;
+    execution.stepState = this.completeExecutionStep(
+      this.completeExecutionStep(execution.stepState, 'persist', ids),
+      'ad',
+      ids,
+    );
     await this.campaignCreationRepository.save(execution);
   }
 
@@ -1348,15 +1432,18 @@ export class MetaIntegrationService {
     step: MetaCampaignCreationStep,
     message: string,
     ids: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>,
+    options: {
+      hint?: string;
+      userMessage?: string;
+    } = {},
   ): Promise<void> {
-    const hasPartialMetaResources = Boolean(ids.campaignId || ids.adSetId || ids.creativeId || ids.adId);
-    execution.status = step === 'persist'
-      ? MetaCampaignCreationStatus.FAILED
-      : hasPartialMetaResources
+    const hasPartialMetaResources = this.hasRecoverablePartialIds(ids);
+    execution.status = hasPartialMetaResources
       ? MetaCampaignCreationStatus.PARTIAL
       : MetaCampaignCreationStatus.FAILED;
     execution.errorStep = step;
     execution.errorMessage = message;
+    execution.currentStep = step;
     execution.metaCampaignId = ids.campaignId ?? execution.metaCampaignId;
     execution.metaAdSetId = ids.adSetId ?? execution.metaAdSetId;
     execution.metaCreativeId = ids.creativeId ?? execution.metaCreativeId;
@@ -1365,6 +1452,10 @@ export class MetaIntegrationService {
     execution.adSetCreated = Boolean(execution.metaAdSetId);
     execution.creativeCreated = Boolean(execution.metaCreativeId);
     execution.adCreated = Boolean(execution.metaAdId);
+    execution.canRetry = hasPartialMetaResources;
+    execution.userMessage = options.userMessage
+      ?? this.buildExecutionUserMessage(step, execution.status, options.hint);
+    execution.stepState = this.failExecutionStep(execution.stepState, step, message, ids);
     await this.campaignCreationRepository.save(execution);
   }
 
@@ -1465,6 +1556,7 @@ export class MetaIntegrationService {
         city: dto.city?.trim() || null,
         cityId: dto.cityId ? Number(dto.cityId) : null,
       },
+      assetId: dto.assetId?.trim() || null,
       imageUrl: dto.imageUrl?.trim() || null,
     };
   }
@@ -1519,8 +1611,6 @@ export class MetaIntegrationService {
     const metaError = this.extractMetaErrorDetails(err);
     const status = (err as any)?.response?.status;
     const message = metaError.summary;
-    await this.failCampaignCreationExecution(execution, step, message, createdIds);
-    const executionStatus = this.normalizeCampaignCreationStatus(execution.status);
     const payloadForHint = dto
       ? this.buildMetaValidationPayloadLog(dto, validation)
       : this.sanitizeForLog(execution.requestPayload || {});
@@ -1531,6 +1621,9 @@ export class MetaIntegrationService {
       pageId: validation?.pageId
         ?? (typeof execution.requestPayload?.['pageId'] === 'string' ? execution.requestPayload.pageId : null),
     });
+    const userMessage = this.buildMetaUserMessage(step, metaError, hint);
+    await this.failCampaignCreationExecution(execution, step, message, createdIds, { hint, userMessage });
+    const executionStatus = this.normalizeCampaignCreationStatus(execution.status);
     const sanitizedMetaResponse = this.sanitizeForLog((err as any)?.response?.data);
 
     this.logger.warn(
@@ -1565,7 +1658,12 @@ export class MetaIntegrationService {
         executionId: execution.id,
         executionStatus,
         step,
+        currentStep: this.normalizeExecutionStep(execution.currentStep),
         partialIds: createdIds,
+        canRetry: execution.canRetry,
+        retryCount: execution.retryCount,
+        userMessage: execution.userMessage,
+        stepState: execution.stepState ?? undefined,
         hint: 'Reconecte a store na Meta e repita a operação depois de validar as permissões ads_management.',
       }, HttpStatus.UNAUTHORIZED);
     }
@@ -1578,7 +1676,12 @@ export class MetaIntegrationService {
         executionId: execution.id,
         executionStatus,
         step,
+        currentStep: this.normalizeExecutionStep(execution.currentStep),
         partialIds: createdIds,
+        canRetry: execution.canRetry,
+        retryCount: execution.retryCount,
+        userMessage: execution.userMessage,
+        stepState: execution.stepState ?? undefined,
         hint: 'Aguarde o rate limit da Meta liberar antes de repetir a criação.',
       }, HttpStatus.TOO_MANY_REQUESTS);
     }
@@ -1590,7 +1693,12 @@ export class MetaIntegrationService {
       executionId: execution.id,
       executionStatus,
       step,
+      currentStep: this.normalizeExecutionStep(execution.currentStep),
       partialIds: createdIds,
+      canRetry: execution.canRetry,
+      retryCount: execution.retryCount,
+      userMessage: execution.userMessage,
+      stepState: execution.stepState ?? undefined,
       metaError,
       hint,
     };
@@ -1988,6 +2096,134 @@ export class MetaIntegrationService {
       userMessage: meta?.error_user_msg ?? null,
       fbtraceId: meta?.fbtrace_id ?? null,
     };
+  }
+
+  private buildInitialExecutionStepState(): MetaCampaignExecutionStepStateMap {
+    const base = Object.fromEntries(
+      META_CAMPAIGN_EXECUTION_STEPS.map((step) => [step, { status: 'PENDING' as const }]),
+    ) as MetaCampaignExecutionStepStateMap;
+
+    return this.markExecutionStepInProgress(base, 'campaign');
+  }
+
+  private markExecutionStepInProgress(
+    stepState: MetaCampaignExecutionStepStateMap | null | undefined,
+    step: MetaCampaignCreationStep,
+  ): MetaCampaignExecutionStepStateMap {
+    const next = this.cloneExecutionStepState(stepState);
+    next[step] = {
+      ...next[step],
+      status: 'IN_PROGRESS',
+      startedAt: next[step].startedAt ?? new Date().toISOString(),
+      failedAt: null,
+      errorMessage: null,
+    };
+    return next;
+  }
+
+  private completeExecutionStep(
+    stepState: MetaCampaignExecutionStepStateMap | null | undefined,
+    step: MetaCampaignCreationStep,
+    ids: MetaCampaignExecutionIds,
+  ): MetaCampaignExecutionStepStateMap {
+    const next = this.cloneExecutionStepState(stepState);
+    next[step] = {
+      ...next[step],
+      status: 'COMPLETED',
+      startedAt: next[step].startedAt ?? new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      failedAt: null,
+      errorMessage: null,
+      ids: this.mergeExecutionIds(next[step].ids, ids),
+    };
+    return next;
+  }
+
+  private failExecutionStep(
+    stepState: MetaCampaignExecutionStepStateMap | null | undefined,
+    step: MetaCampaignCreationStep,
+    message: string,
+    ids: MetaCampaignExecutionIds,
+  ): MetaCampaignExecutionStepStateMap {
+    const next = this.cloneExecutionStepState(stepState);
+    next[step] = {
+      ...next[step],
+      status: 'FAILED',
+      startedAt: next[step].startedAt ?? new Date().toISOString(),
+      failedAt: new Date().toISOString(),
+      errorMessage: this.sanitizeError(message),
+      ids: this.mergeExecutionIds(next[step].ids, ids),
+    };
+    return next;
+  }
+
+  private cloneExecutionStepState(
+    stepState: MetaCampaignExecutionStepStateMap | null | undefined,
+  ): MetaCampaignExecutionStepStateMap {
+    if (stepState) {
+      return JSON.parse(JSON.stringify(stepState)) as MetaCampaignExecutionStepStateMap;
+    }
+
+    return Object.fromEntries(
+      META_CAMPAIGN_EXECUTION_STEPS.map((step) => [step, { status: 'PENDING' as const }]),
+    ) as MetaCampaignExecutionStepStateMap;
+  }
+
+  private mergeExecutionIds(
+    current: MetaCampaignExecutionIds | undefined,
+    incoming: MetaCampaignExecutionIds,
+  ): MetaCampaignExecutionIds | undefined {
+    const merged = {
+      ...(current ?? {}),
+      ...(incoming ?? {}),
+    };
+
+    return Object.keys(merged).length ? merged : undefined;
+  }
+
+  private nextExecutionStep(step: MetaCampaignCreationStep): MetaCampaignCreationStep | null {
+    const currentIndex = META_CAMPAIGN_EXECUTION_STEPS.indexOf(step);
+    return currentIndex >= 0 ? (META_CAMPAIGN_EXECUTION_STEPS[currentIndex + 1] ?? null) : null;
+  }
+
+  private hasRecoverablePartialIds(ids: MetaCampaignExecutionIds): boolean {
+    return Boolean(ids.campaignId || ids.adSetId || ids.creativeId || ids.adId);
+  }
+
+  private buildExecutionUserMessage(
+    step: MetaCampaignCreationStep,
+    status: MetaCampaignCreationStatus,
+    hint?: string,
+  ): string {
+    if (status === MetaCampaignCreationStatus.PARTIAL) {
+      return `Parte da campanha foi criada na Meta e a execução parou em ${this.describeCampaignCreationStep(step)}. ${hint ?? 'Use o recovery seguro para continuar sem duplicar recursos.'}`;
+    }
+
+    if (step === 'persist') {
+      return 'A Meta criou recursos externos, mas houve falha ao salvar a campanha localmente. Revise a execução antes de tentar novamente.';
+    }
+
+    return `A execução falhou em ${this.describeCampaignCreationStep(step)}. Revise os dados e tente novamente.`;
+  }
+
+  private buildMetaUserMessage(
+    step: MetaCampaignCreationStep,
+    metaError: {
+      userTitle: string | null;
+      userMessage: string | null;
+    },
+    hint: string,
+  ): string {
+    const directMessage = metaError.userMessage || metaError.userTitle;
+    if (directMessage) {
+      return this.sanitizeError(directMessage);
+    }
+
+    if (step === 'persist') {
+      return 'A Meta respondeu com sucesso, mas o sistema não conseguiu concluir a persistência local. Use o executionId para retomar ou reconciliar a campanha.';
+    }
+
+    return hint;
   }
 
   private sleep(ms: number): Promise<void> {

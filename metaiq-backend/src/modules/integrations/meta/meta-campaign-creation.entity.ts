@@ -32,6 +32,25 @@ export type MetaCampaignCreationStep =
   | "ad"
   | "persist";
 
+export type MetaCampaignExecutionStepStatus =
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "COMPLETED"
+  | "FAILED";
+
+export type MetaCampaignExecutionIds = Partial<Record<"campaignId" | "adSetId" | "creativeId" | "adId", string>>;
+
+export interface MetaCampaignExecutionStepState {
+  status: MetaCampaignExecutionStepStatus;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  failedAt?: string | null;
+  errorMessage?: string | null;
+  ids?: MetaCampaignExecutionIds;
+}
+
+export type MetaCampaignExecutionStepStateMap = Record<MetaCampaignCreationStep, MetaCampaignExecutionStepState>;
+
 @Entity("meta_campaign_creations")
 @Unique("UQ_meta_campaign_creations_store_idempotency", [
   "storeId",
@@ -99,6 +118,24 @@ export class MetaCampaignCreation {
 
   @Column({ type: "text", nullable: true })
   errorMessage: string | null;
+
+  @Column({ nullable: true })
+  currentStep: string | null;
+
+  @Column({ type: "simple-json", nullable: true })
+  stepState: MetaCampaignExecutionStepStateMap | null;
+
+  @Column({ type: "int", default: 0 })
+  retryCount: number;
+
+  @Column({ nullable: true })
+  lastRetryAt: Date | null;
+
+  @Column({ default: false })
+  canRetry: boolean;
+
+  @Column({ type: "text", nullable: true })
+  userMessage: string | null;
 
   @Column({ type: "simple-json", nullable: true })
   requestPayload: Record<string, unknown> | null;

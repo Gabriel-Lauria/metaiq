@@ -32,6 +32,29 @@ describe('CampaignAiService', () => {
 
   function validStructuredResponse(overrides: Record<string, unknown> = {}) {
     return {
+      strategy: 'Campanha local focada em conversas com intenção imediata e benefício claro.',
+      primaryText: 'Seu pet limpo, cheiroso e bem cuidado em Curitiba. Fale com a equipe e agende.',
+      headline: 'Agende banho e tosa',
+      description: 'Atendimento rapido para bairros proximos.',
+      cta: 'Fale conosco',
+      audience: {
+        gender: 'all',
+        ageRange: '25-55',
+        interests: ['pet shop', 'banho e tosa'],
+      },
+      budgetSuggestion: 80,
+      risks: ['Sem pagina de prova social validada'],
+      improvements: ['Revisar bairros atendidos antes de enviar'],
+      reasoning: [
+        'A estratégia usa o contexto local da store.',
+        'O público prioriza tutores com intenção de agendar.',
+      ],
+      explanation: {
+        strategy: 'A campanha foi montada para gerar conversas diretas no WhatsApp.',
+        audience: 'O público combina tutores com intenção de cuidado recorrente e proximidade geográfica.',
+        copy: 'A copy foca dor, benefício e chamada para falar com a equipe.',
+        budget: 'O orçamento parte de um teste controlado para validar resposta inicial.',
+      },
       planner: {
         businessType: 'servico local',
         goal: 'Gerar agendamentos no WhatsApp',
@@ -233,9 +256,18 @@ describe('CampaignAiService', () => {
       budget: 80,
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.campaign.campaignName).toBe('Banho e Tosa Curitiba | WhatsApp');
     expect(result.campaign.objective).toBe('OUTCOME_LEADS');
     expect(result.campaign.budget.amount).toBe(80);
+    expect(result.strategy).toContain('Campanha local');
+    expect(result.audience.ageRange).toBe('25-55');
+    expect(result.explanation.audience).toContain('tutores');
+    expect(result.reasoning.length).toBeGreaterThan(0);
+    expect(result.budgetSuggestion).toBe(80);
     expect(result.adSet.targeting.country).toBe('BR');
     expect(result.adSet.targeting.state).toBe('Parana');
     expect(result.adSet.targeting.stateCode).toBe('PR');
@@ -249,10 +281,11 @@ describe('CampaignAiService', () => {
     expect(generateContent).toHaveBeenCalledTimes(1);
     expect(generateContent.mock.calls[0][0].config.responseMimeType).toBe('application/json');
     expect(generateContent.mock.calls[0][0].contents).toContain('planner');
+    expect(generateContent.mock.calls[0][0].contents).toContain('Contexto da empresa');
     expect(structuredLogger.info).toHaveBeenCalled();
   });
 
-  it('returns a structured fallback when Gemini returns invalid JSON', async () => {
+  it('returns AI_FAILED when Gemini returns invalid JSON', async () => {
     const service = createService();
     const generateContent = jest.fn().mockResolvedValue({
       text: 'nao e json',
@@ -267,13 +300,238 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
-    expect(result.meta.usedFallback).toBe(true);
+    expect(result.status).toBe('AI_FAILED');
+    if (result.status !== 'AI_FAILED') {
+      throw new Error('Expected AI_FAILED');
+    }
+    expect(result.reason).toBe('invalid_response');
+    expect(result.meta.usedFallback).toBe(false);
     expect(result.meta.responseValid).toBe(false);
-    expect(result.review.confidence).toBeGreaterThanOrEqual(0);
-    expect(result.review.confidence).toBeLessThanOrEqual(100);
-    expect(result.planner.missingInputs.length).toBeGreaterThan(0);
-    expect(result.validation.isReadyToPublish).toBe(false);
-    expect(result.validation.blockingIssues.length).toBeGreaterThan(0);
+    expect(result.debug?.validationError).toBe('parse_failed');
+    expect(result.debug?.hasRawText).toBe(true);
+  });
+
+  it('turns useful non-json Gemini text into a low-confidence draft', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({
+      text: 'Campanha local para atrair mensagens no WhatsApp com foco em agendamento rápido e linguagem direta para tutores de pets em Curitiba.',
+    });
+
+    (service as any).ai = {
+      models: { generateContent },
+    };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha local para pet shop com foco em WhatsApp',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
+    expect(result.primaryText).toContain('Campanha local');
+    expect(result.review.confidence).toBeLessThanOrEqual(45);
+    expect(result.risks).toContain('A IA respondeu fora do formato ideal. Revise antes de publicar.');
+    expect(result.meta.responseValid).toBe(false);
+  });
+
+  it('accepts valid JSON wrapped in markdown fences', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({
+      text: `\`\`\`json\n${JSON.stringify(validStructuredResponse())}\n\`\`\``,
+    });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha com json em markdown',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+  });
+
+  it('accepts valid JSON with explanatory text before and after', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({
+      text: `Segue a sugestão:\n${JSON.stringify(validStructuredResponse())}\nFim da resposta`,
+    });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha com texto extra',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+  });
+
+  it('normalizes common field aliases from Gemini', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({
+      text: JSON.stringify({
+        strategy: 'Campanha com aliases válidos.',
+        message: 'Texto principal vindo como alias.',
+        adHeadline: 'Headline alias',
+        desc: 'Descrição alias',
+        callToAction: 'Saiba mais',
+        budget: 'R$ 50 por dia',
+        audience: '25-45 anos, interesse em pet shop, banho e tosa',
+        campaign: {
+          title: 'Campanha Alias',
+          objective: 'OUTCOME_LEADS',
+        },
+        review: {
+          summary: 'Resumo com alias',
+        },
+      }),
+    });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha com aliases',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') throw new Error('Expected AI_SUCCESS');
+    expect(result.primaryText).toContain('Texto principal');
+    expect(result.headline).toBe('Headline alias');
+    expect(result.description).toBe('Descrição alias');
+    expect(result.cta).toBe('LEARN_MORE');
+    expect(result.campaign.campaignName).toBe('Campanha Alias');
+    expect(result.budgetSuggestion).toBe(50);
+  });
+
+  it('normalizes audience string, portuguese CTA and budget text', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({
+      text: JSON.stringify({
+        strategy: 'Campanha local segura',
+        primaryText: 'Mensagem principal clara.',
+        headline: 'Headline clara',
+        cta: 'Fale conosco',
+        dailyBudget: 'R$50,00',
+        audience: 'Mulheres 25-55 interessadas em beleza e skincare',
+      }),
+    });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha para beleza com orçamento de teste',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') throw new Error('Expected AI_SUCCESS');
+    expect(result.cta).toBe('CONTACT_US');
+    expect(result.budgetSuggestion).toBe(50);
+    expect(result.audience.interests.length).toBeGreaterThan(0);
+  });
+
+  it('does not fail when destinationUrl is missing but the answer is otherwise useful', async () => {
+    const service = createService();
+    const payload = validStructuredResponse();
+    delete (payload.creative as any).destinationUrl;
+    const generateContent = jest.fn().mockResolvedValue({
+      text: JSON.stringify(payload),
+    });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha útil sem url final',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') throw new Error('Expected AI_SUCCESS');
+    expect(result.creative.destinationUrl).toBeNull();
+  });
+
+  it('returns AI_FAILED when the response is empty', async () => {
+    const service = createService();
+    const generateContent = jest.fn().mockResolvedValue({ text: '' });
+
+    (service as any).ai = { models: { generateContent } };
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha vazia',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_FAILED');
+    if (result.status !== 'AI_FAILED') throw new Error('Expected AI_FAILED');
+    expect(result.reason).toBe('invalid_response');
+  });
+
+  it('monta contexto completo da store com tenant, manager e histórico quando disponível', async () => {
+    const config = {
+      get: jest.fn((key: string) => ({
+        GEMINI_API_KEY: 'gemini-test-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_API_VERSION: 'v1beta',
+      } as Record<string, string>)[key]),
+    } as unknown as ConfigService;
+
+    const storeRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'store-1',
+        name: 'Pet Feliz',
+        manager: { name: 'Ana', notes: 'Tom próximo e resposta rápida.' },
+        tenant: {
+          name: 'MetaIQ Pets',
+          notes: 'Clínica e banho e tosa com foco em recorrência.',
+          website: 'https://petfeliz.example',
+          businessSegment: 'pet shop',
+          accountType: 'AGENCY',
+        },
+      }),
+    };
+    const campaignRepository = {
+      find: jest.fn().mockResolvedValue([
+        { name: 'Campanha 1', objective: 'LEADS', dailyBudget: 70, score: 82, status: 'ACTIVE' },
+        { name: 'Campanha 2', objective: 'TRAFFIC', dailyBudget: 90, score: 76, status: 'PAUSED' },
+      ]),
+    };
+    const metricDailyRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        innerJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          avgCtr: '2.31',
+          avgCpa: '19.50',
+          avgRoas: '3.42',
+        }),
+      }),
+    };
+
+    const service = new CampaignAiService(
+      config,
+      storeRepository as any,
+      undefined,
+      undefined,
+      undefined,
+      campaignRepository as any,
+      metricDailyRepository as any,
+    );
+
+    const context = await (service as any).resolveStoreAiContext('store-1', 'Campanha para agendamentos locais');
+
+    expect(context.companyName).toBe('Pet Feliz');
+    expect(context.website).toBe('https://petfeliz.example');
+    expect(context.tenantNotes).toContain('recorrência');
+    expect(context.managerNotes).toContain('resposta rápida');
+    expect(context.historicalContext.campaignCount).toBe(2);
+    expect(context.historicalContext.metrics.ctr).toBe(2.31);
+    expect(context.dataAvailability.hasHistoricalCampaigns).toBe(true);
+    expect(context.dataAvailability.hasPerformanceMetrics).toBe(true);
   });
 
   it('sanitizes non-https destinationUrl and clamps confidence', async () => {
@@ -300,6 +558,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.creative.destinationUrl).toBeNull();
     expect(result.review.confidence).toBe(100);
     expect(result.validation.qualityScore).toBeGreaterThanOrEqual(0);
@@ -345,6 +607,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.campaign.budget.type).toBeNull();
     expect(result.campaign.budget.amount).toBeNull();
     expect(result.adSet.targeting.country).toBeNull();
@@ -383,6 +649,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.adSet.targeting.city).toBe('Cidade Desconhecida');
     expect(result.adSet.targeting.state).toBeNull();
     expect(result.adSet.targeting.stateCode).toBeNull();
@@ -405,6 +675,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.validation).toBeDefined();
     expect(result.validation.isReadyToPublish).toBe(false);
     expect(result.validation.blockingIssues.length).toBeGreaterThan(0);
@@ -434,6 +708,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.validation.blockingIssues.length).toBeGreaterThan(0);
     expect(result.validation.isReadyToPublish).toBe(false);
     expect(result.validation.qualityScore).toBeLessThanOrEqual(45);
@@ -463,6 +741,10 @@ describe('CampaignAiService', () => {
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect((result as any).metrics).toBeUndefined();
     expect((result as any).roas).toBeUndefined();
     expect(result.review.risks.join(' ')).not.toMatch(/CTR|CPA|ROAS/i);
@@ -516,6 +798,10 @@ describe('CampaignAiService', () => {
       destinationUrl: 'https://metaiq.dev/agendar',
     });
 
+    expect(result.status).toBe('AI_SUCCESS');
+    if (result.status !== 'AI_SUCCESS') {
+      throw new Error('Expected AI_SUCCESS');
+    }
     expect(result.analysis.summary).toContain('campanha');
     expect(result.analysis.issues.length).toBeGreaterThan(0);
     expect(result.analysis.improvements.length).toBeGreaterThan(0);
@@ -526,7 +812,7 @@ describe('CampaignAiService', () => {
     expect(result.meta.usedFallback).toBe(false);
   });
 
-  it('falls back to heuristic campaign analysis without inventing metrics', async () => {
+  it('returns AI_FAILED for invalid campaign analysis payloads without inventing metrics', async () => {
     const service = createService();
     const generateContent = jest.fn().mockResolvedValue({
       text: '{"analysis":{"summary":"incompleto"',
@@ -547,12 +833,11 @@ describe('CampaignAiService', () => {
       destinationUrl: 'http://metaiq.dev/inseguro',
     });
 
-    expect(result.meta.usedFallback).toBe(true);
-    expect(result.analysis.issues.join(' ')).not.toMatch(/CTR|ROAS|CPA/i);
-    expect(result.analysis.confidence).toBeGreaterThanOrEqual(0);
-    expect(result.analysis.confidence).toBeLessThanOrEqual(100);
-    expect(result.analysis.issues.length).toBeGreaterThan(0);
-    expect(result.analysis.improvements.every((item) => item.confidence >= 0 && item.confidence <= 100)).toBe(true);
-    expect(result.analysis.improvements.every((item) => !JSON.stringify(item).match(/CTR|ROAS|CPA/i))).toBe(true);
+    expect(result.status).toBe('AI_FAILED');
+    if (result.status !== 'AI_FAILED') {
+      throw new Error('Expected AI_FAILED');
+    }
+    expect(result.reason).toBe('invalid_response');
+    expect(result.meta.usedFallback).toBe(false);
   });
 });
