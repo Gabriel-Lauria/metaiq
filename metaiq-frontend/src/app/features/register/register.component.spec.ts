@@ -58,7 +58,7 @@ describe('RegisterComponent', () => {
 
   it('valida campos obrigatorios', () => {
     component.submit();
-    expect(component.message).toContain('Verifique os dados');
+    expect(component.errorMessage).toContain('Verifique os dados');
   });
 
   it('exige confirmacao de senha igual', () => {
@@ -74,7 +74,7 @@ describe('RegisterComponent', () => {
 
     component.submit();
 
-    expect(component.message).toContain('Senha e confirmacao');
+    expect(component.errorMessage).toContain('Senha e confirmação');
   });
 
   it('envia cadastro com accountType INDIVIDUAL e redireciona para campanhas', () => {

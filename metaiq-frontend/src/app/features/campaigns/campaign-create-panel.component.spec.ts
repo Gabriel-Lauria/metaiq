@@ -189,17 +189,15 @@ describe('CampaignCreatePanelComponent', () => {
       },
     });
     component.submitError.set('Erro na criação do criativo: destination_url inválido');
+    component.technicalErrorOpen.set(true);
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
     expect(text).toContain('Não foi possível criar a campanha na Meta');
     expect(text).toContain('Criativo');
     expect(text).toContain('Verifique se o pageId está configurado e se a URL é válida');
-    expect(text).toContain('A Meta recusou o criativo');
     expect(text).toContain('cmp-1');
     expect(text).toContain('set-1');
-    expect(text).toContain('COMPLETED');
-    expect(text).toContain('FAILED');
     expect(text).not.toContain('accessToken');
     expect(text).not.toContain('Bearer');
     expect(text).not.toContain('stack');
@@ -299,30 +297,26 @@ describe('CampaignCreatePanelComponent', () => {
     expect(cards[1].meta).toBe('Qualidade IA: 78/100');
     expect(cards[2].meta).toContain('Etapa');
 
-    const previewCard = fixture.nativeElement.querySelector('.wizard-preview-card') as HTMLElement | null;
-    expect(previewCard?.textContent).toContain('Prévia do anúncio');
+    const previewCard = fixture.nativeElement.querySelector('.preview-sidebar-block') as HTMLElement | null;
+    expect(previewCard?.textContent).toContain('Preview');
     expect(fixture.nativeElement.textContent).toContain('Objetivo');
   });
 
   it('inicia em modo manual sem exigir prompt da IA', () => {
-    expect(component.modeSelection()).toBeNull();
-    expect(component.state.ui.modeSelection).toBe('AI');
-    expect(fixture.nativeElement.textContent).toContain('Criar campanha');
-    expect(fixture.nativeElement.textContent).toContain('Como você quer criar sua campanha?');
-    expect(fixture.nativeElement.textContent).toContain('Criar com IA');
-    expect(fixture.nativeElement.textContent).toContain('Criação orientada');
-    expect(fixture.nativeElement.textContent).toContain('Criação avançada');
+    expect(component.creationEntryMode()).toBe('manual');
+    expect(component.creationMode()).toBe('edit-lite');
+    expect(fixture.nativeElement.querySelector('#builder-lite')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Manual');
+    expect(fixture.nativeElement.textContent).toContain('Usar IA');
+    expect(fixture.nativeElement.textContent).toContain('Configuração');
   });
 
   it('inicia em modo assistido por IA quando solicitado', () => {
     component.initialMode = 'ai';
     fixture.detectChanges();
 
-    expect(component.modeSelection()).toBe('AI');
     expect(component.creationEntryMode()).toBe('ai');
     expect(component.creationMode()).toBe('ai-entry');
-    expect(fixture.nativeElement.textContent).toContain('Criar campanha');
-    expect(fixture.nativeElement.textContent).toContain('Criar com IA');
     expect(fixture.nativeElement.querySelector('#builder-ai')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Briefing IA');
   });
@@ -333,7 +327,7 @@ describe('CampaignCreatePanelComponent', () => {
 
     expect(component.creationEntryMode()).toBe('manual');
     expect(component.creationMode()).toBe('edit-lite');
-    expect(component.currentStep()).toBe('review');
+    expect(component.activeSection()).toBe('builder-review');
     expect(component.showCreateButtonInReview()).toBeTrue();
   });
 
@@ -344,12 +338,11 @@ describe('CampaignCreatePanelComponent', () => {
     component.switchToManualMode();
     fixture.detectChanges();
 
-    expect(component.modeSelection()).toBe('GUIDED');
     expect(component.creationEntryMode()).toBe('manual');
     expect(component.creationMode()).toBe('edit-lite');
     expect(component.activeSection()).toBe('builder-lite');
     expect(fixture.nativeElement.querySelector('#builder-ai')).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('Criar campanha');
+    expect(fixture.nativeElement.textContent).toContain('Configuração');
     expect(fixture.nativeElement.textContent).toContain('Objetivo');
   });
 
@@ -362,24 +355,18 @@ describe('CampaignCreatePanelComponent', () => {
     component.advanceStep();
     fixture.detectChanges();
 
-    expect(component.currentStep()).toBe('objective');
-    expect(component.submitAttempted()).toBeTrue();
-    expect(fixture.nativeElement.textContent).toContain('Antes de continuar');
+    expect(component.currentStep()).toBe('configuration');
+    expect(component.canAdvanceCurrentStep()).toBeFalse();
   });
 
   it('permite navegar pelas etapas válidas do wizard', () => {
     openGuidedMode(component, fixture);
-    component.selectWizardObjective('sell-more');
+    component.touchState();
+    fixture.detectChanges();
     component.advanceStep();
-    expect(component.currentStep()).toBe('product');
-
-    component.state.ui.productName = 'Banho e tosa premium';
-    component.state.ui.productDescription = 'Serviço com agendamento rápido.';
-    component.state.ui.productDifferential = 'Atendimento no mesmo dia';
-    component.syncProductDetails();
-    component.advanceStep();
-
     expect(component.currentStep()).toBe('audience');
+    component.advanceStep();
+    expect(component.currentStep()).toBe('creative');
   });
 
   it('atualiza a prévia do anúncio em tempo real', () => {
@@ -390,8 +377,8 @@ describe('CampaignCreatePanelComponent', () => {
     component.state.creative.imageUrl = 'https://metaiq.dev/preview.jpg';
     fixture.detectChanges();
 
-    const preview = fixture.nativeElement.querySelector('.wizard-ad-preview') as HTMLElement | null;
-    const image = fixture.nativeElement.querySelector('.wizard-ad-media img') as HTMLImageElement | null;
+    const preview = fixture.nativeElement.querySelector('.preview-sidebar-block') as HTMLElement | null;
+    const image = fixture.nativeElement.querySelector('app-creative-preview img') as HTMLImageElement | null;
 
     expect(preview?.textContent).toContain('Seu pet merece cuidado imediato.');
     expect(preview?.textContent).toContain('Agende hoje mesmo');
@@ -399,19 +386,19 @@ describe('CampaignCreatePanelComponent', () => {
   });
 
   it('gera sugestões com IA sem quebrar o preenchimento manual', () => {
-    openGuidedMode(component, fixture);
-    component.currentStep.set('creative');
+    component.switchToAiMode();
+    component.state.ui.aiPrompt = 'Campanha local para pet shop com CTA de agendamento';
     component.state.creative.headline = '';
     component.state.creative.message = '';
     component.state.creative.description = '';
-    component.generateWizardWithAi();
+    component.applyAiSuggestions();
 
     expect(campaignAi.suggest).toHaveBeenCalled();
-    expect(component.state.creative.headline).toBe('Agende banho e tosa');
-    expect(component.state.creative.message).toContain('Seu pet limpo, cheiroso');
+    expect(component.creationMode()).toBe('ai-result');
+    expect(component.state.ui.aiLastSuggestion).not.toBeNull();
     expect(ui.showSuccess).toHaveBeenCalledWith(
-      'Sugestão aplicada',
-      'A IA preencheu texto, título, descrição e sugestões de público para você revisar.',
+      'Sugestão pronta para revisão',
+      'A IA montou uma primeira versão. Revise antes de aplicar ao builder.',
     );
   });
 
@@ -434,9 +421,8 @@ describe('CampaignCreatePanelComponent', () => {
     component.applyAiSuggestions();
     fixture.detectChanges();
 
-    const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Não conseguimos gerar a campanha com IA agora');
-    expect(text).toContain('Tentar novamente');
+    expect(ui.showWarning).toHaveBeenCalled();
+    expect(component.state.ui.aiFailure?.message).toContain('Não conseguimos gerar a campanha com IA agora');
     expect(component.state.ui.aiLastSuggestion).toBeNull();
     expect(component.state.ui.aiQualityScore).toBeNull();
   });
@@ -446,25 +432,25 @@ describe('CampaignCreatePanelComponent', () => {
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
     fixture.detectChanges();
 
-    const panel = fixture.nativeElement.querySelector('.wizard-ai-panel') as HTMLElement | null;
-    expect(panel?.textContent).toContain('Por que essa campanha?');
-    expect(panel?.textContent).toContain('Campanha local focada em conversas');
-    expect(panel?.textContent).toContain('Riscos antes de publicar');
-    expect(panel?.textContent).toContain('Melhorias sugeridas');
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Sugestão da IA');
+    expect(text).toContain('Campanha local focada em conversas');
+    expect(text).toContain('Riscos');
+    expect(text).toContain('Recomendações');
   });
 
-  it('não sobrescreve headline já editada manualmente ao aplicar IA no wizard', () => {
-    openGuidedMode(component, fixture);
-    component.currentStep.set('creative');
+  it('não sobrescreve headline manual durante a geração da sugestão IA', () => {
+    component.switchToAiMode();
+    component.state.ui.aiPrompt = 'Campanha para pet shop com foco em leads';
     component.state.creative.headline = 'Título manual mantido';
-    component.markFieldTouched('creative.headline');
     component.state.creative.message = '';
     component.state.creative.description = '';
+    fixture.detectChanges();
 
-    component.generateWizardWithAi();
+    component.applyAiSuggestions();
 
     expect(component.state.creative.headline).toBe('Título manual mantido');
-    expect(component.state.creative.message).toContain('Seu pet limpo, cheiroso');
+    expect(component.state.ui.aiLastSuggestion).not.toBeNull();
   });
 
   it('envia a campanha a partir da revisão mantendo compatibilidade do payload', () => {
@@ -906,13 +892,16 @@ function applyValidState(component: CampaignCreatePanelComponent): void {
   component.state.creative.headline = 'Headline forte';
   component.state.creative.imageUrl = 'https://metaiq.dev/image.jpg';
   component.state.tracking.mainEvent = 'Lead';
+  component.state.tracking.pixel = 'pixel-1';
 }
 
 function openGuidedMode(
   component: CampaignCreatePanelComponent,
   fixture: ComponentFixture<CampaignCreatePanelComponent>,
 ): void {
-  component.selectMode('GUIDED');
+  component.switchToManualMode();
+  component.enableStepFlow();
+  component.touchState();
   fixture.detectChanges();
 }
 
@@ -920,7 +909,7 @@ function openAdvancedMode(
   component: CampaignCreatePanelComponent,
   fixture: ComponentFixture<CampaignCreatePanelComponent>,
 ): void {
-  component.selectMode('ADVANCED');
+  component.openAdvancedBuilder();
   fixture.detectChanges();
 }
 
@@ -928,7 +917,7 @@ function openAiResultMode(
   component: CampaignCreatePanelComponent,
   fixture: ComponentFixture<CampaignCreatePanelComponent>,
 ): void {
-  component.selectMode('AI');
+  component.switchToAiMode();
   component.creationMode.set('ai-result');
   fixture.detectChanges();
 }

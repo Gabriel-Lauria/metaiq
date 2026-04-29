@@ -14,6 +14,8 @@ export interface MetaCampaignResourceIds {
 
 export type MetaCampaignOrchestratorStep = 'campaign' | 'adset' | 'creative' | 'ad';
 
+type MetaAdSetPayload = Record<string, string | number>;
+
 @Injectable()
 export class MetaCampaignOrchestrator {
   private readonly logger = new Logger(MetaCampaignOrchestrator.name);
@@ -40,14 +42,8 @@ export class MetaCampaignOrchestrator {
     const desiredStatus = input.dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
     const normalizedLocation = normalizeCampaignLocation(input.dto);
     const geoLocations = buildMetaGeoLocations(normalizedLocation);
+    const campaignPayload = this.buildCampaignPayload(input.dto, input.objective, desiredStatus);
 
-    const campaignPayload = {
-      name: input.dto.name.trim(),
-      objective: input.objective.trim().toUpperCase(),
-      status: desiredStatus,
-      special_ad_categories: '[]',
-      is_adset_budget_sharing_enabled: 'false',
-    };
     this.assertCampaignPayload(campaignPayload);
     this.logStepPayload('META_GRAPH_API_REQUEST', `${accountPath}/campaigns`, 'campaign', campaignPayload, {
       executionId: input.executionId,
@@ -64,19 +60,7 @@ export class MetaCampaignOrchestrator {
 
     ids.campaignId = this.assertMetaId(campaign, 'campaigns');
     await input.onStepCreated('campaign', ids);
-
-    const adSetPayload = {
-      name: `${input.dto.name.trim()} - AdSet`,
-      campaign_id: ids.campaignId,
-      daily_budget: this.toMetaMoneyAmount(input.dto.dailyBudget),
-      billing_event: 'IMPRESSIONS',
-      optimization_goal: 'LINK_CLICKS',
-      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-      targeting: JSON.stringify({
-        geo_locations: geoLocations,
-      }),
-      status: desiredStatus,
-    };
+    const adSetPayload = this.buildAdSetPayload(input.dto, ids.campaignId, geoLocations, desiredStatus);
     this.assertAdSetPayload(adSetPayload);
 
     this.logAdSetPayload('META_GRAPH_API_REQUEST', `${accountPath}/adsets`, adSetPayload, normalizedLocation, {
@@ -199,18 +183,7 @@ export class MetaCampaignOrchestrator {
     if (!ids.adSetId) {
       const normalizedLocation = normalizeCampaignLocation(input.dto);
       const geoLocations = buildMetaGeoLocations(normalizedLocation);
-      const adSetPayload = {
-        name: `${input.dto.name.trim()} - AdSet`,
-        campaign_id: ids.campaignId,
-        daily_budget: this.toMetaMoneyAmount(input.dto.dailyBudget),
-        billing_event: 'IMPRESSIONS',
-        optimization_goal: 'LINK_CLICKS',
-        bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-        targeting: JSON.stringify({
-          geo_locations: geoLocations,
-        }),
-        status: desiredStatus,
-      };
+      const adSetPayload = this.buildAdSetPayload(input.dto, ids.campaignId, geoLocations, desiredStatus);
       this.assertAdSetPayload(adSetPayload);
 
       this.logAdSetPayload('META_GRAPH_API_RESUME_REQUEST', `${accountPath}/adsets`, adSetPayload, normalizedLocation, {
@@ -308,6 +281,177 @@ export class MetaCampaignOrchestrator {
     return Math.round(Number(value) * 100);
   }
 
+  private buildCampaignPayload(
+    dto: CreateMetaCampaignDto,
+    objective: string,
+    desiredStatus: 'ACTIVE' | 'PAUSED',
+  ): Record<string, string> {
+    return {
+      name: dto.name.trim(),
+      objective: objective.trim().toUpperCase(),
+      status: desiredStatus,
+      special_ad_categories: JSON.stringify((dto.specialAdCategories || []).map((item) => item.trim().toUpperCase()).filter(Boolean)),
+      is_adset_budget_sharing_enabled: 'false',
+    };
+  }
+
+  private buildAdSetPayload(
+    dto: CreateMetaCampaignDto,
+    campaignId: string,
+    geoLocations: ReturnType<typeof buildMetaGeoLocations>,
+    desiredStatus: 'ACTIVE' | 'PAUSED',
+  ): MetaAdSetPayload {
+    const dailyBudgetCents = this.toMetaMoneyAmount(dto.dailyBudget);
+    const sanitizedCampaignId = campaignId.trim();
+    const startTime = dto.startTime?.trim() || '';
+    const endTime = dto.endTime?.trim() || '';
+    const deliveryConfig = this.resolveDeliveryConfig(dto);
+    const targetingPayload = this.buildTargetingPayload(dto, geoLocations);
+    const payload = this.compactMetaPayload({
+      name: `${dto.name.trim()} - AdSet`,
+      campaign_id: sanitizedCampaignId,
+      daily_budget: dailyBudgetCents,
+      billing_event: deliveryConfig.billingEvent,
+      optimization_goal: deliveryConfig.optimizationGoal,
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: JSON.stringify(targetingPayload),
+      ...(deliveryConfig.promotedObject ? { promoted_object: JSON.stringify(deliveryConfig.promotedObject) } : {}),
+      start_time: startTime,
+      end_time: endTime,
+      status: desiredStatus,
+    });
+
+    this.assertAdSetPayload(payload);
+    return payload;
+  }
+
+  private resolveDeliveryConfig(dto: CreateMetaCampaignDto): {
+    billingEvent: string;
+    optimizationGoal: string;
+    promotedObject?: Record<string, string>;
+  } {
+    const objective = dto.objective.trim().toUpperCase();
+
+    if (objective === 'OUTCOME_LEADS') {
+      if (!dto.pixelId?.trim()) {
+        throw new Error('pixelId é obrigatório para campanhas de leads na Meta.');
+      }
+
+      return {
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'OFFSITE_CONVERSIONS',
+        promotedObject: {
+          pixel_id: dto.pixelId.trim(),
+          custom_event_type: this.normalizeConversionEvent(dto.conversionEvent),
+        },
+      };
+    }
+
+    if (objective === 'REACH') {
+      return {
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'REACH',
+      };
+    }
+
+    return {
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'LINK_CLICKS',
+    };
+  }
+
+  private buildTargetingPayload(
+    dto: CreateMetaCampaignDto,
+    geoLocations: ReturnType<typeof buildMetaGeoLocations>,
+  ): Record<string, unknown> {
+    const targeting: Record<string, unknown> = {
+      geo_locations: geoLocations,
+    };
+
+    const placementPayload = this.buildPlacementPayload(dto.placements || []);
+    return { ...targeting, ...placementPayload };
+  }
+
+  private buildPlacementPayload(placements: string[]): Record<string, unknown> {
+    const normalized = Array.from(new Set(placements.map((item) => item.trim().toLowerCase()).filter(Boolean)));
+    if (!normalized.length) {
+      return {};
+    }
+
+    const publisherPlatforms = new Set<string>();
+    const facebookPositions = new Set<string>();
+    const instagramPositions = new Set<string>();
+    const messengerPositions = new Set<string>();
+    const audienceNetworkPositions = new Set<string>();
+
+    for (const placement of normalized) {
+      switch (placement) {
+        case 'feed':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('feed');
+          instagramPositions.add('stream');
+          break;
+        case 'stories':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('story');
+          instagramPositions.add('story');
+          break;
+        case 'reels':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('facebook_reels');
+          instagramPositions.add('reels');
+          break;
+        case 'explore':
+          publisherPlatforms.add('instagram');
+          instagramPositions.add('explore');
+          break;
+        case 'messenger':
+          publisherPlatforms.add('messenger');
+          messengerPositions.add('messenger_home');
+          break;
+        case 'audience_network':
+          publisherPlatforms.add('audience_network');
+          audienceNetworkPositions.add('classic');
+          break;
+        default:
+          break;
+      }
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (publisherPlatforms.size) payload['publisher_platforms'] = Array.from(publisherPlatforms);
+    if (facebookPositions.size) payload['facebook_positions'] = Array.from(facebookPositions);
+    if (instagramPositions.size) payload['instagram_positions'] = Array.from(instagramPositions);
+    if (messengerPositions.size) payload['messenger_positions'] = Array.from(messengerPositions);
+    if (audienceNetworkPositions.size) payload['audience_network_positions'] = Array.from(audienceNetworkPositions);
+    return payload;
+  }
+
+  private normalizeConversionEvent(value?: string): string {
+    const normalized = (value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    if (!normalized) {
+      return 'LEAD';
+    }
+
+    const aliases: Record<string, string> = {
+      PURCHASE: 'PURCHASE',
+      LEAD: 'LEAD',
+      COMPLETE_REGISTRATION: 'COMPLETE_REGISTRATION',
+      CONTACT: 'CONTACT',
+      SUBMIT_APPLICATION: 'SUBMIT_APPLICATION',
+      START_TRIAL: 'START_TRIAL',
+      VIEW_CONTENT: 'VIEW_CONTENT',
+      ADD_TO_CART: 'ADD_TO_CART',
+      INITIATE_CHECKOUT: 'INITIATE_CHECKOUT',
+      SCHEDULE: 'SCHEDULE',
+    };
+
+    return aliases[normalized] || 'LEAD';
+  }
+
   private assertCampaignPayload(payload: Record<string, string>): void {
     if (!payload.name?.trim()) {
       throw new Error('name é obrigatório para criar campaign na Meta.');
@@ -319,16 +463,43 @@ export class MetaCampaignOrchestrator {
   }
 
   private assertAdSetPayload(payload: Record<string, string | number>): void {
-    if (!payload.campaign_id) {
+    if (!payload.campaign_id || !String(payload.campaign_id).trim()) {
       throw new Error('campaign_id é obrigatório para criar adset na Meta.');
     }
 
-    if (!Number.isFinite(Number(payload.daily_budget)) || Number(payload.daily_budget) <= 0) {
-      throw new Error('daily_budget inválido para criar adset na Meta.');
+    if (!Number.isInteger(Number(payload.daily_budget)) || Number(payload.daily_budget) <= 0) {
+      throw new Error('Orçamento diário inválido para Meta.');
     }
 
-    if (!payload.targeting) {
+    if (!payload.start_time || !String(payload.start_time).trim()) {
+      throw new Error('start_time é obrigatório para criar adset na Meta.');
+    }
+
+    if (!payload.end_time || !String(payload.end_time).trim()) {
+      throw new Error('end_time é obrigatório para criar adset na Meta.');
+    }
+
+    if (!payload.targeting || !String(payload.targeting).trim()) {
       throw new Error('targeting mínimo é obrigatório para criar adset na Meta.');
+    }
+
+    const targeting = JSON.parse(String(payload.targeting)) as Record<string, unknown>;
+    const geoLocations = (targeting['geo_locations'] ?? {}) as Record<string, unknown>;
+    const countries = Array.isArray(geoLocations['countries']) ? geoLocations['countries'] : [];
+    if (!countries.length || countries.some((entry) => typeof entry !== 'string' || !entry.trim())) {
+      throw new Error('country é obrigatório para criar adset na Meta.');
+    }
+
+    if ('cities' in geoLocations) {
+      throw new Error('Cidade da Meta ainda não está mapeada com segurança. Use somente país ou região válida.');
+    }
+
+    if ('promoted_object' in payload) {
+      const promotedObject = JSON.parse(String(payload.promoted_object)) as Record<string, unknown>;
+      const nullIntegerField = ['pixel_id', 'custom_event_type'].find((field) => promotedObject[field] == null);
+      if (nullIntegerField) {
+        throw new Error(`promoted_object inválido: ${nullIntegerField} não pode ser nulo.`);
+      }
     }
   }
 
@@ -367,6 +538,39 @@ export class MetaCampaignOrchestrator {
         payload,
       }),
     );
+
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.debug(
+        JSON.stringify({
+          event: 'META_ADSET_PAYLOAD_DEBUG',
+          endpoint,
+          ...context,
+          campaign_id: payload.campaign_id ?? null,
+          daily_budget: payload.daily_budget ?? null,
+          billing_event: payload.billing_event ?? null,
+          optimization_goal: payload.optimization_goal ?? null,
+          bid_strategy: payload.bid_strategy ?? null,
+          targeting: targeting ?? null,
+          promoted_object: payload.promoted_object ? JSON.parse(String(payload.promoted_object)) : null,
+          start_time: payload.start_time ?? null,
+          end_time: payload.end_time ?? null,
+          normalizedLocation: {
+            country: location.country,
+            state: location.state,
+            stateName: location.stateName,
+            city: location.city,
+            cityId: location.cityId,
+            metaCityKey: location.metaCityKey,
+          },
+        }),
+      );
+    }
+  }
+
+  private compactMetaPayload<T extends Record<string, string | number | undefined | null>>(payload: T): MetaAdSetPayload {
+    return Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+    ) as MetaAdSetPayload;
   }
 
   private logCreativePayload(

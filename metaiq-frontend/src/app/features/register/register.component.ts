@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
@@ -25,11 +27,11 @@ export class RegisterComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   readonly enablePublicRegister = environment.enablePublicRegister;
-  loading = false;
+  isSubmitting = false;
   states: IbgeState[] = [];
   cities: IbgeCity[] = [];
-  message = '';
-  messageType: 'error' | 'info' = 'info';
+  errorMessage: string | null = null;
+  infoMessage: string | null = null;
 
   readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.minLength(2)]],
@@ -63,8 +65,7 @@ export class RegisterComponent implements OnInit {
           this.states = [...states].sort((a, b) => a.name.localeCompare(b.name));
         },
         error: () => {
-          this.messageType = 'info';
-          this.message = 'Nao foi possivel carregar os estados agora. Voce ainda pode tentar novamente.';
+          this.setInfoMessageDeferred('Não foi possível carregar os estados agora. Você ainda pode tentar novamente.');
         },
       });
 
@@ -85,8 +86,7 @@ export class RegisterComponent implements OnInit {
               this.cities = [...cities].sort((a, b) => a.name.localeCompare(b.name));
             },
             error: () => {
-              this.messageType = 'info';
-              this.message = 'Nao foi possivel carregar as cidades agora.';
+              this.setInfoMessageDeferred('Não foi possível carregar as cidades agora.');
             },
           });
       });
@@ -94,42 +94,43 @@ export class RegisterComponent implements OnInit {
 
   submit(): void {
     if (!this.enablePublicRegister) {
-      this.messageType = 'info';
-      this.message = 'Cadastro indisponivel no momento.';
+      this.clearMessages();
+      this.infoMessage = 'Novas contas estão sendo liberadas por janela operacional.';
       return;
     }
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.messageType = 'error';
-      this.message = 'Verifique os dados e tente novamente.';
+      this.clearMessages();
+      this.errorMessage = 'Verifique os dados e tente novamente.';
       return;
     }
 
     if (this.form.value.password !== this.form.value.confirmPassword) {
       this.form.controls.confirmPassword.setErrors({ mismatch: true });
       this.form.controls.confirmPassword.markAsTouched();
-      this.messageType = 'error';
-      this.message = 'Senha e confirmacao precisam ser iguais.';
+      this.clearMessages();
+      this.errorMessage = 'Senha e confirmação precisam ser iguais.';
       return;
     }
 
-    this.loading = true;
-    this.message = '';
+    this.clearMessages();
+    this.isSubmitting = true;
 
-    const businessSegment = this.cleanOptional(this.form.value.businessSegment);
-    const website = this.cleanOptional(this.form.value.website);
-    const instagram = this.cleanOptional(this.form.value.instagram);
-    const whatsapp = this.cleanOptional(this.form.value.whatsapp);
+    const payload = this.form.getRawValue();
+    const businessSegment = this.cleanOptional(payload.businessSegment);
+    const website = this.cleanOptional(payload.website);
+    const instagram = this.cleanOptional(payload.instagram);
+    const whatsapp = this.cleanOptional(payload.whatsapp);
 
     const registerPayload: RegisterRequest = {
       accountType: 'INDIVIDUAL',
-      name: this.form.value.name!.trim(),
-      email: this.form.value.email!.trim(),
-      password: this.form.value.password!,
-      businessName: this.form.value.businessName!.trim(),
-      defaultState: this.form.value.defaultState!.trim().toUpperCase(),
-      defaultCity: this.form.value.defaultCity!.trim(),
+      name: payload.name!.trim(),
+      email: payload.email!.trim(),
+      password: payload.password!,
+      businessName: payload.businessName!.trim(),
+      defaultState: payload.defaultState!.trim().toUpperCase(),
+      defaultCity: payload.defaultCity!.trim(),
       ...(businessSegment ? { businessSegment } : {}),
       ...(website ? { website } : {}),
       ...(instagram ? { instagram } : {}),
@@ -137,30 +138,23 @@ export class RegisterComponent implements OnInit {
     };
 
     this.authService.register(registerPayload)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(
+        finalize(() => {
+          this.isSubmitting = false;
+          console.log('REGISTER FINALIZE - loading desligado');
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
       .subscribe({
         next: () => {
-          this.loading = false;
-          this.ui.showSuccess('Conta criada', 'Sua conta ja esta pronta para criar campanhas.');
+          this.ui.showSuccess('Conta criada', 'Sua conta já está pronta para estruturar campanhas.');
           this.router.navigate(['/campaigns'], {
             queryParams: { action: 'create', createMode: 'manual' },
           });
         },
-        error: (err) => {
-          setTimeout(() => {
-            this.loading = false;
-            const rawMessage = typeof err?.message === 'string' ? err.message.toLowerCase() : '';
-            if (rawMessage.includes('email já cadastrado') || rawMessage.includes('email ja cadastrado') || rawMessage.includes('email já em uso') || rawMessage.includes('email ja em uso')) {
-              this.message = 'Esse email ja esta em uso.';
-            } else if (err?.status === 400 && typeof err?.message === 'string' && err.message.trim()) {
-              this.message = err.message;
-            } else if (rawMessage.includes('senha')) {
-              this.message = 'Verifique os dados e tente novamente.';
-            } else {
-              this.message = 'Nao foi possivel criar sua conta agora.';
-            }
-            this.messageType = 'error';
-          });
+        error: (err: HttpErrorResponse) => {
+          console.error('REGISTER ERROR:', err);
+          this.errorMessage = this.resolveRegisterErrorMessage(err);
         },
       });
   }
@@ -168,9 +162,9 @@ export class RegisterComponent implements OnInit {
   fieldError(fieldName: keyof typeof this.form.controls): string {
     const field = this.form.controls[fieldName];
     if (!field.touched || !field.errors) return '';
-    if (field.errors['required']) return 'Campo obrigatorio.';
-    if (field.errors['email']) return 'Email invalido.';
-    if (field.errors['minlength']) return `Minimo de ${field.errors['minlength'].requiredLength} caracteres.`;
+    if (field.errors['required']) return 'Campo obrigatório.';
+    if (field.errors['email']) return 'Email inválido.';
+    if (field.errors['minlength']) return `Mínimo de ${field.errors['minlength'].requiredLength} caracteres.`;
     if (field.errors['pattern']) {
       if (fieldName === 'website') return 'Use uma URL com https://';
     }
@@ -181,5 +175,46 @@ export class RegisterComponent implements OnInit {
   private cleanOptional(value: string | null | undefined): string | undefined {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
+  }
+
+  private resolveRegisterErrorMessage(error: HttpErrorResponse | { status?: number; error?: { message?: string | string[] } | null; message?: string; details?: { message?: string | string[] } | null }): string {
+    if (error?.status === 409) {
+      return 'Este email já está cadastrado. Faça login ou use outro email.';
+    }
+
+    const errorWithDetails = error as { details?: { message?: string | string[] } | null };
+    const backendMessage = this.extractErrorMessage(error?.error)
+      || this.extractErrorMessage(errorWithDetails.details)
+      || (typeof error?.message === 'string' ? error.message.trim() : '');
+
+    return backendMessage || 'Não foi possível criar sua conta. Tente novamente.';
+  }
+
+  private extractErrorMessage(source: { message?: string | string[] } | null | undefined): string {
+    if (!source) {
+      return '';
+    }
+
+    if (typeof source.message === 'string') {
+      return source.message.trim();
+    }
+
+    if (Array.isArray(source.message)) {
+      return source.message.map((item) => String(item).trim()).filter(Boolean).join(' ');
+    }
+
+    return '';
+  }
+
+  private clearMessages(): void {
+    this.errorMessage = null;
+    this.infoMessage = null;
+  }
+
+  private setInfoMessageDeferred(message: string): void {
+    queueMicrotask(() => {
+      this.errorMessage = null;
+      this.infoMessage = message;
+    });
   }
 }

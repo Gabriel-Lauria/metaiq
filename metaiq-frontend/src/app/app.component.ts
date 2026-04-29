@@ -43,7 +43,6 @@ export class AppComponent {
   isAuthenticated$ = this.authService.isAuthenticated$;
   currentUser$ = this.authService.currentUser$;
   currentRole$ = this.authService.currentRole$;
-  currentTitle = 'Dashboard';
   today = new Date();
   sidebarOpen = signal(this.getSavedSidebarState());
   sidebarOverlayOpen = signal(false);
@@ -132,7 +131,6 @@ export class AppComponent {
     this.router.events
       .pipe(filter((event) => event instanceof NavigationEnd))
       .subscribe(() => {
-        this.updatePageTitle();
         if (this.isSmallScreen()) {
           this.sidebarOpen.set(false);
           this.sidebarOverlayOpen.set(false);
@@ -156,8 +154,12 @@ export class AppComponent {
     }
   }
 
-  private updatePageTitle(): void {
-    const url = this.router.url;
+  get currentTitle(): string {
+    return this.resolvePageTitle(this.router.url);
+  }
+
+  private resolvePageTitle(url: string): string {
+    const normalizedUrl = url.split('?')[0]?.split('#')[0] || url;
     const role = this.authService.getCurrentRole();
     const isIndividual = this.accountContext.isIndividualAccount();
     const titles: { [key: string]: string } = {
@@ -180,7 +182,7 @@ export class AppComponent {
       '/manager/integrations': 'Integrações',
       '/my-company': 'Minha empresa',
     };
-    this.currentTitle = titles[url] || 'Dashboard';
+    return titles[normalizedUrl] || 'Dashboard';
   }
 
   toggleSidebar(): void {

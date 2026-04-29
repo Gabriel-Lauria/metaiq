@@ -6,6 +6,14 @@ const IMAGE_FORMAT_PATTERN = /^(avif|gif|jpe?g|png|webp)$/i;
 const BLOCKED_IMAGE_HOSTS = new Set([
   'google.com',
   'www.google.com',
+  'tbn0.gstatic.com',
+  'tbn1.gstatic.com',
+  'tbn2.gstatic.com',
+  'tbn3.gstatic.com',
+  'encrypted-tbn0.gstatic.com',
+  'encrypted-tbn1.gstatic.com',
+  'encrypted-tbn2.gstatic.com',
+  'encrypted-tbn3.gstatic.com',
   'l.facebook.com',
   'lm.facebook.com',
 ]);

@@ -80,6 +80,7 @@
 
 .field-span-2,
 .message,
+.auth-error,
 .actions {
   grid-column: 1 / -1;
 }
@@ -93,6 +94,18 @@
 .message.error {
   background: #fef2f2;
   color: #b91c1c;
+}
+
+.auth-error {
+  display: block;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid #fecaca;
 }
 
 .message.info {

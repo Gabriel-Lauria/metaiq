@@ -1,8 +1,10 @@
 import { Component, DestroyRef, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { finalize } from 'rxjs/operators';
 import { AuthService } from '../../core/services/auth.service';
 import { UiService } from '../../core/services/ui.service';
 
@@ -21,12 +23,13 @@ export class AuthComponent implements OnInit {
   message = '';
   messageType: 'error' | 'success' | 'info' = 'info';
   apiOffline = false;
-  readonly betaAccessUrl = 'https://www.metaiq.com.br';
+  readonly consultationUrl = 'https://www.metaiq.com.br';
 
   constructor(
     private fb: FormBuilder,
     private authService: AuthService,
     private uiService: UiService,
+    private route: ActivatedRoute,
     private router: Router,
     private destroyRef: DestroyRef
   ) {
@@ -35,8 +38,7 @@ export class AuthComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.authService.isAuthenticated()) {
-      const user = this.authService.getCurrentUser();
-      queueMicrotask(() => this.router.navigate([user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard']));
+      queueMicrotask(() => this.router.navigateByUrl(this.resolvePostLoginUrl()));
     }
   }
 
@@ -82,15 +84,19 @@ export class AuthComponent implements OnInit {
     if (this.isLogin) {
       this.authService
         .login(form.value)
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(
+          finalize(() => {
+            this.loading = false;
+          }),
+          takeUntilDestroyed(this.destroyRef),
+        )
         .subscribe({
           next: () => {
             this.uiService.showSuccess('Login realizado', 'Bem-vindo de volta!');
-            const user = this.authService.getCurrentUser();
-            this.router.navigate([user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard']);
+            this.router.navigateByUrl(this.resolvePostLoginUrl());
           },
-          error: (err) => {
-            this.deferAuthError(err, 'Erro ao fazer login. Verifique suas credenciais.');
+          error: (err: HttpErrorResponse) => {
+            this.handleAuthError(err, 'Erro ao fazer login. Verifique suas credenciais.');
           }
         });
     } else {
@@ -104,10 +110,14 @@ export class AuthComponent implements OnInit {
           defaultCity: '',
           defaultState: '',
         })
-        .pipe(takeUntilDestroyed(this.destroyRef))
+        .pipe(
+          finalize(() => {
+            this.loading = false;
+          }),
+          takeUntilDestroyed(this.destroyRef),
+        )
         .subscribe({
           next: () => {
-            this.loading = false;
             this.uiService.showSuccess('Conta criada', 'Sua conta foi criada com sucesso! Faça login para continuar.');
             this.isLogin = true;
             this.loginForm.patchValue({
@@ -116,15 +126,16 @@ export class AuthComponent implements OnInit {
             });
             this.setMessage('success', 'Conta criada. Confira os dados e entre.');
           },
-          error: (err) => {
-            this.deferAuthError(err, 'Erro ao criar conta. Tente novamente.');
+          error: (err: HttpErrorResponse) => {
+            console.error('REGISTER ERROR:', err);
+            this.handleRegisterError(err);
           }
         });
     }
   }
 
-  requestBetaAccess(): void {
-    window.open(this.betaAccessUrl, '_blank', 'noopener');
+  requestConsultation(): void {
+    window.open(this.consultationUrl, '_blank', 'noopener');
   }
 
   getFieldError(form: FormGroup, fieldName: string): string {
@@ -157,14 +168,47 @@ export class AuthComponent implements OnInit {
 
   private handleAuthError(err: any, fallback: string): void {
     this.apiOffline = err?.status === 0;
-    const offlineMessage = 'Backend offline. Inicie o backend em http://localhost:3004 e tente novamente.';
+    const offlineMessage = 'Não foi possível conectar ao servidor agora. Tente novamente em instantes.';
     this.setMessage('error', this.apiOffline ? offlineMessage : err?.message || fallback);
   }
 
-  private deferAuthError(err: any, fallback: string): void {
-    setTimeout(() => {
-      this.loading = false;
-      this.handleAuthError(err, fallback);
-    });
+  private handleRegisterError(error: HttpErrorResponse): void {
+    this.apiOffline = error.status === 0;
+
+    if (error.status === 409) {
+      this.setMessage('error', 'Este email já está cadastrado. Faça login ou use outro email.');
+      return;
+    }
+
+    const backendMessage = this.extractBackendMessage(error.error);
+    const fallback = backendMessage || error.message || 'Não foi possível criar sua conta. Tente novamente.';
+    this.setMessage('error', this.apiOffline ? 'Não foi possível conectar ao servidor agora. Tente novamente em instantes.' : fallback);
+  }
+
+  private extractBackendMessage(source: unknown): string {
+    if (!source || typeof source !== 'object') {
+      return '';
+    }
+
+    const candidate = source as { message?: string | string[] };
+    if (typeof candidate.message === 'string') {
+      return candidate.message.trim();
+    }
+
+    if (Array.isArray(candidate.message)) {
+      return candidate.message.map((item) => String(item).trim()).filter(Boolean).join(' ');
+    }
+
+    return '';
+  }
+
+  private resolvePostLoginUrl(): string {
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl')?.trim();
+    if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
+      return returnUrl;
+    }
+
+    const user = this.authService.getCurrentUser();
+    return user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard';
   }
 }

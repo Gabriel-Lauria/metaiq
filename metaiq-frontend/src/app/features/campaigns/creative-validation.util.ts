@@ -30,7 +30,22 @@ export function isLikelyDirectImageUrl(value: string): boolean {
     const hostname = parsed.hostname.toLowerCase();
     const pathname = parsed.pathname.toLowerCase();
 
-    if (['google.com', 'www.google.com', 'l.facebook.com', 'lm.facebook.com'].includes(hostname)) {
+    if (
+      [
+        'google.com',
+        'www.google.com',
+        'tbn0.gstatic.com',
+        'tbn1.gstatic.com',
+        'tbn2.gstatic.com',
+        'tbn3.gstatic.com',
+        'encrypted-tbn0.gstatic.com',
+        'encrypted-tbn1.gstatic.com',
+        'encrypted-tbn2.gstatic.com',
+        'encrypted-tbn3.gstatic.com',
+        'l.facebook.com',
+        'lm.facebook.com',
+      ].includes(hostname)
+    ) {
       return false;
     }
 

@@ -69,6 +69,25 @@ function downloadedImageResponse() {
   };
 }
 
+function createCampaignPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    name: 'Campanha MVP',
+    objective: 'OUTCOME_TRAFFIC',
+    dailyBudget: 25,
+    startTime: '2026-05-01T09:00:00.000Z',
+    endTime: '2026-05-08T22:00:00.000Z',
+    country: 'BR',
+    adAccountId: 'ad-account-1',
+    message: 'Mensagem do anuncio',
+    imageUrl: 'https://metaiq.dev/image.jpg',
+    placements: ['feed', 'stories'],
+    conversionEvent: 'Purchase',
+    utmSource: 'meta',
+    utmMedium: 'paid-social',
+    ...overrides,
+  };
+}
+
 describe('MetaIntegrationService OAuth', () => {
   const user: AuthenticatedUser = {
     id: 'user-1',
@@ -747,15 +766,7 @@ describe('MetaIntegrationService OAuth', () => {
       .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
       .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
 
-    const result = await service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    });
+    const result = await service.createCampaignForUser(user, 'store-1', createCampaignPayload());
 
     const campaignCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/campaigns'));
     expect(campaignCall).toEqual([
@@ -770,11 +781,16 @@ describe('MetaIntegrationService OAuth', () => {
     const creativeRequest = creativeCall?.[1] as URLSearchParams;
     const adSetRequest = adSetCall?.[1] as URLSearchParams;
     const objectStorySpec = JSON.parse(creativeRequest.get('object_story_spec') as string);
+    const targeting = JSON.parse(adSetRequest.get('targeting') as string);
     expect(objectStorySpec.page_id).toBe('page-1');
     expect(String(campaignCall?.[1])).toContain('status=PAUSED');
     expect(String(adSetRequest)).toContain('optimization_goal=LINK_CLICKS');
     expect(String(adSetRequest)).toContain('billing_event=IMPRESSIONS');
     expect(String(adSetRequest)).toContain('daily_budget=2500');
+    expect(String(adSetRequest)).toContain('start_time=2026-05-01T09%3A00%3A00.000Z');
+    expect(String(adSetRequest)).toContain('end_time=2026-05-08T22%3A00%3A00.000Z');
+    expect(targeting.geo_locations).toEqual({ countries: ['BR'] });
+    expect(targeting.geo_locations.cities).toBeUndefined();
     expect(String(creativeRequest)).toContain('image_hash');
     expect(objectStorySpec.link_data.call_to_action.type).toBe('LEARN_MORE');
     expect(objectStorySpec.link_data.image_hash).toBe('meta-image-hash-1');
@@ -839,21 +855,152 @@ describe('MetaIntegrationService OAuth', () => {
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-creative-1' } } as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-ad-1' } } as any);
 
-    const result = await service.createCampaignForUser(user, 'store-1', {
+    const result = await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha com asset',
       objective: 'OUTCOME_TRAFFIC',
       dailyBudget: 80,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
       message: 'Mensagem principal',
       assetId: 'asset-1',
+      imageUrl: undefined,
       destinationUrl: 'https://metaiq.dev/oferta',
       headline: 'Headline',
       initialStatus: 'PAUSED',
-    });
+    }));
 
     expect(result.status).toBe('CREATED');
     expect(assetsService.getAssetForStore).toHaveBeenCalledWith('store-1', 'asset-1');
+  });
+
+  it('envia promoted_object, special_ad_categories e placements reais para campanhas de leads', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      active: true,
+      syncStatus: SyncStatus.SUCCESS,
+    });
+    campaignRepo.findOne.mockResolvedValue(null);
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce(downloadedImageResponse() as any);
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
+      .mockResolvedValueOnce({ data: { id: 'adset-meta-1' } })
+      .mockResolvedValueOnce(metaImageUploadResponse())
+      .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
+      .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
+
+    await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      objective: 'OUTCOME_LEADS',
+      pixelId: 'pixel-123',
+      conversionEvent: 'Lead',
+      placements: ['feed', 'reels', 'messenger'],
+      specialAdCategories: ['HOUSING'],
+      destinationUrl: 'https://metaiq.dev/oferta',
+      utmCampaign: 'leads-q2',
+      utmContent: 'hero-1',
+      utmTerm: 'crm',
+    }));
+
+    const campaignCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/campaigns'));
+    const adSetCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/adsets'));
+    const creativeCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/adcreatives'));
+    const adSetRequest = adSetCall?.[1] as URLSearchParams;
+    const creativeRequest = creativeCall?.[1] as URLSearchParams;
+    const targeting = JSON.parse(adSetRequest.get('targeting') as string);
+    const promotedObject = JSON.parse(adSetRequest.get('promoted_object') as string);
+    const objectStorySpec = JSON.parse(creativeRequest.get('object_story_spec') as string);
+
+    expect(String(campaignCall?.[1])).toContain('special_ad_categories=%5B%22HOUSING%22%5D');
+    expect(String(adSetRequest)).toContain('optimization_goal=OFFSITE_CONVERSIONS');
+    expect(promotedObject).toEqual({ pixel_id: 'pixel-123', custom_event_type: 'LEAD' });
+    expect(targeting.publisher_platforms).toEqual(expect.arrayContaining(['facebook', 'instagram', 'messenger']));
+    expect(targeting.facebook_positions).toEqual(expect.arrayContaining(['feed', 'facebook_reels']));
+    expect(targeting.instagram_positions).toEqual(expect.arrayContaining(['stream', 'reels']));
+    expect(targeting.messenger_positions).toEqual(expect.arrayContaining(['messenger_home']));
+    expect(objectStorySpec.link_data.link).toContain('utm_source=meta');
+    expect(objectStorySpec.link_data.link).toContain('utm_medium=paid-social');
+    expect(objectStorySpec.link_data.link).toContain('utm_campaign=leads-q2');
+    expect(objectStorySpec.link_data.link).toContain('utm_content=hero-1');
+    expect(objectStorySpec.link_data.link).toContain('utm_term=crm');
+  });
+
+  it('converte orçamento para centavos e remove cidade IBGE do payload do adset', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      active: true,
+      syncStatus: SyncStatus.SUCCESS,
+    });
+    campaignRepo.findOne.mockResolvedValue(null);
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce(downloadedImageResponse() as any);
+    mockedAxios.post
+      .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
+      .mockResolvedValueOnce({ data: { id: 'adset-meta-1' } })
+      .mockResolvedValueOnce(metaImageUploadResponse())
+      .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
+      .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
+
+    await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      dailyBudget: 50,
+      state: 'PR',
+      stateName: 'Paraná',
+      city: 'Curitiba',
+      cityId: 4106902,
+    }));
+
+    const adSetCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/adsets'));
+    const adSetRequest = adSetCall?.[1] as URLSearchParams;
+    const targeting = JSON.parse(adSetRequest.get('targeting') as string);
+
+    expect(String(adSetRequest)).toContain('daily_budget=5000');
+    expect(targeting.geo_locations).toEqual({ countries: ['BR'] });
+    expect(targeting.geo_locations.cities).toBeUndefined();
+  });
+
+  it('bloqueia campanha de leads sem pixel antes de chamar a Meta', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      objective: 'OUTCOME_LEADS',
+      pixelId: '',
+      conversionEvent: 'Lead',
+    }))).rejects.toThrow('Campanhas de leads exigem pixel configurado antes da publicação.');
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
   it('normaliza CTA amigavel da UI antes de enviar o creative para a Meta', async () => {
@@ -883,16 +1030,10 @@ describe('MetaIntegrationService OAuth', () => {
       .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
       .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
 
-    await service.createCampaignForUser(user, 'store-1', {
+    await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha CTA',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
       cta: 'Fale conosco' as any,
-    });
+    }));
 
     const creativeCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/adcreatives'));
     expect(creativeCall).toBeDefined();
@@ -936,12 +1077,10 @@ describe('MetaIntegrationService OAuth', () => {
       .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
       .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
 
-    await service.createCampaignForUser(user, 'store-1', {
+    await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Pet Shop Tráfego Qualificado - Visitas Curitiba',
       objective: 'OUTCOME_TRAFFIC',
       dailyBudget: 50,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
       message: 'Seu pet merece o melhor cuidado! Agende serviços com segurança e conveniência. Clique e saiba mais sobre nossos planos.',
       imageUrl: 'https://picsum.photos/1200/800',
       destinationUrl: 'https://www.metaiq.com.br',
@@ -949,7 +1088,7 @@ describe('MetaIntegrationService OAuth', () => {
       description: 'Tráfego com leitura clara de público, oferta e próximo passo.',
       cta: 'LEARN_MORE',
       initialStatus: 'PAUSED',
-    });
+    }));
 
     const creativeCall = (mockedAxios.post as jest.Mock).mock.calls.find((call) => String(call[0]).includes('/adcreatives'));
     expect(creativeCall).toBeDefined();
@@ -957,7 +1096,9 @@ describe('MetaIntegrationService OAuth', () => {
     const objectStorySpec = JSON.parse(creativeRequest.get('object_story_spec') as string);
 
     expect(objectStorySpec.page_id).toBe('1043259782209836');
-    expect(objectStorySpec.link_data.link).toBe('https://www.metaiq.com.br');
+    expect(objectStorySpec.link_data.link).toContain('https://www.metaiq.com.br/');
+    expect(objectStorySpec.link_data.link).toContain('utm_source=meta');
+    expect(objectStorySpec.link_data.link).toContain('utm_medium=paid-social');
     expect(objectStorySpec.link_data.name).toBe('Pet shop com mais confiança');
     expect(objectStorySpec.link_data.description).toBe('Tráfego com leitura clara de público, oferta e próximo passo.');
     expect(objectStorySpec.link_data.call_to_action.type).toBe('LEARN_MORE');
@@ -982,15 +1123,10 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha imagem invalida',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
       imageUrl: 'https://www.google.com/imgres?imgurl=https://metaiq.dev/image.jpg',
-    })).rejects.toThrow('imageUrl deve apontar para uma imagem direta válida');
+    }))).rejects.toThrow('imageUrl deve apontar para uma imagem direta válida');
 
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
@@ -1005,15 +1141,9 @@ describe('MetaIntegrationService OAuth', () => {
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
     adAccountRepo.findOne.mockResolvedValue(null);
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       adAccountId: 'ad-account-other-store',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toThrow('AdAccount Meta não encontrada');
+    }))).rejects.toThrow('AdAccount Meta não encontrada');
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
@@ -1037,15 +1167,7 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toMatchObject({
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
       response: expect.objectContaining({
         message: 'pageId é obrigatório para criar o criativo',
         step: 'creative',
@@ -1074,15 +1196,9 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha com URL invalida',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         message: 'destination_url inválido. Use uma URL https válida para o criativo.',
       }),
@@ -1130,15 +1246,7 @@ describe('MetaIntegrationService OAuth', () => {
         },
       });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toMatchObject({
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'creative',
         message: expect.stringContaining('Erro na criação do criativo'),
@@ -1195,16 +1303,9 @@ describe('MetaIntegrationService OAuth', () => {
       },
     });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'key-campaign-fail',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'campaign',
         executionId: 'creation-1',
@@ -1246,15 +1347,7 @@ describe('MetaIntegrationService OAuth', () => {
         },
       });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toMatchObject({
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'adset',
         partialIds: { campaignId: 'campaign-meta-1' },
@@ -1297,15 +1390,7 @@ describe('MetaIntegrationService OAuth', () => {
         },
       });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toMatchObject({
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'ad',
         partialIds: {
@@ -1350,16 +1435,9 @@ describe('MetaIntegrationService OAuth', () => {
       .mockResolvedValueOnce({ data: { id: 'creative-meta-1' } })
       .mockResolvedValueOnce({ data: { id: 'ad-meta-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'key-persist-fail',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         step: 'persist',
         executionStatus: MetaCampaignCreationStatus.PARTIAL,
@@ -1411,16 +1489,9 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'same-key',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         executionId: 'creation-running',
         executionStatus: MetaCampaignCreationStatus.IN_PROGRESS,
@@ -1460,16 +1531,9 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    const result = await service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    const result = await service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'same-key',
-    });
+    }));
 
     expect(result).toEqual(expect.objectContaining({
       executionId: 'creation-done',
@@ -1496,16 +1560,13 @@ describe('MetaIntegrationService OAuth', () => {
       metaAdId: 'ad-meta-1',
     });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha diferente',
-      objective: 'OUTCOME_TRAFFIC',
       dailyBudget: 99,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
       message: 'Outra mensagem',
       imageUrl: 'https://metaiq.dev/outra-image.jpg',
       idempotencyKey: 'same-key',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         executionId: 'creation-done',
         executionStatus: MetaCampaignCreationStatus.COMPLETED,
@@ -1541,16 +1602,9 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'same-key',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         executionId: 'creation-running',
         executionStatus: MetaCampaignCreationStatus.IN_PROGRESS,
@@ -1579,16 +1633,9 @@ describe('MetaIntegrationService OAuth', () => {
     });
     const hashSpy = jest.spyOn<any, any>(service as any, 'hashPayload').mockReturnValue('expected-hash');
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       idempotencyKey: 'same-key',
-    })).rejects.toMatchObject({
+    }))).rejects.toMatchObject({
       response: expect.objectContaining({
         executionId: 'creation-partial',
         executionStatus: MetaCampaignCreationStatus.PARTIAL,
@@ -1621,30 +1668,14 @@ describe('MetaIntegrationService OAuth', () => {
       active: true,
     });
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toThrow('AdAccount Meta não encontrada para a store informada');
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toThrow('AdAccount Meta não encontrada para a store informada');
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
   it('bloqueia criação de campanha sem acesso à store', async () => {
     accessScope.validateStoreAccess.mockRejectedValueOnce(new ForbiddenException('Usuário sem acesso à store'));
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toThrow('Usuário sem acesso à store');
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toThrow('Usuário sem acesso à store');
     expect(campaignCreationRepo.save).not.toHaveBeenCalled();
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
@@ -1657,15 +1688,7 @@ describe('MetaIntegrationService OAuth', () => {
       getOne: jest.fn(async () => integration({ status: IntegrationStatus.NOT_CONNECTED })),
     }));
 
-    await expect(service.createCampaignForUser(user, 'store-1', {
-      name: 'Campanha MVP',
-      objective: 'OUTCOME_TRAFFIC',
-      dailyBudget: 25,
-      country: 'BR',
-      adAccountId: 'ad-account-1',
-      message: 'Mensagem do anuncio',
-      imageUrl: 'https://metaiq.dev/image.jpg',
-    })).rejects.toThrow('Store não está conectada à Meta');
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toThrow('Store não está conectada à Meta');
     expect(campaignCreationRepo.save).not.toHaveBeenCalled();
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });

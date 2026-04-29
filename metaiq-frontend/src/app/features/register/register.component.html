@@ -1,17 +1,17 @@
 <section class="register-shell">
   <div class="register-card">
     <div class="register-header">
-      <p class="eyebrow">Cadastro beta</p>
-      <h1>Criar minha conta</h1>
-      <p>Entre no MetaIQ como conta individual e comece sua primeira campanha logo depois do cadastro.</p>
+      <p class="eyebrow">MetaIQ</p>
+      <h1>Abra sua operação com mais clareza desde a primeira campanha.</h1>
+      <p>Cadastre sua conta, organize a empresa e comece a operar com um fluxo pensado para decisão, revisão e crescimento.</p>
     </div>
 
     <div class="beta-banner" *ngIf="enablePublicRegister">
-      Voce esta usando uma versao inicial do MetaIQ.
+      Sua conta nasce pronta para estruturar campanhas, contexto comercial e gestão de resultado no mesmo ambiente.
     </div>
 
     <div class="beta-banner warning" *ngIf="!enablePublicRegister">
-      Cadastro indisponivel no momento.
+      Novas contas estão sendo liberadas por janela operacional.
     </div>
 
     <form class="register-form" [formGroup]="form" (ngSubmit)="submit()" novalidate *ngIf="enablePublicRegister">
@@ -84,12 +84,12 @@
         <input type="text" formControlName="whatsapp" placeholder="(11) 99999-9999" />
       </label>
 
-      <div class="message error" *ngIf="messageType === 'error' && message">{{ message }}</div>
-      <div class="message info" *ngIf="messageType === 'info' && message">{{ message }}</div>
+      <div class="auth-error" *ngIf="errorMessage">{{ errorMessage }}</div>
+      <div class="message info" *ngIf="infoMessage">{{ infoMessage }}</div>
 
       <div class="actions">
-        <button class="btn btn-primary" type="submit" [disabled]="loading">
-          {{ loading ? 'Criando conta...' : 'Criar minha conta' }}
+        <button class="btn btn-primary" type="submit" [disabled]="isSubmitting">
+          {{ isSubmitting ? 'Criando conta...' : 'Criar conta' }}
         </button>
         <a class="btn btn-secondary" routerLink="/auth">Entrar</a>
       </div>

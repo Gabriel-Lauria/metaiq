@@ -93,6 +93,7 @@ describe('meta-creative.validation', () => {
   it('mantem heuristica conservadora para imagem direta', () => {
     expect(isLikelyDirectImageUrl('https://cdn.metaiq.dev/uploads/criativo')).toBe(true);
     expect(isLikelyDirectImageUrl('https://metaiq.dev/preview/oferta.html')).toBe(false);
+    expect(isLikelyDirectImageUrl('https://encrypted-tbn0.gstatic.com/images?q=tbn:demo')).toBe(false);
   });
 
   it('sanitiza campos vazios e preserva mapping correto para link_data', () => {

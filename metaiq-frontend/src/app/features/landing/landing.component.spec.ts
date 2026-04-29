@@ -31,13 +31,13 @@ describe('LandingComponent', () => {
   });
 
   it('renderiza CTA para criar conta', () => {
-    expect(fixture.nativeElement.textContent).toContain('Criar minha conta');
+    expect(fixture.nativeElement.textContent).toContain('Começar operação');
   });
 
   it('aponta o CTA principal para /register', () => {
     const registerLink = fixture.debugElement
       .queryAll(By.directive(RouterLink))
-      .find((item) => item.nativeElement.textContent.includes('Criar minha conta'))
+      .find((item) => item.nativeElement.textContent.includes('Começar operação'))
       ?.nativeElement as HTMLAnchorElement | undefined;
 
     expect(registerLink?.getAttribute('href')).toContain('/register');

@@ -50,6 +50,23 @@ interface ValidatedMetaCampaignContext {
   objective: string;
 }
 
+const SUPPORTED_META_CREATE_OBJECTIVES = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH']);
+const SUPPORTED_META_PLACEMENTS = new Set([
+  'feed',
+  'stories',
+  'reels',
+  'explore',
+  'messenger',
+  'audience_network',
+]);
+const SUPPORTED_META_SPECIAL_AD_CATEGORIES = new Set([
+  'CREDIT',
+  'EMPLOYMENT',
+  'HOUSING',
+  'ISSUES_ELECTIONS_POLITICS',
+  'NONE',
+]);
+
 @Injectable()
 export class MetaIntegrationService {
   private readonly logger = new Logger(MetaIntegrationService.name);
@@ -647,8 +664,8 @@ export class MetaIntegrationService {
 
   private async validateCanManage(storeId: string, user: AuthenticatedUser): Promise<void> {
     await this.accessScope.validateStoreAccess(user, storeId);
-    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL].includes(user.role)) {
-      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN e OPERATIONAL podem gerenciar integrações com Meta');
+    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL].includes(user.role)) {
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN, MANAGER e OPERATIONAL podem gerenciar integrações com Meta');
     }
   }
 
@@ -740,9 +757,8 @@ export class MetaIntegrationService {
   }
 
   private assertValidCampaignPayload(dto: CreateMetaCampaignDto, objective: string, destinationUrl: string): void {
-    const allowedObjectives = new Set(['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH', 'OUTCOME_SALES']);
-    if (!allowedObjectives.has(objective)) {
-      throw new BadRequestException(`Objetivo Meta não suportado no MVP: ${dto.objective}`);
+    if (!SUPPORTED_META_CREATE_OBJECTIVES.has(objective)) {
+      throw new BadRequestException(`Objetivo Meta ainda não suportado para publicação segura: ${dto.objective}`);
     }
 
     if (!dto.name?.trim()) {
@@ -755,6 +771,22 @@ export class MetaIntegrationService {
 
     if (!Number.isFinite(Number(dto.dailyBudget)) || Number(dto.dailyBudget) <= 0) {
       throw new BadRequestException('dailyBudget deve ser maior que zero para criar o adset.');
+    }
+
+    const startAt = Date.parse(dto.startTime);
+    if (!Number.isFinite(startAt)) {
+      throw new BadRequestException('startTime deve ser uma data válida em ISO-8601.');
+    }
+
+    if (dto.endTime) {
+      const endAt = Date.parse(dto.endTime);
+      if (!Number.isFinite(endAt)) {
+        throw new BadRequestException('endTime deve ser uma data válida em ISO-8601.');
+      }
+
+      if (endAt <= startAt) {
+        throw new BadRequestException('endTime deve ser posterior ao startTime.');
+      }
     }
 
     if (!/^[A-Z]{2}$/.test(dto.country.trim().toUpperCase())) {
@@ -787,6 +819,34 @@ export class MetaIntegrationService {
 
     if (!isValidMetaHttpsUrl(destinationUrl)) {
       throw new BadRequestException('destination_url inválido. Use uma URL https válida para o criativo.');
+    }
+
+    if (!dto.placements?.length) {
+      throw new BadRequestException('placements é obrigatório. Selecione ao menos um posicionamento real para a entrega.');
+    }
+
+    const invalidPlacements = (dto.placements || []).filter((placement) => !SUPPORTED_META_PLACEMENTS.has(placement));
+    if (invalidPlacements.length) {
+      throw new BadRequestException(`Placements inválidos para a Meta: ${invalidPlacements.join(', ')}`);
+    }
+
+    if (objective === 'OUTCOME_LEADS') {
+      if (!dto.pixelId?.trim()) {
+        throw new BadRequestException('Campanhas de leads exigem pixel configurado antes da publicação.');
+      }
+
+      if (!dto.conversionEvent?.trim()) {
+        throw new BadRequestException('Campanhas de leads exigem conversionEvent para otimização real na Meta.');
+      }
+    }
+
+    const invalidCategories = (dto.specialAdCategories || [])
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+      .filter((item) => !SUPPORTED_META_SPECIAL_AD_CATEGORIES.has(item));
+
+    if (invalidCategories.length) {
+      throw new BadRequestException(`specialAdCategories inválidas: ${invalidCategories.join(', ')}`);
     }
   }
 
@@ -872,11 +932,13 @@ export class MetaIntegrationService {
   }
 
   private resolveDestinationUrl(dto: CreateMetaCampaignDto, integration: StoreIntegration): string {
-    return (
+    const baseUrl = (
       dto.destinationUrl?.trim()
       || this.getMetadataString(integration.metadata, ['destinationUrl', 'websiteUrl', 'objectUrl'])
       || ''
     );
+
+    return this.appendUtmParameters(baseUrl, dto);
   }
 
   private normalizeMetaAdAccounts(rawAccounts: any[]): MetaAdAccountDto[] {
@@ -1080,6 +1142,8 @@ export class MetaIntegrationService {
       existingCampaign.status = dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
       existingCampaign.objective = this.normalizeLocalObjective(dto.objective);
       existingCampaign.dailyBudget = dto.dailyBudget;
+      existingCampaign.startTime = new Date(dto.startTime);
+      existingCampaign.endTime = dto.endTime ? new Date(dto.endTime) : null;
       existingCampaign.adAccountId = adAccount.id;
       existingCampaign.createdByUserId = existingCampaign.createdByUserId || requester.id;
       existingCampaign.lastSeenAt = now;
@@ -1094,7 +1158,8 @@ export class MetaIntegrationService {
         status: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
         objective: this.normalizeLocalObjective(dto.objective),
         dailyBudget: dto.dailyBudget,
-        startTime: now,
+        startTime: new Date(dto.startTime),
+        endTime: dto.endTime ? new Date(dto.endTime) : null,
         userId: requester.id,
         createdByUserId: requester.id,
         storeId,
@@ -1115,6 +1180,8 @@ export class MetaIntegrationService {
       name: dto.name.trim(),
       objective: dto.objective.trim().toUpperCase(),
       dailyBudget: Number(dto.dailyBudget),
+      startTime: dto.startTime,
+      endTime: dto.endTime?.trim() || null,
       country: dto.country.trim().toUpperCase(),
       adAccountId: dto.adAccountId,
       message: dto.message.trim(),
@@ -1129,21 +1196,42 @@ export class MetaIntegrationService {
       headline: dto.headline?.trim() || null,
       description: dto.description?.trim() || null,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : null,
+      pixelId: dto.pixelId?.trim() || null,
+      conversionEvent: dto.conversionEvent?.trim() || null,
+      placements: dto.placements?.map((item) => item.trim()).filter(Boolean) || [],
+      specialAdCategories: this.normalizeSpecialAdCategories(dto.specialAdCategories),
+      utmSource: dto.utmSource?.trim() || null,
+      utmMedium: dto.utmMedium?.trim() || null,
+      utmCampaign: dto.utmCampaign?.trim() || null,
+      utmContent: dto.utmContent?.trim() || null,
+      utmTerm: dto.utmTerm?.trim() || null,
       initialStatus: dto.initialStatus || 'PAUSED',
     };
   }
 
   private normalizeCreateCampaignDto(dto: CreateMetaCampaignDto): CreateMetaCampaignDto {
+    const fallbackStartTime = new Date().toISOString();
     return {
       ...dto,
       assetId: dto.assetId?.trim() || undefined,
       imageUrl: dto.imageUrl?.trim() || undefined,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : undefined,
+      startTime: dto.startTime?.trim() || fallbackStartTime,
+      endTime: dto.endTime?.trim() || undefined,
       state: dto.state?.trim().toUpperCase() || undefined,
       stateName: dto.stateName?.trim() || undefined,
       region: dto.region?.trim() || undefined,
       city: dto.city?.trim() || undefined,
       cityId: dto.cityId ? Number(dto.cityId) : undefined,
+      pixelId: dto.pixelId?.trim() || undefined,
+      conversionEvent: dto.conversionEvent?.trim() || undefined,
+      placements: dto.placements?.map((item) => item.trim()).filter(Boolean) || undefined,
+      specialAdCategories: this.normalizeSpecialAdCategories(dto.specialAdCategories),
+      utmSource: dto.utmSource?.trim() || undefined,
+      utmMedium: dto.utmMedium?.trim() || undefined,
+      utmCampaign: dto.utmCampaign?.trim() || undefined,
+      utmContent: dto.utmContent?.trim() || undefined,
+      utmTerm: dto.utmTerm?.trim() || undefined,
     };
   }
 
@@ -1516,7 +1604,12 @@ export class MetaIntegrationService {
     }
 
     if (step === 'adset') {
-      return 'Verifique daily_budget, país e segmentação mínima antes de repetir a criação do conjunto.';
+      if ((metaError?.message || '').toLowerCase().includes('type integer is expected')
+        || (metaError?.userMessage || '').toLowerCase().includes('type integer is expected')
+        || metaError?.subcode === 1885097) {
+        return 'O conjunto de anúncios falhou porque um campo obrigatório foi enviado vazio. Verifique orçamento, pixel ou localização.';
+      }
+      return 'Verifique daily_budget, pixel, evento de conversão, país, placements e segmentação mínima antes de repetir a criação do conjunto.';
     }
 
     if (step === 'campaign') {
@@ -1547,6 +1640,15 @@ export class MetaIntegrationService {
       headline: dto.headline?.trim() || null,
       description: dto.description?.trim() || null,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : null,
+      pixelId: dto.pixelId?.trim() || null,
+      conversionEvent: dto.conversionEvent?.trim() || null,
+      placements: dto.placements?.map((item) => item.trim()).filter(Boolean) || [],
+      specialAdCategories: this.normalizeSpecialAdCategories(dto.specialAdCategories) || [],
+      utmSource: dto.utmSource?.trim() || null,
+      utmMedium: dto.utmMedium?.trim() || null,
+      utmCampaign: dto.utmCampaign?.trim() || null,
+      utmContent: dto.utmContent?.trim() || null,
+      utmTerm: dto.utmTerm?.trim() || null,
       initialStatus: dto.initialStatus || 'PAUSED',
       targeting: {
         country: dto.country?.trim().toUpperCase() || null,
@@ -1755,6 +1857,48 @@ export class MetaIntegrationService {
     }
 
     return normalized || 'OUTCOME_TRAFFIC';
+  }
+
+  private normalizeSpecialAdCategories(values?: string[]): string[] | undefined {
+    const normalized = (values || [])
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+      .filter((item) => item !== 'NONE' && item !== 'NENHUMA');
+
+    if (!normalized.length) {
+      return undefined;
+    }
+
+    return Array.from(new Set(normalized));
+  }
+
+  private appendUtmParameters(urlValue: string, dto: Pick<CreateMetaCampaignDto, 'utmSource' | 'utmMedium' | 'utmCampaign' | 'utmContent' | 'utmTerm'>): string {
+    if (!urlValue?.trim()) {
+      return '';
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(urlValue.trim());
+    } catch {
+      return urlValue.trim();
+    }
+
+    const utmMap: Array<[string, string | undefined]> = [
+      ['utm_source', dto.utmSource?.trim()],
+      ['utm_medium', dto.utmMedium?.trim()],
+      ['utm_campaign', dto.utmCampaign?.trim()],
+      ['utm_content', dto.utmContent?.trim()],
+      ['utm_term', dto.utmTerm?.trim()],
+    ];
+
+    for (const [key, value] of utmMap) {
+      if (value) {
+        parsedUrl.searchParams.set(key, value);
+      }
+    }
+
+    return parsedUrl.toString();
   }
 
   private normalizeLocalObjective(objective: string): 'CONVERSIONS' | 'REACH' | 'TRAFFIC' | 'LEADS' {
@@ -2221,6 +2365,10 @@ export class MetaIntegrationService {
 
     if (step === 'persist') {
       return 'A Meta respondeu com sucesso, mas o sistema não conseguiu concluir a persistência local. Use o executionId para retomar ou reconciliar a campanha.';
+    }
+
+    if (step === 'adset') {
+      return 'O conjunto de anúncios falhou porque um campo obrigatório foi enviado vazio. Verifique orçamento, pixel ou localização.';
     }
 
     return hint;

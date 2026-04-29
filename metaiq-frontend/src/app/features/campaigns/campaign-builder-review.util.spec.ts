@@ -91,6 +91,14 @@ describe('buildReviewSignals', () => {
     expect(signals).toContain('cta-format');
   });
 
+  it('rejeita hosts instaveis de preview do Google para imageUrl', () => {
+    const state = buildState();
+    state.creative.imageUrl = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:demo';
+
+    expect(fieldInvalid(state, 'creative.imageUrl')).toBeTrue();
+    expect(buildReviewSignals(state).map((signal) => signal.id)).toContain('image-direct');
+  });
+
   it('passa a exigir https e headline para envio real', () => {
     const state = buildState();
     state.destination.websiteUrl = 'http://metaiq.dev/oferta';

@@ -67,16 +67,6 @@ export function buildMetaGeoLocations(location: NormalizedCampaignLocation): Met
     countries: [location.country],
   };
 
-  if (location.city) {
-    geoLocations.cities = [
-      {
-        name: location.city,
-        country: location.country,
-      },
-    ];
-    return sanitizeGeoLocations(geoLocations);
-  }
-
   return sanitizeGeoLocations(geoLocations);
 }
 

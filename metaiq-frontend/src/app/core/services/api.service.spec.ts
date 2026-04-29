@@ -9,6 +9,7 @@ describe('ApiService retry policy', () => {
     name: 'Campanha segura',
     objective: 'OUTCOME_TRAFFIC',
     dailyBudget: 100,
+    startTime: '2026-05-01T10:00:00.000Z',
     country: 'BR',
     adAccountId: 'ad-account-1',
     message: 'Mensagem principal',

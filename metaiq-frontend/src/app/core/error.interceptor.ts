@@ -6,6 +6,7 @@ import {
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { UiService } from './services/ui.service';
+import { addBreadcrumb, captureException, captureMessage } from './monitoring/sentry.config';
 
 interface BackendErrorBody {
   statusCode?: number;
@@ -27,6 +28,7 @@ interface BackendErrorBody {
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const uiService = inject(UiService);
+  addBreadcrumb(`HTTP ${req.method} ${req.url}`, 'http', 'info');
 
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
@@ -69,24 +71,36 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       } else if (error.status === 500) {
         // Erro interno do servidor
         userFriendlyMessage = 'Erro interno. Tente novamente.';
+        captureException(new Error(`API 500 em ${req.url}`), {
+          status: error.status,
+          url: req.url,
+          backendError,
+        });
         if (shouldShowNotification) {
           uiService.showError('Erro do servidor', userFriendlyMessage);
           shouldShowNotification = false;
         }
       } else if (error.status === 0) {
         // Conexão falhou
-        userFriendlyMessage = 'Backend indisponível. Inicie o servidor em http://localhost:3004 e tente novamente.';
+        userFriendlyMessage = 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.';
+        captureMessage(`Servidor indisponível em ${req.url}`, 'error');
         if (shouldShowNotification) {
-          uiService.showError('API offline', userFriendlyMessage);
+          uiService.showError('Servidor indisponível', userFriendlyMessage);
           shouldShowNotification = false;
         }
+      } else if (error.status === 502 || error.status === 503 || error.status === 504) {
+        captureException(new Error(`Falha operacional em ${req.url}`), {
+          status: error.status,
+          url: req.url,
+          backendError,
+        });
       }
 
       // Retornar erro padronizado
       return throwError(() => ({
         status: error.status,
         message: userFriendlyMessage,
-        error: backendError?.error,
+        error: backendError ?? error.error,
         step: backendError?.step,
         executionId: backendError?.executionId,
         executionStatus: backendError?.executionStatus,

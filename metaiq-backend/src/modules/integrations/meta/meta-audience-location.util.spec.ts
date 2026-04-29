@@ -74,7 +74,7 @@ describe('meta audience location utils', () => {
     } as any)).toThrow('Localização inconsistente no payload da campanha.');
   });
 
-  it('builds geo_locations with cities when city exists', () => {
+  it('builds geo_locations with conservative fallback when city exists sem chave Meta confiável', () => {
     const geo = buildMetaGeoLocations({
       country: 'BR',
       state: 'PR',
@@ -87,7 +87,6 @@ describe('meta audience location utils', () => {
 
     expect(geo).toEqual({
       countries: ['BR'],
-      cities: [{ name: 'Curitiba', country: 'BR' }],
     });
   });
 
