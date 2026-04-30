@@ -34,7 +34,7 @@ describe('app routes authorization', () => {
   });
 
   it('allows all authenticated roles to read campaigns, metrics and insights', () => {
-    for (const path of ['campaigns', 'metrics', 'insights']) {
+    for (const path of ['welcome', 'campaigns', 'metrics', 'insights']) {
       const route = routes.find((item) => item.path === path);
 
       expect(route).toBeTruthy();
@@ -42,16 +42,16 @@ describe('app routes authorization', () => {
     }
   });
 
-  it('allows admins and operational users to access Meta integrations without exposing it to managers or clients', () => {
+  it('allows manager access to Meta integrations without exposing it to clients', () => {
     const integrationsRoute = routes.find((route) => route.path === 'manager/integrations');
 
     expect(integrationsRoute).toBeTruthy();
     expect(integrationsRoute?.data?.['roles']).toEqual([
       Role.PLATFORM_ADMIN,
       Role.ADMIN,
+      Role.MANAGER,
       Role.OPERATIONAL,
     ]);
-    expect(integrationsRoute?.data?.['roles']).not.toContain(Role.MANAGER);
     expect(integrationsRoute?.data?.['roles']).not.toContain(Role.CLIENT);
   });
 

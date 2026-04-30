@@ -7,10 +7,12 @@ import { MetricsService } from './services/metrics.service';
 import { RequestContextService } from './services/request-context.service';
 import { CurrentUserService } from './services/current-user.service';
 import { AccessScopeService } from './services/access-scope.service';
+import { IncidentReporterService } from './services/incident-reporter.service';
 import { AuditLog } from './entities/audit-log.entity';
 import { Store } from '../modules/stores/store.entity';
 import { UserStore } from '../modules/user-stores/user-store.entity';
 import { User } from '../modules/users/user.entity';
+import { Asset } from '../modules/assets/entities/asset.entity';
 import { OwnershipGuard } from './guards/ownership.guard';
 import { ObservabilityController } from './controllers/observability.controller';
 
@@ -27,13 +29,14 @@ import { ObservabilityController } from './controllers/observability.controller'
  * - Utils: crypto, metrics, pagination
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog, Store, UserStore, User])],
+  imports: [TypeOrmModule.forFeature([AuditLog, Store, UserStore, User, Asset])],
   providers: [
     RequestContextService,
     LoggerService,
     AuditService,
     RetryService,
     MetricsService,
+    IncidentReporterService,
     CurrentUserService,
     AccessScopeService,
     OwnershipGuard,
@@ -45,6 +48,7 @@ import { ObservabilityController } from './controllers/observability.controller'
     AuditService,
     RetryService,
     MetricsService,
+    IncidentReporterService,
     CurrentUserService,
     AccessScopeService,
     OwnershipGuard,

@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import axios from 'axios';
 import { createHash, randomBytes } from 'crypto';
 import { IsNull, Repository } from 'typeorm';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
@@ -23,7 +22,7 @@ import {
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { normalizeCampaignLocation } from './meta-audience-location.util';
 import { isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from './meta-creative.validation';
-import { MetaGraphApiClient } from './meta-graph-api.client';
+import { MetaGraphApiClient, MetaGraphApiRetryContext } from './meta-graph-api.client';
 import { normalizeMetaCtaType } from './meta-cta.constants';
 import {
   ConnectMetaIntegrationDto,
@@ -288,9 +287,9 @@ export class MetaIntegrationService {
     try {
       return this.normalizeMetaPages(await this.fetchPagesRaw(integration.accessToken as string));
     } catch (err) {
-      const errorCode = (err as any)?.response?.data?.error?.code;
-      const status = (err as any)?.response?.status;
-      const metaMessage = (err as any)?.response?.data?.error?.message;
+      const errorCode = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+      const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
+      const metaMessage = (err as any)?.payload?.metaMessage ?? (err as any)?.response?.data?.error?.message;
       const isTokenInvalid = status === 401 || errorCode === 190;
       const message = isTokenInvalid
         ? 'TOKEN_INVALID'
@@ -339,9 +338,9 @@ export class MetaIntegrationService {
       const accounts = await this.fetchAllMetaAdAccountPages(integration.accessToken);
       return this.normalizeMetaAdAccounts(accounts);
     } catch (err) {
-      const errorCode = (err as any)?.response?.data?.error?.code;
-      const status = (err as any)?.response?.status;
-      const metaMessage = (err as any)?.response?.data?.error?.message;
+      const errorCode = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+      const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
+      const metaMessage = (err as any)?.payload?.metaMessage ?? (err as any)?.response?.data?.error?.message;
       const isTokenInvalid = status === 401 || errorCode === 190;
       const message = isTokenInvalid
         ? 'TOKEN_INVALID'
@@ -418,9 +417,9 @@ export class MetaIntegrationService {
       const campaigns = await this.fetchAllMetaCampaignPages(adAccount.externalId || adAccount.metaId, integration.accessToken);
       return this.normalizeMetaCampaigns(campaigns);
     } catch (err) {
-      const errorCode = (err as any)?.response?.data?.error?.code;
-      const status = (err as any)?.response?.status;
-      const metaMessage = (err as any)?.response?.data?.error?.message;
+      const errorCode = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+      const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
+      const metaMessage = (err as any)?.payload?.metaMessage ?? (err as any)?.response?.data?.error?.message;
       const isTokenInvalid = status === 401 || errorCode === 190;
       const message = isTokenInvalid
         ? 'TOKEN_INVALID'
@@ -515,7 +514,6 @@ export class MetaIntegrationService {
     }
 
     const integration = await this.getConnectedIntegrationWithToken(storeId);
-    await this.validateMetaToken(storeId, integration.accessToken);
     this.assertRequiredMetaScopes(integration, ['ads_management']);
     const validation = await this.validateCampaignCreationPrerequisites(storeId, requester, normalizedDto, integration);
     const execution = await this.createCampaignCreationExecution(
@@ -528,6 +526,15 @@ export class MetaIntegrationService {
     );
     const createdIds: MetaCampaignCreationIds = {};
     const startedAt = Date.now();
+    await this.validateMetaToken(storeId, integration.accessToken, {
+      requestId,
+      executionId: execution.id,
+      idempotencyKey,
+      actorId: requester.id,
+      tenantId: requester.tenantId ?? null,
+      storeId,
+      endpoint: '/me',
+    });
 
     this.logCampaignCreation('campaign creation started', {
       requestId,
@@ -551,6 +558,9 @@ export class MetaIntegrationService {
         objective: validation.objective,
         requestId,
         executionId: execution.id,
+        idempotencyKey,
+        actorId: requester.id,
+        tenantId: requester.tenantId ?? null,
         storeId,
         onStepCreated: async (step, idsFromStep) => {
           Object.assign(createdIds, idsFromStep);
@@ -616,7 +626,7 @@ export class MetaIntegrationService {
         adId: createdIds.adId as string,
         status: 'CREATED',
         executionStatus: 'COMPLETED',
-        initialStatus: normalizedDto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+        initialStatus: 'PAUSED',
         storeId,
         adAccountId: validation.adAccount.id,
         platform: 'META',
@@ -716,23 +726,33 @@ export class MetaIntegrationService {
     return integration;
   }
 
-  private async validateMetaToken(storeId: string, accessToken: string | null): Promise<void> {
+  private async validateMetaToken(
+    storeId: string,
+    accessToken: string | null,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<void> {
     if (!accessToken) {
       await this.markIntegrationError(storeId, 'TOKEN_INVALID');
       throw new BadRequestException('Token Meta ausente. Reconecte a store.');
     }
 
     try {
-      await axios.get(`https://graph.facebook.com/${this.metaApiVersion()}/me`, {
-        params: {
+      await this.graphApi.get<{ id: string }>(
+        '/me',
+        accessToken,
+        {
           fields: 'id',
-          access_token: accessToken,
         },
-        timeout: 10000,
-      });
+        10000,
+        {
+          ...context,
+          storeId,
+          endpoint: context.endpoint ?? '/me',
+        },
+      );
     } catch (err) {
-      const errorCode = (err as any)?.response?.data?.error?.code;
-      const status = (err as any)?.response?.status;
+      const errorCode = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+      const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
       if (status === 401 || errorCode === 190) {
         await this.markIntegrationError(storeId, 'TOKEN_INVALID');
         throw new BadRequestException('Token Meta inválido ou expirado. Reconecte a store.');
@@ -793,6 +813,18 @@ export class MetaIntegrationService {
       throw new BadRequestException('country deve usar código ISO de 2 letras');
     }
 
+    if (!Number.isFinite(Number(dto.ageMin)) || Number(dto.ageMin) < 13) {
+      throw new BadRequestException('ageMin deve ser maior ou igual a 13.');
+    }
+
+    if (!Number.isFinite(Number(dto.ageMax)) || Number(dto.ageMax) < Number(dto.ageMin)) {
+      throw new BadRequestException('ageMax deve ser maior ou igual ao ageMin.');
+    }
+
+    if (!['ALL', 'MALE', 'FEMALE'].includes(dto.gender)) {
+      throw new BadRequestException('gender inválido para publicação real.');
+    }
+
     if (!dto.message.trim()) {
       throw new BadRequestException('message é obrigatório para criar o criativo.');
     }
@@ -847,6 +879,10 @@ export class MetaIntegrationService {
 
     if (invalidCategories.length) {
       throw new BadRequestException(`specialAdCategories inválidas: ${invalidCategories.join(', ')}`);
+    }
+
+    if (dto.initialStatus && dto.initialStatus !== 'PAUSED') {
+      throw new BadRequestException('A primeira publicação deve ser sempre PAUSED.');
     }
   }
 
@@ -961,16 +997,45 @@ export class MetaIntegrationService {
       }));
   }
 
-  async fetchAdAccountsRaw(accessToken: string): Promise<any[]> {
-    return this.fetchAllMetaAdAccountPages(accessToken);
+  async fetchAdAccountsRaw(accessToken: string, context: MetaGraphApiRetryContext = {}): Promise<any[]> {
+    return this.fetchAllMetaAdAccountPages(accessToken, context);
   }
 
-  async fetchPagesRaw(accessToken: string): Promise<any[]> {
-    return this.fetchAllMetaPagePages(accessToken);
+  async fetchPagesRaw(accessToken: string, context: MetaGraphApiRetryContext = {}): Promise<any[]> {
+    return this.fetchAllMetaPagePages(accessToken, context);
   }
 
-  async fetchCampaignsRaw(adAccountExternalId: string, accessToken: string): Promise<any[]> {
-    return this.fetchAllMetaCampaignPages(adAccountExternalId, accessToken);
+  async fetchCampaignsRaw(
+    adAccountExternalId: string,
+    accessToken: string,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<any[]> {
+    return this.fetchAllMetaCampaignPages(adAccountExternalId, accessToken, context);
+  }
+
+  async fetchCampaignMetricsRaw(
+    campaignExternalId: string,
+    accessToken: string,
+    since: string,
+    until: string,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<any[]> {
+    const response = await this.graphApi.get<{ data?: any[] }>(
+      `${campaignExternalId}/insights`,
+      accessToken,
+      {
+        fields: 'date_start,date_stop,impressions,clicks,spend,actions,purchase_roas',
+        time_increment: 1,
+        time_range: JSON.stringify({ since, until }),
+      },
+      20000,
+      {
+        ...context,
+        endpoint: context.endpoint ?? `/${campaignExternalId}/insights`,
+      },
+    );
+
+    return response.data ?? [];
   }
 
   normalizeAdAccounts(rawAccounts: any[]): MetaAdAccountDto[] {
@@ -981,7 +1046,10 @@ export class MetaIntegrationService {
     return this.normalizeMetaCampaigns(rawCampaigns);
   }
 
-  private async fetchAllMetaAdAccountPages(accessToken: string): Promise<any[]> {
+  private async fetchAllMetaAdAccountPages(
+    accessToken: string,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<any[]> {
     const accounts: any[] = [];
     let nextUrl: string | null = `https://graph.facebook.com/${this.metaApiVersion()}/me/adaccounts`;
     let page = 0;
@@ -989,20 +1057,23 @@ export class MetaIntegrationService {
 
     while (nextUrl && page < maxPages) {
       const isFirstPage = page === 0;
-      const response = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        params: isFirstPage
+      const response = await this.graphApi.get<{ data?: any[]; paging?: { next?: string | null } }>(
+        nextUrl,
+        accessToken,
+        isFirstPage
           ? {
               fields: 'id,name,account_status',
             }
           : undefined,
-        timeout: 15000,
-      });
+        15000,
+        {
+          ...context,
+          endpoint: context.endpoint ?? '/me/adaccounts',
+        },
+      );
 
-      accounts.push(...(response.data?.data ?? []));
-      nextUrl = response.data?.paging?.next ?? null;
+      accounts.push(...(response.data ?? []));
+      nextUrl = response.paging?.next ?? null;
       page += 1;
       if (nextUrl) {
         await this.sleep(150);
@@ -1012,7 +1083,10 @@ export class MetaIntegrationService {
     return accounts;
   }
 
-  private async fetchAllMetaPagePages(accessToken: string): Promise<any[]> {
+  private async fetchAllMetaPagePages(
+    accessToken: string,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<any[]> {
     const pages: any[] = [];
     let nextUrl: string | null = `https://graph.facebook.com/${this.metaApiVersion()}/me/accounts`;
     let page = 0;
@@ -1020,20 +1094,23 @@ export class MetaIntegrationService {
 
     while (nextUrl && page < maxPages) {
       const isFirstPage = page === 0;
-      const response = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        params: isFirstPage
+      const response = await this.graphApi.get<{ data?: any[]; paging?: { next?: string | null } }>(
+        nextUrl,
+        accessToken,
+        isFirstPage
           ? {
               fields: 'id,name,category',
             }
           : undefined,
-        timeout: 15000,
-      });
+        15000,
+        {
+          ...context,
+          endpoint: context.endpoint ?? '/me/accounts',
+        },
+      );
 
-      pages.push(...(response.data?.data ?? []));
-      nextUrl = response.data?.paging?.next ?? null;
+      pages.push(...(response.data ?? []));
+      nextUrl = response.paging?.next ?? null;
       page += 1;
       if (nextUrl) {
         await this.sleep(150);
@@ -1057,7 +1134,11 @@ export class MetaIntegrationService {
       }));
   }
 
-  private async fetchAllMetaCampaignPages(adAccountExternalId: string, accessToken: string): Promise<any[]> {
+  private async fetchAllMetaCampaignPages(
+    adAccountExternalId: string,
+    accessToken: string,
+    context: MetaGraphApiRetryContext = {},
+  ): Promise<any[]> {
     const campaigns: any[] = [];
     let nextUrl: string | null = `https://graph.facebook.com/${this.metaApiVersion()}/${adAccountExternalId}/campaigns`;
     let page = 0;
@@ -1065,20 +1146,23 @@ export class MetaIntegrationService {
 
     while (nextUrl && page < maxPages) {
       const isFirstPage = page === 0;
-      const response = await axios.get(nextUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        params: isFirstPage
+      const response = await this.graphApi.get<{ data?: any[]; paging?: { next?: string | null } }>(
+        nextUrl,
+        accessToken,
+        isFirstPage
           ? {
               fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time',
             }
           : undefined,
-        timeout: 15000,
-      });
+        15000,
+        {
+          ...context,
+          endpoint: context.endpoint ?? `/${adAccountExternalId}/campaigns`,
+        },
+      );
 
-      campaigns.push(...(response.data?.data ?? []));
-      nextUrl = response.data?.paging?.next ?? null;
+      campaigns.push(...(response.data ?? []));
+      nextUrl = response.paging?.next ?? null;
       page += 1;
       if (nextUrl) {
         await this.sleep(150);
@@ -1098,28 +1182,18 @@ export class MetaIntegrationService {
       throw new Error('TOKEN_INVALID');
     }
 
-    const body = new URLSearchParams();
-    for (const [key, value] of Object.entries(payload)) {
-      body.set(key, String(value));
-    }
-    body.set('access_token', accessToken);
-
-    const response = await axios.post(
-      `https://graph.facebook.com/${this.metaApiVersion()}/${adAccountExternalId}/${edge}`,
-      body,
-      {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        timeout: 20000,
-      },
+    const response = await this.graphApi.post<T>(
+      `${adAccountExternalId}/${edge}`,
+      accessToken,
+      payload,
+      20000,
     );
 
-    if (!response.data?.id) {
+    if (!(response as any)?.id) {
       throw new Error(`Meta não retornou ID ao criar ${edge}`);
     }
 
-    return response.data as T;
+    return response as T;
   }
 
   private async recordCreatedCampaign(
@@ -1139,7 +1213,7 @@ export class MetaIntegrationService {
     const now = new Date();
     if (existingCampaign) {
       existingCampaign.name = dto.name;
-      existingCampaign.status = dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
+      existingCampaign.status = 'PAUSED';
       existingCampaign.objective = this.normalizeLocalObjective(dto.objective);
       existingCampaign.dailyBudget = dto.dailyBudget;
       existingCampaign.startTime = new Date(dto.startTime);
@@ -1155,7 +1229,7 @@ export class MetaIntegrationService {
         metaId: campaignId,
         externalId: campaignId,
         name: dto.name,
-        status: dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+        status: 'PAUSED',
         objective: this.normalizeLocalObjective(dto.objective),
         dailyBudget: dto.dailyBudget,
         startTime: new Date(dto.startTime),
@@ -1183,9 +1257,14 @@ export class MetaIntegrationService {
       startTime: dto.startTime,
       endTime: dto.endTime?.trim() || null,
       country: dto.country.trim().toUpperCase(),
+      ageMin: Number(dto.ageMin),
+      ageMax: Number(dto.ageMax),
+      gender: dto.gender,
       adAccountId: dto.adAccountId,
       message: dto.message.trim(),
+      imageAssetId: dto.imageAssetId?.trim() || dto.assetId?.trim() || null,
       assetId: dto.assetId?.trim() || null,
+      imageHash: dto.imageHash?.trim() || null,
       imageUrl: dto.imageUrl?.trim() || null,
       state: dto.state?.trim().toUpperCase() || null,
       stateName: dto.stateName?.trim() || null,
@@ -1205,7 +1284,7 @@ export class MetaIntegrationService {
       utmCampaign: dto.utmCampaign?.trim() || null,
       utmContent: dto.utmContent?.trim() || null,
       utmTerm: dto.utmTerm?.trim() || null,
-      initialStatus: dto.initialStatus || 'PAUSED',
+      initialStatus: 'PAUSED',
     };
   }
 
@@ -1213,11 +1292,16 @@ export class MetaIntegrationService {
     const fallbackStartTime = new Date().toISOString();
     return {
       ...dto,
+      imageAssetId: dto.imageAssetId?.trim() || dto.assetId?.trim() || undefined,
       assetId: dto.assetId?.trim() || undefined,
+      imageHash: dto.imageHash?.trim() || undefined,
       imageUrl: dto.imageUrl?.trim() || undefined,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : undefined,
       startTime: dto.startTime?.trim() || fallbackStartTime,
       endTime: dto.endTime?.trim() || undefined,
+      ageMin: Number(dto.ageMin),
+      ageMax: Number(dto.ageMax),
+      gender: dto.gender || 'ALL',
       state: dto.state?.trim().toUpperCase() || undefined,
       stateName: dto.stateName?.trim() || undefined,
       region: dto.region?.trim() || undefined,
@@ -1232,6 +1316,7 @@ export class MetaIntegrationService {
       utmCampaign: dto.utmCampaign?.trim() || undefined,
       utmContent: dto.utmContent?.trim() || undefined,
       utmTerm: dto.utmTerm?.trim() || undefined,
+      initialStatus: dto.initialStatus ?? 'PAUSED',
     };
   }
 
@@ -1239,22 +1324,49 @@ export class MetaIntegrationService {
     storeId: string,
     dto: CreateMetaCampaignDto,
   ): Promise<CreateMetaCampaignDto> {
-    if (!dto.assetId) {
-      if (!dto.imageUrl?.trim()) {
-        throw new BadRequestException('assetId ou imageUrl é obrigatório');
+    const imageAssetId = dto.imageAssetId?.trim() || dto.assetId?.trim();
+
+    if (imageAssetId) {
+      const asset = await this.assetsService.getAssetForStore(storeId, imageAssetId);
+      if (asset.type !== 'image') {
+        throw new BadRequestException('O asset selecionado precisa ser uma imagem');
       }
-      return dto;
+      if (asset.adAccountId && asset.adAccountId !== dto.adAccountId) {
+        throw new BadRequestException('A imagem enviada pertence a outra conta de anúncios da store.');
+      }
+      if (!asset.metaImageHash?.trim()) {
+        throw new BadRequestException('Envie uma imagem antes de publicar a campanha.');
+      }
+
+      return {
+        ...dto,
+        imageAssetId,
+        assetId: imageAssetId,
+        imageHash: asset.metaImageHash,
+        imageUrl: asset.storageUrl,
+      };
     }
 
-    const asset = await this.assetsService.getAssetForStore(storeId, dto.assetId);
-    if (asset.type !== 'image') {
-      throw new BadRequestException('O asset selecionado precisa ser uma imagem');
+    if (dto.imageHash?.trim()) {
+      const asset = await this.assetsService.findImageAssetByMetaHash(storeId, dto.imageHash, dto.adAccountId);
+      if (!asset) {
+        throw new BadRequestException('O image_hash informado não pertence à store ou à conta de anúncios selecionada.');
+      }
+
+      return {
+        ...dto,
+        imageAssetId: asset.id,
+        assetId: asset.id,
+        imageHash: asset.metaImageHash || dto.imageHash,
+        imageUrl: asset.storageUrl,
+      };
     }
 
-    return {
-      ...dto,
-      imageUrl: asset.storageUrl,
-    };
+    if (!dto.imageUrl?.trim()) {
+      throw new BadRequestException('Envie uma imagem antes de publicar a campanha.');
+    }
+
+    return dto;
   }
 
   private async assertValidCampaignLocation(dto: CreateMetaCampaignDto): Promise<void> {
@@ -1358,7 +1470,7 @@ export class MetaIntegrationService {
         adId: execution.metaAdId,
         status: 'CREATED',
         executionStatus: 'COMPLETED',
-        initialStatus: execution.requestPayload?.['initialStatus'] === 'ACTIVE' ? 'ACTIVE' : 'PAUSED',
+        initialStatus: 'PAUSED',
         storeId: execution.storeId,
         adAccountId: execution.adAccountId,
         platform: 'META',
@@ -1658,7 +1770,9 @@ export class MetaIntegrationService {
         city: dto.city?.trim() || null,
         cityId: dto.cityId ? Number(dto.cityId) : null,
       },
+      imageAssetId: dto.imageAssetId?.trim() || dto.assetId?.trim() || null,
       assetId: dto.assetId?.trim() || null,
+      imageHash: dto.imageHash?.trim() || null,
       imageUrl: dto.imageUrl?.trim() || null,
     };
   }
@@ -2110,33 +2224,45 @@ export class MetaIntegrationService {
     expires_in?: number;
   }> {
     this.assertMetaOAuthConfigured();
-    const response = await axios.get(`https://graph.facebook.com/${this.metaApiVersion()}/oauth/access_token`, {
-      params: {
-        client_id: this.config.get<string>('meta.appId'),
+    const response = await this.graphApi.getPublic<{
+      access_token?: string;
+      token_type?: string;
+      expires_in?: number;
+    }>(
+      `https://graph.facebook.com/${this.metaApiVersion()}/oauth/access_token`,
+      {
+        client_id: this.config.get<string>('meta.appId') || '',
         redirect_uri: this.metaRedirectUri(),
-        client_secret: this.config.get<string>('meta.appSecret'),
+        client_secret: this.config.get<string>('meta.appSecret') || '',
         code,
       },
-      timeout: 15000,
-    });
+      15000,
+      { endpoint: '/oauth/access_token' },
+    );
 
-    if (!response.data?.access_token) {
+    if (!response.access_token) {
       throw new Error('Meta nao retornou access token');
     }
 
-    return response.data;
+    return {
+      access_token: response.access_token,
+      token_type: response.token_type,
+      expires_in: response.expires_in,
+    };
   }
 
   private async fetchProviderUserId(accessToken: string): Promise<string | null> {
     try {
-      const response = await axios.get(`https://graph.facebook.com/${this.metaApiVersion()}/me`, {
-        params: {
+      const response = await this.graphApi.get<{ id?: string }>(
+        '/me',
+        accessToken,
+        {
           fields: 'id',
-          access_token: accessToken,
         },
-        timeout: 10000,
-      });
-      return response.data?.id ?? null;
+        10000,
+        { endpoint: '/me' },
+      );
+      return response.id ?? null;
     } catch (err) {
       this.logger.warn(`Nao foi possivel obter providerUserId da Meta: ${(err as Error)?.message}`);
       return null;
@@ -2219,26 +2345,29 @@ export class MetaIntegrationService {
     userMessage: string | null;
     fbtraceId: string | null;
   } {
+    const metaPayload = (err as any)?.payload;
     const meta = (err as any)?.response?.data?.error;
-    const message = this.sanitizeError(meta?.message || (err as Error)?.message || 'Erro ao criar campanha na Meta');
+    const message = this.sanitizeError(
+      metaPayload?.metaMessage || meta?.message || (err as Error)?.message || 'Erro ao criar campanha na Meta',
+    );
     const details = [
-      meta?.error_subcode ? `subcode=${meta.error_subcode}` : null,
-      meta?.error_user_title ? `userTitle=${this.sanitizeError(meta.error_user_title)}` : null,
-      meta?.error_user_msg ? `userMessage=${this.sanitizeError(meta.error_user_msg)}` : null,
-      meta?.type ? `type=${this.sanitizeError(meta.type)}` : null,
-      meta?.fbtrace_id ? `fbtraceId=${this.sanitizeError(meta.fbtrace_id)}` : null,
-      meta?.code ? `code=${meta.code}` : null,
+      (metaPayload?.metaSubcode ?? meta?.error_subcode) ? `subcode=${metaPayload?.metaSubcode ?? meta?.error_subcode}` : null,
+      (metaPayload?.metaUserTitle ?? meta?.error_user_title) ? `userTitle=${this.sanitizeError(metaPayload?.metaUserTitle ?? meta?.error_user_title)}` : null,
+      (metaPayload?.metaUserMessage ?? meta?.error_user_msg) ? `userMessage=${this.sanitizeError(metaPayload?.metaUserMessage ?? meta?.error_user_msg)}` : null,
+      (metaPayload?.metaType ?? meta?.type) ? `type=${this.sanitizeError(metaPayload?.metaType ?? meta?.type)}` : null,
+      (metaPayload?.fbtraceId ?? meta?.fbtrace_id) ? `fbtraceId=${this.sanitizeError(metaPayload?.fbtraceId ?? meta?.fbtrace_id)}` : null,
+      (metaPayload?.metaCode ?? meta?.code) ? `code=${metaPayload?.metaCode ?? meta?.code}` : null,
     ].filter(Boolean);
 
     return {
       message,
       summary: details.length ? `${message} | ${details.join(' | ')}` : message,
-      code: meta?.code ?? null,
-      subcode: meta?.error_subcode ?? null,
-      type: meta?.type ?? null,
-      userTitle: meta?.error_user_title ?? null,
-      userMessage: meta?.error_user_msg ?? null,
-      fbtraceId: meta?.fbtrace_id ?? null,
+      code: metaPayload?.metaCode ?? meta?.code ?? null,
+      subcode: metaPayload?.metaSubcode ?? meta?.error_subcode ?? null,
+      type: metaPayload?.metaType ?? meta?.type ?? null,
+      userTitle: metaPayload?.metaUserTitle ?? meta?.error_user_title ?? null,
+      userMessage: metaPayload?.metaUserMessage ?? meta?.error_user_msg ?? null,
+      fbtraceId: metaPayload?.fbtraceId ?? meta?.fbtrace_id ?? null,
     };
   }
 
@@ -2353,6 +2482,7 @@ export class MetaIntegrationService {
   private buildMetaUserMessage(
     step: MetaCampaignCreationStep,
     metaError: {
+      subcode?: number | null;
       userTitle: string | null;
       userMessage: string | null;
     },
@@ -2369,6 +2499,10 @@ export class MetaIntegrationService {
 
     if (step === 'adset') {
       return 'O conjunto de anúncios falhou porque um campo obrigatório foi enviado vazio. Verifique orçamento, pixel ou localização.';
+    }
+
+    if (step === 'creative' && metaError.subcode === 2446496) {
+      return 'A Meta não conseguiu processar essa imagem. Tente enviar outra imagem em JPG ou PNG.';
     }
 
     return hint;

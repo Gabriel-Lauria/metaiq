@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -8,18 +9,23 @@ import { AuthenticatedUser } from '../../../common/interfaces';
 import { Role } from '../../../common/enums';
 import { AuditService } from '../../../common/services/audit.service';
 import { MetaIntegrationService } from './meta.service';
+import { MetaAssetsService } from './meta-assets.service';
+import { MetaAssetsDeleteService } from './meta-assets-delete.service';
 import { MetaSyncService } from './meta-sync.service';
 import { MetaCampaignCreation, MetaCampaignCreationStatus } from './meta-campaign-creation.entity';
 import {
   ConnectMetaIntegrationDto,
   CreateMetaCampaignDto,
   CreateMetaCampaignResponseDto,
+  DeleteMetaImageAssetResponseDto,
   MetaAdAccountDto,
   MetaCampaignDto,
+  MetaImageAssetResponseDto,
   MetaOAuthStartResponseDto,
   MetaPageDto,
   MetaSyncPlan,
   StoreIntegrationStatusDto,
+  UploadMetaImageAssetDto,
   UpdateMetaPageDto,
   UpdateMetaIntegrationStatusDto,
 } from './dto/meta-integration.dto';
@@ -29,6 +35,8 @@ import {
 export class MetaIntegrationController {
   constructor(
     private readonly metaIntegrationService: MetaIntegrationService,
+    private readonly metaAssetsService: MetaAssetsService,
+    private readonly metaAssetsDeleteService: MetaAssetsDeleteService,
     private readonly metaSyncService: MetaSyncService,
     private readonly auditService: AuditService,
   ) {}
@@ -43,7 +51,7 @@ export class MetaIntegrationController {
   }
 
   @Get('oauth/start')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   startOAuth(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -52,7 +60,7 @@ export class MetaIntegrationController {
   }
 
   @Get('sync-plan')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   getSyncPlan(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -61,7 +69,7 @@ export class MetaIntegrationController {
   }
 
   @Get('pages')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   getPages(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -70,7 +78,7 @@ export class MetaIntegrationController {
   }
 
   @Patch('page')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   updatePage(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -80,7 +88,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   getAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -89,7 +97,7 @@ export class MetaIntegrationController {
   }
 
   @Post('ad-accounts/sync')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async syncAdAccounts(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -101,7 +109,7 @@ export class MetaIntegrationController {
   }
 
   @Get('ad-accounts/:adAccountId/campaigns')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   getCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,
@@ -111,7 +119,7 @@ export class MetaIntegrationController {
   }
 
   @Post('ad-accounts/:adAccountId/campaigns/sync')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async syncCampaigns(
     @Param('storeId') storeId: string,
     @Param('adAccountId') adAccountId: string,
@@ -124,7 +132,7 @@ export class MetaIntegrationController {
   }
 
   @Post('campaigns')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async createCampaign(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -141,8 +149,55 @@ export class MetaIntegrationController {
     return result;
   }
 
+  @Post('assets/images')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadImageAsset(
+    @Param('storeId') storeId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UploadMetaImageAssetDto,
+    @UploadedFile() file: { buffer: Buffer; size: number; mimetype: string; originalname: string } | undefined,
+    @Req() req: Request,
+  ): Promise<MetaImageAssetResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Arquivo é obrigatório');
+    }
+
+    const result = await this.metaAssetsService.uploadImageToMeta(user, storeId, dto.adAccountId, file);
+    this.audit(user, req, 'meta.asset.image.upload', result.id, {
+      storeId,
+      adAccountId: result.adAccountId,
+      mimeType: result.mimeType,
+      size: result.size,
+    });
+    return result;
+  }
+
+  @Delete('assets/images/:assetId')
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
+  async deleteImageAsset(
+    @Param('storeId') storeId: string,
+    @Param('assetId') assetId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteMetaImageAssetResponseDto> {
+    const result = await this.metaAssetsDeleteService.deleteAssetForUser(user, storeId, assetId);
+    this.audit(user, req, 'meta.asset.image.delete', result.assetId, {
+      storeId,
+      status: result.action === 'archived' ? 'ARCHIVED' : 'DELETED',
+      action: result.action,
+      reason: result.reason,
+    });
+    return {
+      status: result.action === 'archived' ? 'ARCHIVED' : 'DELETED',
+      message: result.message,
+      reason: result.reason,
+      action: result.action,
+    };
+  }
+
   @Post('connect')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async connect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -154,7 +209,7 @@ export class MetaIntegrationController {
   }
 
   @Patch('status')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async updateStatus(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -166,7 +221,7 @@ export class MetaIntegrationController {
   }
 
   @Delete()
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   async disconnect(
     @Param('storeId') storeId: string,
     @CurrentUser() user: AuthenticatedUser,

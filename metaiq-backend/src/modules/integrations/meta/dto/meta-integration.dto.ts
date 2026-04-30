@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min, ValidateIf } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsIn, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUrl, IsUUID, MaxLength, Min, ValidateIf } from 'class-validator';
 import { IntegrationStatus, SyncStatus } from '../../../../common/enums';
 import { META_CTA_TYPES, transformMetaCtaInput, type MetaCallToActionType } from '../meta-cta.constants';
 
@@ -107,10 +107,32 @@ export class CreateMetaCampaignDto {
   @Min(1)
   dailyBudget: number;
 
+  @IsOptional()
+  @IsDateString()
+  startTime?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endTime?: string;
+
   @IsString()
   @IsNotEmpty()
   @MaxLength(2)
   country: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(13)
+  ageMin: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(13)
+  ageMax: number;
+
+  @IsString()
+  @IsIn(['ALL', 'MALE', 'FEMALE'])
+  gender: 'ALL' | 'MALE' | 'FEMALE';
 
   @IsUUID()
   @IsNotEmpty()
@@ -123,9 +145,18 @@ export class CreateMetaCampaignDto {
 
   @IsOptional()
   @IsUUID()
+  imageAssetId?: string;
+
+  @IsOptional()
+  @IsUUID()
   assetId?: string;
 
-  @ValidateIf((dto) => !dto.assetId)
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  imageHash?: string;
+
+  @ValidateIf((dto) => !dto.imageAssetId && !dto.assetId && !dto.imageHash)
   @IsUrl({ require_protocol: true })
   @IsNotEmpty()
   @MaxLength(1000)
@@ -180,8 +211,53 @@ export class CreateMetaCampaignDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['PAUSED', 'ACTIVE'])
-  initialStatus?: 'PAUSED' | 'ACTIVE';
+  @IsIn(['PAUSED'])
+  initialStatus?: 'PAUSED';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  pixelId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  conversionEvent?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  placements?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  specialAdCategories?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  utmSource?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  utmMedium?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  utmCampaign?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  utmContent?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  utmTerm?: string;
 
   @IsOptional()
   @IsString()
@@ -198,7 +274,7 @@ export interface CreateMetaCampaignResponseDto {
   adId: string;
   status: 'CREATED';
   executionStatus?: 'COMPLETED';
-  initialStatus?: 'PAUSED' | 'ACTIVE';
+  initialStatus?: 'PAUSED';
   storeId: string;
   adAccountId: string;
   platform: 'META';
@@ -217,6 +293,36 @@ export interface CreateMetaCampaignResponseDto {
     ids?: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>;
   }>;
   hint?: string;
+}
+
+export interface DeleteMetaImageAssetResponseDto {
+  status: 'DELETED' | 'ARCHIVED';
+  message: string;
+  reason?: string;
+  action?: 'soft_deleted' | 'archived';
+}
+
+export interface MetaImageAssetResponseDto {
+  id: string;
+  storeId: string;
+  adAccountId: string;
+  originalName: string | null;
+  normalizedFileName: string | null;
+  mimeType: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  metaImageHash: string | null;
+  metaRawImageId: string | null;
+  storageUrl: string;
+  status: string;
+  createdAt: Date;
+}
+
+export class UploadMetaImageAssetDto {
+  @IsUUID()
+  @IsNotEmpty()
+  adAccountId: string;
 }
 
 export class UpdateMetaIntegrationStatusDto {
@@ -251,83 +357,7 @@ export interface MetaSyncPlan {
 // ─────────────────────────────────────────────────────────
 
 export class RetryPartialCampaignDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  accessToken?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  adAccountExternalId?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  pageId?: string;
-
-  @IsOptional()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(1000)
-  destinationUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  objective?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  name?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  dailyBudget?: number;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(2)
-  country?: string;
-
-  @IsOptional()
-  @IsString()
-  @IsIn(['ACTIVE', 'PAUSED'])
-  initialStatus?: 'ACTIVE' | 'PAUSED';
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  message?: string;
-
-  @IsOptional()
-  @Transform(({ value }) => transformMetaCtaInput(value))
-  @IsString()
-  @MaxLength(40)
-  @IsIn(META_CTA_TYPES)
-  cta?: MetaCallToActionType;
-
-  @IsOptional()
-  @IsUUID()
-  assetId?: string;
-
-  @ValidateIf((dto) => !dto.assetId)
-  @IsOptional()
-  @IsUrl({ require_protocol: true })
-  @MaxLength(1000)
-  imageUrl?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  headline?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(120)
-  description?: string;
+  // O retry reaproveita exclusivamente o payload original persistido.
 }
 
 export class CleanupPartialResourcesDto {

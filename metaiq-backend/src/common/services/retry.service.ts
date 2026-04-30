@@ -30,6 +30,8 @@ export class RetryService {
       maxDelayMs?: number;
       backoffMultiplier?: number;
       label?: string;
+      metadata?: Record<string, unknown>;
+      shouldRetry?: (error: Error) => boolean;
     },
   ): Promise<T> {
     const {
@@ -38,6 +40,8 @@ export class RetryService {
       maxDelayMs = 30000,
       backoffMultiplier = 2,
       label = 'Operação',
+      metadata,
+      shouldRetry,
     } = options || {};
 
     let lastError: Error | null = null;
@@ -54,17 +58,24 @@ export class RetryService {
       } catch (error) {
         lastError = error as Error;
 
-        if (attempt === maxRetries + 1) {
-          // Última tentativa
+        if (shouldRetry && !shouldRetry(lastError)) {
           this.logger.error(
-            `[${label}] Falha após ${maxRetries} retries`,
+            `[${label}] Falha definitiva sem retry`,
             lastError,
-            { label, attempts: maxRetries + 1 },
+            { label, retryCount: attempt - 1, ...metadata },
           );
           throw lastError;
         }
 
-        // Calcula delay com exponential backoff
+        if (attempt === maxRetries + 1) {
+          this.logger.error(
+            `[${label}] Falha após ${maxRetries} retries`,
+            lastError,
+            { label, attempts: maxRetries + 1, retryCount: maxRetries, ...metadata },
+          );
+          throw lastError;
+        }
+
         const currentDelay = Math.min(
           delay * Math.pow(backoffMultiplier, attempt - 1),
           maxDelayMs,
@@ -73,11 +84,12 @@ export class RetryService {
         this.logger.warn(`[${label}] Retry em ${currentDelay}ms`, {
           label,
           attempt,
+          retryCount: attempt,
           delay: currentDelay,
           error: lastError.message,
+          ...metadata,
         });
 
-        // Aguarda antes de retry
         await this.sleep(currentDelay);
       }
     }
@@ -97,6 +109,7 @@ export class RetryService {
       backoffMultiplier?: number;
       label?: string;
       shouldRetry?: (error: Error) => boolean;
+      metadata?: Record<string, unknown>;
     },
   ): Promise<T> {
     const { shouldRetry, ...retryOptions } = options || {};
@@ -105,9 +118,8 @@ export class RetryService {
       try {
         return await fn();
       } catch (error) {
-        // Se há validação de retry, verifica
         if (shouldRetry && !shouldRetry(error as Error)) {
-          throw error; // Não faz retry
+          throw error;
         }
         throw error;
       }

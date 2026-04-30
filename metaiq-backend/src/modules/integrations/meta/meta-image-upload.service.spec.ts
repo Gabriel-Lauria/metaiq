@@ -10,6 +10,9 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('MetaImageUploadService', () => {
   let service: MetaImageUploadService;
+  const retryService = {
+    executeWithCircuitBreaker: jest.fn(async <T>(fn: () => Promise<T>) => fn()),
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -20,7 +23,7 @@ describe('MetaImageUploadService', () => {
       }),
     } as unknown as ConfigService;
 
-    service = new MetaImageUploadService(new MetaGraphApiClient(config));
+    service = new MetaImageUploadService(new MetaGraphApiClient(config, retryService as any));
   });
 
   it('faz download da imagem, envia para a Meta e retorna image_hash', async () => {

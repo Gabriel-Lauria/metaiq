@@ -15,6 +15,7 @@ import { Campaign } from "../../modules/campaigns/campaign.entity";
 import { AdAccount } from "../../modules/ad-accounts/ad-account.entity";
 import { Insight } from "../../modules/insights/insight.entity";
 import { User } from "../../modules/users/user.entity";
+import { Asset } from "../../modules/assets/entities/asset.entity";
 
 @Injectable()
 export class AccessScopeService {
@@ -25,6 +26,8 @@ export class AccessScopeService {
     private readonly userStoreRepository: Repository<UserStore>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Asset)
+    private readonly assetRepository: Repository<Asset>,
   ) {}
 
   isAdmin(user: AuthenticatedUser): boolean {
@@ -306,6 +309,19 @@ export class AccessScopeService {
     }
   }
 
+  async canAccessAsset(
+    user: AuthenticatedUser,
+    storeId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    try {
+      await this.validateAssetAccess(user, storeId, assetId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async validateInsightAccess(
     user: AuthenticatedUser,
     insightId?: string | null,
@@ -378,6 +394,33 @@ export class AccessScopeService {
     }
 
     return campaign;
+  }
+
+  async validateAssetAccess(
+    user: AuthenticatedUser,
+    storeId: string,
+    assetId?: string | null,
+  ): Promise<Asset> {
+    if (!assetId) {
+      throw new BadRequestException("assetId é obrigatório");
+    }
+
+    const [store, asset] = await Promise.all([
+      this.validateStoreAccess(user, storeId),
+      this.assetRepository.findOne({
+        where: { id: assetId, storeId },
+      }),
+    ]);
+
+    if (!asset) {
+      throw new NotFoundException("Asset não encontrado para a store informada");
+    }
+
+    if (asset.storeId !== store.id) {
+      throw new ForbiddenException("Asset fora da store do usuário");
+    }
+
+    return asset;
   }
 
   async canAccessResource(

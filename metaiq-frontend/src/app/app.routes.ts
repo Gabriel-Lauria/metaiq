@@ -30,6 +30,12 @@ export const routes: Routes = [
     data: { roles: [] },
   },
   {
+    path: 'welcome',
+    loadComponent: () => import('./features/welcome/welcome.component').then((m) => m.WelcomeComponent),
+    canActivate: [authGuard, roleGuard],
+    data: { roles: ALL_AUTHENTICATED_ROLES },
+  },
+  {
     path: 'dashboard',
     loadComponent: () => import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
     canActivate: [authGuard, roleGuard],
@@ -63,25 +69,25 @@ export const routes: Routes = [
     path: 'admin/managers',
     loadComponent: () => import('./features/managers/managers.component').then((m) => m.ManagersComponent),
     canActivate: [authGuard, accountTypeGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
+    data: { roles: [Role.PLATFORM_ADMIN], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/dashboard' },
   },
   {
     path: 'manager/stores',
     loadComponent: () => import('./features/stores/stores.component').then((m) => m.StoresComponent),
     canActivate: [authGuard, accountTypeGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/dashboard' },
   },
   {
     path: 'manager/users',
     loadComponent: () => import('./features/users/users.component').then((m) => m.UsersComponent),
     canActivate: [authGuard, accountTypeGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/campaigns' },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER], disallowedAccountTypes: ['INDIVIDUAL'], accountTypeRedirectTo: '/dashboard' },
   },
   {
     path: 'manager/integrations',
     loadComponent: () => import('./features/integrations/integrations.component').then((m) => m.IntegrationsComponent),
     canActivate: [authGuard, roleGuard],
-    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL] },
+    data: { roles: [Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL] },
   },
   {
     path: 'my-company',

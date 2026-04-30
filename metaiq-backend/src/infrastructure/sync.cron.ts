@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { CampaignsService } from '../modules/campaigns/campaigns.service';
 import { InsightsService } from '../modules/insights/insights.service';
 import { LoggerService } from '../common/services/logger.service';
+import { MetaSyncService } from '../modules/integrations/meta/meta-sync.service';
 
 /**
  * SyncCron executa tarefas de sincronização em background.
@@ -26,6 +27,7 @@ export class SyncCron {
     private readonly campaignsService: CampaignsService,
     private readonly insightsService: InsightsService,
     private readonly logger: LoggerService,
+    private readonly metaSyncService: MetaSyncService,
   ) {}
 
   /**
@@ -80,6 +82,21 @@ export class SyncCron {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error('Erro ao limpar insights antigos', err);
+      operation.end(false, { error: errorMessage });
+    }
+  }
+
+  @Cron('0 0 */6 * * *')
+  async syncMetaMetrics() {
+    const operation = this.logger.startOperation('Cron: Sync de MetricDaily Meta');
+
+    try {
+      const result = await this.metaSyncService.syncMetricsForConnectedStores();
+      this.logger.info('Sincronizacao de MetricDaily concluida', result);
+      operation.end(result.errors === 0, result);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      this.logger.error('Erro geral no cron de MetricDaily', err);
       operation.end(false, { error: errorMessage });
     }
   }

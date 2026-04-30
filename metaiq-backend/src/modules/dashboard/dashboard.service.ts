@@ -3,9 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 import { calcCPA, calcCPC, calcCTR, calcROAS } from '../../common/utils/metrics.util';
+import { IntegrationProvider, SyncStatus } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { Campaign } from '../campaigns/campaign.entity';
 import { Insight } from '../insights/insight.entity';
+import { StoreIntegration } from '../integrations/store-integration.entity';
 import { MetricDaily } from '../metrics/metric-daily.entity';
 import { Store } from '../stores/store.entity';
 import { User } from '../users/user.entity';
@@ -24,6 +26,8 @@ export class DashboardService {
     private readonly metricRepository: Repository<MetricDaily>,
     @InjectRepository(Insight)
     private readonly insightRepository: Repository<Insight>,
+    @InjectRepository(StoreIntegration)
+    private readonly integrationRepository: Repository<StoreIntegration>,
     @InjectRepository(Store)
     private readonly storeRepository: Repository<Store>,
     @InjectRepository(User)
@@ -44,7 +48,7 @@ export class DashboardService {
       await this.accessScope.validateStoreAccess(user, storeId);
     }
 
-    const [metrics, campaignCount, activeCampaignCount, storesCount, usersCount, highlights, insights] =
+    const [metrics, campaignCount, activeCampaignCount, storesCount, usersCount, highlights, insights, sync] =
       await Promise.all([
         this.getMetrics(user, fromStr, toStr, storeId),
         this.countCampaigns(user, storeId),
@@ -53,6 +57,7 @@ export class DashboardService {
         this.countUsers(user),
         this.getCampaignHighlights(user, storeId),
         this.getRecentInsights(user, storeId),
+        this.getMetricsSyncState(user, storeId),
       ]);
 
     return {
@@ -65,6 +70,7 @@ export class DashboardService {
         activeCampaigns: activeCampaignCount,
       },
       metrics,
+      sync,
       highlights,
       insights,
     };
@@ -92,6 +98,13 @@ export class DashboardService {
     this.applyStoreFilter(query, storeId);
 
     const result = await query.getRawOne();
+    const metricCountQuery = this.metricRepository
+      .createQueryBuilder('metric')
+      .innerJoin('metric.campaign', 'campaign')
+      .where('metric.date BETWEEN :from AND :to', { from, to });
+    await this.accessScope.applyMetricScope(metricCountQuery, 'campaign', user);
+    this.applyStoreFilter(metricCountQuery, storeId);
+    const metricRows = await metricCountQuery.getCount();
     const impressions = Number(result?.impressions) || 0;
     const clicks = Number(result?.clicks) || 0;
     const spend = Number(result?.spend) || 0;
@@ -99,6 +112,8 @@ export class DashboardService {
     const revenue = Number(result?.revenue) || 0;
 
     return {
+      hasRealData: metricRows > 0,
+      state: metricRows > 0 ? 'synced' : 'no_data_synced',
       impressions,
       clicks,
       spend,
@@ -108,6 +123,44 @@ export class DashboardService {
       cpc: calcCPC(spend, clicks),
       cpa: calcCPA(spend, conversions),
       roas: calcROAS(revenue, spend),
+    };
+  }
+
+  private async getMetricsSyncState(user: AuthenticatedUser, storeId?: string) {
+    const storeIds = await this.resolveScopedStoreIds(user, storeId);
+    if (storeIds.length === 0) {
+      return {
+        status: 'no_data_synced',
+        lastSyncAt: null,
+        lastSyncStatus: SyncStatus.NEVER_SYNCED,
+      };
+    }
+
+    const integrations = await this.integrationRepository.find({
+      where: storeIds.map((id) => ({
+        storeId: id,
+        provider: IntegrationProvider.META,
+      })),
+      order: {
+        lastSyncAt: 'DESC',
+      },
+    });
+
+    if (!integrations.length) {
+      return {
+        status: 'no_data_synced',
+        lastSyncAt: null,
+        lastSyncStatus: SyncStatus.NEVER_SYNCED,
+      };
+    }
+
+    const latest = integrations[0];
+    const successful = integrations.find((item) => item.lastSyncStatus === SyncStatus.SUCCESS);
+    return {
+      status: successful ? 'synced' : 'no_data_synced',
+      lastSyncAt: successful?.lastSyncAt ?? latest.lastSyncAt ?? null,
+      lastSyncStatus: successful?.lastSyncStatus ?? latest.lastSyncStatus,
+      lastSyncError: successful?.lastSyncError ?? latest.lastSyncError ?? null,
     };
   }
 
@@ -201,5 +254,23 @@ export class DashboardService {
     if (storeId) {
       query.andWhere('campaign.storeId = :dashboardStoreId', { dashboardStoreId: storeId });
     }
+  }
+
+  private async resolveScopedStoreIds(user: AuthenticatedUser, storeId?: string): Promise<string[]> {
+    if (storeId) {
+      await this.accessScope.validateStoreAccess(user, storeId);
+      return [storeId];
+    }
+
+    const storeIds = await this.accessScope.getAllowedStoreIds(user);
+    if (storeIds === null) {
+      const stores = await this.storeRepository.find({
+        where: { active: true, deletedAt: IsNull() },
+        select: ['id'],
+      });
+      return stores.map((store) => store.id);
+    }
+
+    return storeIds;
   }
 }

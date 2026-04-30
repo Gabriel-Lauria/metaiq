@@ -34,12 +34,15 @@ export class MetaCampaignOrchestrator {
     objective: string;
     requestId?: string;
     executionId?: string;
+    idempotencyKey?: string;
+    actorId?: string;
+    tenantId?: string | null;
     storeId?: string;
     onStepCreated: (step: MetaCampaignOrchestratorStep, ids: MetaCampaignResourceIds) => Promise<void>;
   }): Promise<Required<MetaCampaignResourceIds>> {
     const ids: MetaCampaignResourceIds = {};
     const accountPath = input.adAccountExternalId.trim();
-    const desiredStatus = input.dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
+    const desiredStatus: 'PAUSED' = 'PAUSED';
     const normalizedLocation = normalizeCampaignLocation(input.dto);
     const geoLocations = buildMetaGeoLocations(normalizedLocation);
     const campaignPayload = this.buildCampaignPayload(input.dto, input.objective, desiredStatus);
@@ -56,6 +59,16 @@ export class MetaCampaignOrchestrator {
       `${accountPath}/campaigns`,
       input.accessToken,
       campaignPayload,
+      20000,
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.actorId,
+        tenantId: input.tenantId,
+        storeId: input.storeId,
+        endpoint: `${accountPath}/campaigns`,
+      },
     );
 
     ids.campaignId = this.assertMetaId(campaign, 'campaigns');
@@ -74,22 +87,36 @@ export class MetaCampaignOrchestrator {
       `${accountPath}/adsets`,
       input.accessToken,
       adSetPayload,
+      20000,
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.actorId,
+        tenantId: input.tenantId,
+        storeId: input.storeId,
+        endpoint: `${accountPath}/adsets`,
+      },
     );
 
     ids.adSetId = this.assertMetaId(adSet, 'adsets');
     await input.onStepCreated('adset', ids);
 
-    const imageHash = await this.metaImageUpload.uploadImageFromUrl(
-      input.accessToken,
-      accountPath,
-      input.dto.imageUrl,
-      {
-        requestId: input.requestId,
-        executionId: input.executionId,
-        storeId: input.storeId,
-        adAccountExternalId: accountPath,
-      },
-    );
+    const imageHash = input.dto.imageHash?.trim()
+      || await this.metaImageUpload.uploadImageFromUrl(
+        input.accessToken,
+        accountPath,
+        input.dto.imageUrl as string,
+        {
+          requestId: input.requestId,
+          executionId: input.executionId,
+          idempotencyKey: input.idempotencyKey,
+          actorId: input.actorId,
+          tenantId: input.tenantId,
+          storeId: input.storeId,
+          adAccountExternalId: accountPath,
+        },
+      );
 
     const creativePayload = buildMetaCreativePayload({
       campaignName: input.dto.name,
@@ -114,6 +141,16 @@ export class MetaCampaignOrchestrator {
       `${accountPath}/adcreatives`,
       input.accessToken,
       creativePayload,
+      20000,
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.actorId,
+        tenantId: input.tenantId,
+        storeId: input.storeId,
+        endpoint: `${accountPath}/adcreatives`,
+      },
     );
 
     ids.creativeId = this.assertMetaId(creative, 'adcreatives');
@@ -137,6 +174,16 @@ export class MetaCampaignOrchestrator {
       `${accountPath}/ads`,
       input.accessToken,
       adPayload,
+      20000,
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.actorId,
+        tenantId: input.tenantId,
+        storeId: input.storeId,
+        endpoint: `${accountPath}/ads`,
+      },
     );
 
     ids.adId = this.assertMetaId(ad, 'ads');
@@ -167,12 +214,15 @@ export class MetaCampaignOrchestrator {
     startingIds: Partial<MetaCampaignResourceIds>;
     requestId?: string;
     executionId?: string;
+    idempotencyKey?: string;
+    actorId?: string;
+    tenantId?: string | null;
     storeId?: string;
     onStepCreated: (step: MetaCampaignOrchestratorStep, ids: MetaCampaignResourceIds) => Promise<void>;
   }): Promise<Required<MetaCampaignResourceIds>> {
     const ids: MetaCampaignResourceIds = { ...input.startingIds };
     const accountPath = input.adAccountExternalId.trim();
-    const desiredStatus = input.dto.initialStatus === 'ACTIVE' ? 'ACTIVE' : 'PAUSED';
+    const desiredStatus: 'PAUSED' = 'PAUSED';
 
     // Se campaign não existe, criar do zero (equivalente a createResources)
     if (!ids.campaignId) {
@@ -198,6 +248,16 @@ export class MetaCampaignOrchestrator {
         `${accountPath}/adsets`,
         input.accessToken,
         adSetPayload,
+        20000,
+        {
+          requestId: input.requestId,
+          executionId: input.executionId,
+          idempotencyKey: input.idempotencyKey,
+          actorId: input.actorId,
+          tenantId: input.tenantId,
+          storeId: input.storeId,
+          endpoint: `${accountPath}/adsets`,
+        },
       );
 
       ids.adSetId = this.assertMetaId(adSet, 'adsets');
@@ -206,17 +266,21 @@ export class MetaCampaignOrchestrator {
 
     // AdSet existe, tentar criar creative se não existe
     if (!ids.creativeId) {
-      const imageHash = await this.metaImageUpload.uploadImageFromUrl(
-        input.accessToken,
-        accountPath,
-        input.dto.imageUrl,
-        {
-          requestId: input.requestId,
-          executionId: input.executionId,
-          storeId: input.storeId,
-          adAccountExternalId: accountPath,
-        },
-      );
+      const imageHash = input.dto.imageHash?.trim()
+        || await this.metaImageUpload.uploadImageFromUrl(
+          input.accessToken,
+          accountPath,
+          input.dto.imageUrl as string,
+          {
+            requestId: input.requestId,
+            executionId: input.executionId,
+            idempotencyKey: input.idempotencyKey,
+            actorId: input.actorId,
+            tenantId: input.tenantId,
+            storeId: input.storeId,
+            adAccountExternalId: accountPath,
+          },
+        );
       const creativePayload = buildMetaCreativePayload({
         campaignName: input.dto.name,
         pageId: input.pageId,
@@ -241,6 +305,16 @@ export class MetaCampaignOrchestrator {
         `${accountPath}/adcreatives`,
         input.accessToken,
         creativePayload,
+        20000,
+        {
+          requestId: input.requestId,
+          executionId: input.executionId,
+          idempotencyKey: input.idempotencyKey,
+          actorId: input.actorId,
+          tenantId: input.tenantId,
+          storeId: input.storeId,
+          endpoint: `${accountPath}/adcreatives`,
+        },
       );
 
       ids.creativeId = this.assertMetaId(creative, 'adcreatives');
@@ -267,6 +341,16 @@ export class MetaCampaignOrchestrator {
         `${accountPath}/ads`,
         input.accessToken,
         adPayload,
+        20000,
+        {
+          requestId: input.requestId,
+          executionId: input.executionId,
+          idempotencyKey: input.idempotencyKey,
+          actorId: input.actorId,
+          tenantId: input.tenantId,
+          storeId: input.storeId,
+          endpoint: `${accountPath}/ads`,
+        },
       );
 
       ids.adId = this.assertMetaId(ad, 'ads');
@@ -368,8 +452,27 @@ export class MetaCampaignOrchestrator {
       geo_locations: geoLocations,
     };
 
+    if (Number.isFinite(dto.ageMin) && dto.ageMin >= 13) {
+      targeting['age_min'] = Math.round(dto.ageMin);
+    }
+
+    if (Number.isFinite(dto.ageMax) && dto.ageMax >= dto.ageMin) {
+      targeting['age_max'] = Math.round(dto.ageMax);
+    }
+
+    const genders = this.buildGenderTargeting(dto.gender);
+    if (genders) {
+      targeting['genders'] = genders;
+    }
+
     const placementPayload = this.buildPlacementPayload(dto.placements || []);
     return { ...targeting, ...placementPayload };
+  }
+
+  private buildGenderTargeting(gender: 'ALL' | 'MALE' | 'FEMALE'): number[] | undefined {
+    if (gender === 'MALE') return [1];
+    if (gender === 'FEMALE') return [2];
+    return undefined;
   }
 
   private buildPlacementPayload(placements: string[]): Record<string, unknown> {

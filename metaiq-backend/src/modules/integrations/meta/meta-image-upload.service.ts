@@ -6,6 +6,9 @@ import { isLikelyDirectImageUrl, isValidMetaHttpUrl } from './meta-creative.vali
 interface MetaImageUploadContext {
   requestId?: string;
   executionId?: string;
+  idempotencyKey?: string;
+  actorId?: string;
+  tenantId?: string | null;
   storeId?: string;
   adAccountExternalId?: string;
 }
@@ -88,6 +91,15 @@ export class MetaImageUploadService {
         },
       },
       this.uploadTimeoutMs,
+      {
+        requestId: context.requestId,
+        executionId: context.executionId,
+        idempotencyKey: context.idempotencyKey,
+        actorId: context.actorId,
+        tenantId: context.tenantId,
+        storeId: context.storeId,
+        endpoint: `${adAccountExternalId.trim()}/adimages`,
+      },
     );
 
     const imageHash = this.extractImageHash(response);

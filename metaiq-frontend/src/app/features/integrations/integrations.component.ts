@@ -274,6 +274,7 @@ export class IntegrationsComponent implements OnInit {
       [SyncStatus.NEVER_SYNCED]: 'Nunca sincronizado',
       [SyncStatus.IN_PROGRESS]: 'Sincronizando',
       [SyncStatus.SUCCESS]: 'Sincronizado',
+      [SyncStatus.FAILED_RECOVERABLE]: 'Falha recuperavel',
       [SyncStatus.ERROR]: 'Erro',
     };
     return status ? labels[status] : labels[SyncStatus.NEVER_SYNCED];
@@ -282,6 +283,7 @@ export class IntegrationsComponent implements OnInit {
   syncStatusTone(status?: SyncStatus): 'success' | 'warning' | 'danger' | 'neutral' | 'info' {
     if (status === SyncStatus.SUCCESS) return 'success';
     if (status === SyncStatus.IN_PROGRESS) return 'info';
+    if (status === SyncStatus.FAILED_RECOVERABLE) return 'warning';
     if (status === SyncStatus.ERROR) return 'danger';
     return 'neutral';
   }

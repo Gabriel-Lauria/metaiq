@@ -71,6 +71,7 @@ describe('AccessScopeService', () => {
         storeRepository as any,
         userStoreRepository as any,
         userRepository as any,
+        {} as any,
       ),
       storeRepository,
       userStoreRepository,
@@ -82,7 +83,7 @@ describe('AccessScopeService', () => {
   }
 
   it('filters manager campaigns by tenant-owned stores', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyCampaignScope(query, 'campaign', user);
@@ -96,7 +97,7 @@ describe('AccessScopeService', () => {
   });
 
   it('filters manager ad accounts by tenant-owned stores', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyAdAccountScope(query, 'adAccount', user);
@@ -110,7 +111,7 @@ describe('AccessScopeService', () => {
   });
 
   it('filters manager stores by tenant', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyStoreScope(query, 'store', user);
@@ -121,7 +122,7 @@ describe('AccessScopeService', () => {
   });
 
   it('filters manager users by tenant', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyUserScope(query, 'user', user);
@@ -134,7 +135,7 @@ describe('AccessScopeService', () => {
   it('denies operational/client users with no allowed stores instead of falling back to userId', async () => {
     const service = new AccessScopeService({} as any, {
       find: jest.fn().mockResolvedValue([]),
-    } as any, {} as any);
+    } as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyCampaignScope(query, 'campaign', {

@@ -30,6 +30,7 @@ export enum SyncStatus {
   NEVER_SYNCED = 'NEVER_SYNCED',
   IN_PROGRESS = 'IN_PROGRESS',
   SUCCESS = 'SUCCESS',
+  FAILED_RECOVERABLE = 'FAILED_RECOVERABLE',
   ERROR = 'ERROR',
 }
 
@@ -49,6 +50,8 @@ export interface User {
   website?: string | null;
   instagram?: string | null;
   whatsapp?: string | null;
+  onboardingCompletedAt?: Date | null;
+  firstLogin?: boolean;
   active?: boolean;
   deletedAt?: Date | null;
   createdAt: Date;
@@ -191,13 +194,17 @@ export interface Asset {
   id: string;
   storeId: string;
   uploadedByUserId?: string | null;
+  adAccountId?: string | null;
   type: AssetType;
+  originalName?: string | null;
+  fileName?: string | null;
   mimeType: string;
   size: number;
   width?: number | null;
   height?: number | null;
   storageUrl: string;
   metaImageHash?: string | null;
+  metaRawImageId?: string | null;
   status: AssetStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -223,10 +230,17 @@ export interface CreateMetaCampaignRequest {
   name: string;
   objective: string;
   dailyBudget: number;
+  startTime: string;
+  endTime?: string;
   country: string;
+  ageMin: number;
+  ageMax: number;
+  gender: 'ALL' | 'MALE' | 'FEMALE';
   adAccountId: string;
   message: string;
+  imageAssetId?: string;
   assetId?: string;
+  imageHash?: string;
   imageUrl?: string;
   state?: string;
   stateName?: string;
@@ -236,7 +250,16 @@ export interface CreateMetaCampaignRequest {
   headline?: string;
   description?: string;
   cta?: MetaCallToActionType;
-  initialStatus?: 'PAUSED' | 'ACTIVE';
+  pixelId?: string;
+  conversionEvent?: string;
+  placements?: string[];
+  specialAdCategories?: string[];
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  initialStatus?: 'PAUSED';
 }
 
 export type MetaCampaignExecutionStep = 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
@@ -283,6 +306,7 @@ export interface MetaCampaignExecutionContext {
   }>;
   hint?: string;
   metaError?: MetaCampaignErrorDetails;
+  blockingIssues?: string[];
 }
 
 export interface CreateMetaCampaignResponse {
@@ -294,7 +318,7 @@ export interface CreateMetaCampaignResponse {
   adId: string;
   status: 'CREATED';
   executionStatus?: 'COMPLETED';
-  initialStatus?: 'PAUSED' | 'ACTIVE';
+  initialStatus?: 'PAUSED';
   storeId: string;
   adAccountId: string;
   platform: 'META';
@@ -317,6 +341,12 @@ export interface CreateMetaCampaignResponse {
 
 export interface MetaCampaignCreationError extends MetaCampaignExecutionContext {
   message: string;
+}
+
+export interface DeleteMetaImageAssetResponse {
+  status: 'DELETED' | 'ARCHIVED';
+  message: string;
+  reason?: string;
 }
 
 export interface MetaCampaignRecoveryStatusResponse {

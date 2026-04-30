@@ -9,10 +9,14 @@ import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { StoreIntegration } from '../store-integration.entity';
 import { MetaCampaignCreationStatus } from './meta-campaign-creation.entity';
+import { CreateMetaCampaignDto } from './dto/meta-integration.dto';
 
 jest.mock('axios');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+const retryService = {
+  executeWithCircuitBreaker: jest.fn(async <T>(fn: () => Promise<T>) => fn()),
+};
 
 function integration(overrides: Partial<StoreIntegration> = {}): StoreIntegration {
   return {
@@ -69,7 +73,7 @@ function downloadedImageResponse() {
   };
 }
 
-function createCampaignPayload(overrides: Record<string, unknown> = {}) {
+function createCampaignPayload(overrides: Partial<CreateMetaCampaignDto> = {}): CreateMetaCampaignDto {
   return {
     name: 'Campanha MVP',
     objective: 'OUTCOME_TRAFFIC',
@@ -77,6 +81,9 @@ function createCampaignPayload(overrides: Record<string, unknown> = {}) {
     startTime: '2026-05-01T09:00:00.000Z',
     endTime: '2026-05-08T22:00:00.000Z',
     country: 'BR',
+    ageMin: 25,
+    ageMax: 55,
+    gender: 'ALL',
     adAccountId: 'ad-account-1',
     message: 'Mensagem do anuncio',
     imageUrl: 'https://metaiq.dev/image.jpg',
@@ -84,6 +91,7 @@ function createCampaignPayload(overrides: Record<string, unknown> = {}) {
     conversionEvent: 'Purchase',
     utmSource: 'meta',
     utmMedium: 'paid-social',
+    initialStatus: 'PAUSED',
     ...overrides,
   };
 }
@@ -212,9 +220,12 @@ describe('MetaIntegrationService OAuth', () => {
         id: 'asset-1',
         storeId: 'store-1',
         type: 'image',
+        adAccountId: 'ad-account-1',
         storageUrl: 'http://localhost:3004/api/assets/asset-1/content',
+        metaImageHash: 'meta-image-hash-1',
         status: 'VALIDATED',
       })),
+      findImageAssetByMetaHash: jest.fn(async () => null),
     };
     config = {
       get: jest.fn((key: string) => {
@@ -232,7 +243,7 @@ describe('MetaIntegrationService OAuth', () => {
       }),
     } as unknown as ConfigService;
 
-    const graphApi = new MetaGraphApiClient(config);
+    const graphApi = new MetaGraphApiClient(config, retryService as any);
     const metaImageUpload = new MetaImageUploadService(graphApi);
     const campaignOrchestrator = new MetaCampaignOrchestrator(graphApi, metaImageUpload);
     const ibgeService = {
@@ -790,6 +801,9 @@ describe('MetaIntegrationService OAuth', () => {
     expect(String(adSetRequest)).toContain('start_time=2026-05-01T09%3A00%3A00.000Z');
     expect(String(adSetRequest)).toContain('end_time=2026-05-08T22%3A00%3A00.000Z');
     expect(targeting.geo_locations).toEqual({ countries: ['BR'] });
+    expect(targeting.age_min).toBe(25);
+    expect(targeting.age_max).toBe(55);
+    expect(targeting.genders).toBeUndefined();
     expect(targeting.geo_locations.cities).toBeUndefined();
     expect(String(creativeRequest)).toContain('image_hash');
     expect(objectStorySpec.link_data.call_to_action.type).toBe('LEARN_MORE');
@@ -832,7 +846,7 @@ describe('MetaIntegrationService OAuth', () => {
     expect(result).not.toHaveProperty('accessToken');
   });
 
-  it('aceita assetId e resolve storageUrl do asset sem exigir URL manual', async () => {
+  it('aceita imageAssetId e reutiliza image_hash do asset sem exigir URL manual', async () => {
     integrationRepo.createQueryBuilder.mockReturnValue({
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -851,7 +865,6 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-campaign-1' } } as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-adset-1' } } as any);
-    mockedAxios.post.mockResolvedValueOnce(metaImageUploadResponse() as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-creative-1' } } as any);
     mockedAxios.post.mockResolvedValueOnce({ data: { id: 'meta-ad-1' } } as any);
 
@@ -860,7 +873,7 @@ describe('MetaIntegrationService OAuth', () => {
       objective: 'OUTCOME_TRAFFIC',
       dailyBudget: 80,
       message: 'Mensagem principal',
-      assetId: 'asset-1',
+      imageAssetId: 'asset-1',
       imageUrl: undefined,
       destinationUrl: 'https://metaiq.dev/oferta',
       headline: 'Headline',
@@ -869,6 +882,28 @@ describe('MetaIntegrationService OAuth', () => {
 
     expect(result.status).toBe('CREATED');
     expect(assetsService.getAssetForStore).toHaveBeenCalledWith('store-1', 'asset-1');
+  });
+
+  it('bloqueia primeira publicacao em ACTIVE para evitar go-live inseguro', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: '123456789',
+      metaId: '123456789',
+      active: true,
+      syncStatus: SyncStatus.SUCCESS,
+    });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      initialStatus: 'ACTIVE' as any,
+    }))).rejects.toThrow('A primeira publicação deve ser sempre PAUSED.');
   });
 
   it('envia promoted_object, special_ad_categories e placements reais para campanhas de leads', async () => {
@@ -922,6 +957,8 @@ describe('MetaIntegrationService OAuth', () => {
     expect(String(campaignCall?.[1])).toContain('special_ad_categories=%5B%22HOUSING%22%5D');
     expect(String(adSetRequest)).toContain('optimization_goal=OFFSITE_CONVERSIONS');
     expect(promotedObject).toEqual({ pixel_id: 'pixel-123', custom_event_type: 'LEAD' });
+    expect(targeting.age_min).toBe(25);
+    expect(targeting.age_max).toBe(55);
     expect(targeting.publisher_platforms).toEqual(expect.arrayContaining(['facebook', 'instagram', 'messenger']));
     expect(targeting.facebook_positions).toEqual(expect.arrayContaining(['feed', 'facebook_reels']));
     expect(targeting.instagram_positions).toEqual(expect.arrayContaining(['stream', 'reels']));

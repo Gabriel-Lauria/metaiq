@@ -1,15 +1,23 @@
-import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
-import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
-import { CurrentUser } from './common/decorators/current-user.decorator';
 
 @Controller()
 export class AppController {
-  constructor(private readonly dataSource: DataSource) {}
+  private readonly metricsSyncMaxAgeMs = 24 * 60 * 60 * 1000;
+
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get('/health')
-  health() {
-    return { status: 'ok' };
+  async health() {
+    const checks = await this.runChecks(false);
+    return {
+      status: this.deriveHealthStatus(checks),
+      checks,
+    };
   }
 
   @Get('/live')
@@ -19,25 +27,20 @@ export class AppController {
 
   @Get('/ready')
   async ready() {
-    const checks = {
-      database: {
-        status: 'unknown',
-        latencyMs: 0,
-      },
+    const checks = await this.runChecks(true);
+    const status = this.deriveReadinessStatus(checks);
+
+    if (status === 'not_ready') {
+      throw new ServiceUnavailableException({
+        status,
+        checks,
+      });
+    }
+
+    return {
+      status,
+      checks,
     };
-
-    if (!this.dataSource.isInitialized) {
-      throw new ServiceUnavailableException({ status: 'not_ready' });
-    }
-
-    try {
-      await this.dataSource.query('SELECT 1');
-    } catch {
-      throw new ServiceUnavailableException({ status: 'not_ready' });
-    }
-
-    void checks;
-    return { status: 'ready' };
   }
 
   @Get('/api')
@@ -48,13 +51,117 @@ export class AppController {
     };
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Get('/protected')
-  protected(@CurrentUser() user: any) {
+  private async runChecks(includeDatabase: boolean) {
+    const checks = {
+      database: {
+        status: 'unknown',
+        latencyMs: 0,
+      },
+      crypto: {
+        status: this.isCryptoConfigured() ? 'ok' : 'not_ready',
+      },
+      meta: {
+        status: this.isMetaMinimallyConfigured() ? 'ok' : 'degraded',
+      },
+      metricsSync: {
+        status: 'unknown',
+        lastSyncAt: null as string | null,
+        metricRows: 0,
+      },
+    };
+
+    if (includeDatabase) {
+      const startedAt = Date.now();
+      if (!this.dataSource.isInitialized) {
+        checks.database.status = 'not_ready';
+      } else {
+        try {
+          await this.dataSource.query('SELECT 1');
+          checks.database.status = 'ok';
+          checks.database.latencyMs = Date.now() - startedAt;
+        } catch {
+          checks.database.status = 'not_ready';
+          checks.database.latencyMs = Date.now() - startedAt;
+        }
+      }
+
+      if (checks.database.status === 'ok') {
+        const metricsSync = await this.loadMetricsSyncState();
+        checks.metricsSync.status = metricsSync.status;
+        checks.metricsSync.lastSyncAt = metricsSync.lastSyncAt;
+        checks.metricsSync.metricRows = metricsSync.metricRows;
+      }
+    }
+
+    return checks;
+  }
+
+  private deriveHealthStatus(checks: {
+    database: { status: string };
+    crypto: { status: string };
+    meta: { status: string };
+    metricsSync: { status: string };
+  }): 'ok' | 'degraded' {
+    if (checks.crypto.status !== 'ok') {
+      return 'degraded';
+    }
+
+    if (checks.meta.status !== 'ok' || checks.metricsSync.status === 'degraded') {
+      return 'degraded';
+    }
+
+    return 'ok';
+  }
+
+  private deriveReadinessStatus(checks: {
+    database: { status: string };
+    crypto: { status: string };
+    meta: { status: string };
+    metricsSync: { status: string };
+  }): 'ok' | 'degraded' | 'not_ready' {
+    if (checks.database.status !== 'ok' || checks.crypto.status !== 'ok') {
+      return 'not_ready';
+    }
+
+    if (checks.meta.status !== 'ok' || checks.metricsSync.status !== 'ok') {
+      return 'degraded';
+    }
+
+    return 'ok';
+  }
+
+  private isCryptoConfigured(): boolean {
+    const secret = this.config.get<string>('app.cryptoSecret')?.trim() || '';
+    return Boolean(secret && secret !== 'replace-with-a-secure-secret');
+  }
+
+  private isMetaMinimallyConfigured(): boolean {
+    const appId = this.config.get<string>('meta.appId')?.trim() || '';
+    const appSecret = this.config.get<string>('meta.appSecret')?.trim() || '';
+    const redirectUri = this.config.get<string>('meta.redirectUri')?.trim() || '';
+    return Boolean(appId && appSecret && redirectUri);
+  }
+
+  private async loadMetricsSyncState(): Promise<{
+    status: 'ok' | 'degraded';
+    lastSyncAt: string | null;
+    metricRows: number;
+  }> {
+    const metricRowsResult = await this.dataSource.query('SELECT COUNT(*) as count FROM metrics_daily');
+    const metricRows = Number(metricRowsResult?.[0]?.count || 0);
+
+    const syncResult = await this.dataSource.query(
+      'SELECT MAX("lastSyncAt") as "lastSyncAt" FROM store_integrations WHERE provider = ?',
+      ['META'],
+    );
+    const lastSyncAtRaw = syncResult?.[0]?.lastSyncAt ?? null;
+    const lastSyncAt = lastSyncAtRaw ? new Date(lastSyncAtRaw) : null;
+    const isFresh = lastSyncAt && (Date.now() - lastSyncAt.getTime()) <= this.metricsSyncMaxAgeMs;
+
     return {
-      message: 'Acesso autorizado!',
-      user,
-      timestamp: new Date().toISOString(),
+      status: metricRows > 0 && Boolean(isFresh) ? 'ok' : 'degraded',
+      lastSyncAt: lastSyncAt ? lastSyncAt.toISOString() : null,
+      metricRows,
     };
   }
 }

@@ -13,15 +13,26 @@ import { Repository } from 'typeorm';
 import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../../common/enums';
 import { AuthenticatedUser } from '../../../common/interfaces';
 import { AccessScopeService } from '../../../common/services/access-scope.service';
+import { AuditService } from '../../../common/services/audit.service';
+import { IncidentReporterService } from '../../../common/services/incident-reporter.service';
+import { MetricsService } from '../../metrics/metrics.service';
 import { AdAccount } from '../../ad-accounts/ad-account.entity';
 import { Campaign } from '../../campaigns/campaign.entity';
 import { StoreIntegration } from '../store-integration.entity';
 import { MetaAdAccountDto, MetaCampaignDto } from './dto/meta-integration.dto';
+import { MetaGraphApiRetryContext } from './meta-graph-api.client';
 import { MetaIntegrationService } from './meta.service';
+
+interface MetricsSyncResult {
+  campaigns: number;
+  metricRows: number;
+}
 
 @Injectable()
 export class MetaSyncService {
   private readonly logger = new Logger(MetaSyncService.name);
+  private readonly syncLockTtlMs = 15 * 60 * 1000;
+  private readonly metricsLookbackDays = 7;
 
   constructor(
     @InjectRepository(StoreIntegration)
@@ -32,6 +43,9 @@ export class MetaSyncService {
     private readonly campaignRepository: Repository<Campaign>,
     private readonly accessScope: AccessScopeService,
     private readonly metaService: MetaIntegrationService,
+    private readonly incidentReporter: IncidentReporterService,
+    private readonly auditService: AuditService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   async fetchAdAccountsForUser(requester: AuthenticatedUser, storeId: string): Promise<MetaAdAccountDto[]> {
@@ -40,7 +54,10 @@ export class MetaSyncService {
 
     try {
       return this.metaService.normalizeAdAccounts(
-        await this.metaService.fetchAdAccountsRaw(integration.accessToken),
+        await this.metaService.fetchAdAccountsRaw(
+          integration.accessToken as string,
+          this.buildRetryContext(storeId, requester, undefined, '/me/adaccounts'),
+        ),
       );
     } catch (err) {
       await this.recordSyncFailure(integration, this.resolveMetaErrorCode(err), err);
@@ -52,13 +69,22 @@ export class MetaSyncService {
     await this.validateCanManage(storeId, requester);
     const integration = await this.getReadyIntegration(storeId);
 
-    await this.acquireSyncLock(integration);
+    await this.acquireSyncLock(integration, {
+      requestId,
+      actorId: requester.id,
+      tenantId: requester.tenantId ?? null,
+      storeId,
+      action: 'meta.ad_accounts.sync',
+    });
     const startedAt = Date.now();
     this.logSync('Meta ad account sync started', { requestId, storeId, requesterId: requester.id, status: SyncStatus.IN_PROGRESS });
 
     try {
       const accounts = this.metaService.normalizeAdAccounts(
-        await this.metaService.fetchAdAccountsRaw(integration.accessToken),
+        await this.metaService.fetchAdAccountsRaw(
+          integration.accessToken as string,
+          this.buildRetryContext(storeId, requester, requestId, '/me/adaccounts'),
+        ),
       );
       const now = new Date();
 
@@ -120,7 +146,11 @@ export class MetaSyncService {
 
     try {
       return this.metaService.normalizeCampaigns(
-        await this.metaService.fetchCampaignsRaw(adAccount.externalId || adAccount.metaId, integration.accessToken),
+        await this.metaService.fetchCampaignsRaw(
+          adAccount.externalId || adAccount.metaId,
+          integration.accessToken as string,
+          this.buildRetryContext(storeId, requester, undefined, `/${adAccount.externalId || adAccount.metaId}/campaigns`),
+        ),
       );
     } catch (err) {
       await this.recordSyncFailure(integration, this.resolveMetaErrorCode(err), err);
@@ -138,13 +168,23 @@ export class MetaSyncService {
     const integration = await this.getReadyIntegration(storeId);
     const adAccount = await this.getMetaAdAccountInStore(adAccountId, storeId, requester);
 
-    await this.acquireSyncLock(integration);
+    await this.acquireSyncLock(integration, {
+      requestId,
+      actorId: requester.id,
+      tenantId: requester.tenantId ?? null,
+      storeId,
+      action: 'meta.campaigns.sync',
+    });
     const startedAt = Date.now();
     this.logSync('Meta campaign sync started', { requestId, storeId, adAccountId, requesterId: requester.id, status: SyncStatus.IN_PROGRESS });
 
     try {
       const campaigns = this.metaService.normalizeCampaigns(
-        await this.metaService.fetchCampaignsRaw(adAccount.externalId || adAccount.metaId, integration.accessToken),
+        await this.metaService.fetchCampaignsRaw(
+          adAccount.externalId || adAccount.metaId,
+          integration.accessToken as string,
+          this.buildRetryContext(storeId, requester, requestId, `/${adAccount.externalId || adAccount.metaId}/campaigns`),
+        ),
       );
       const now = new Date();
 
@@ -156,32 +196,32 @@ export class MetaSyncService {
           },
         });
 
-      if (existing) {
-        existing.name = campaign.name;
-        existing.status = campaign.status;
-        existing.objective = campaign.objective ?? existing.objective ?? null;
-        existing.dailyBudget = campaign.dailyBudget ?? existing.dailyBudget ?? null;
-        existing.startTime = campaign.startTime ?? existing.startTime ?? null;
-        existing.endTime = campaign.endTime ?? existing.endTime ?? null;
-        existing.adAccountId = adAccount.id;
-        existing.lastSeenAt = now;
-        await this.campaignRepository.save(existing);
-        continue;
-      }
+        if (existing) {
+          existing.name = campaign.name;
+          existing.status = campaign.status;
+          existing.objective = campaign.objective ?? existing.objective ?? null;
+          existing.dailyBudget = campaign.dailyBudget ?? existing.dailyBudget ?? null;
+          existing.startTime = campaign.startTime ?? existing.startTime ?? null;
+          existing.endTime = campaign.endTime ?? existing.endTime ?? null;
+          existing.adAccountId = adAccount.id;
+          existing.lastSeenAt = now;
+          await this.campaignRepository.save(existing);
+          continue;
+        }
 
         await this.campaignRepository.save(
           this.campaignRepository.create({
-          metaId: campaign.externalId,
-          externalId: campaign.externalId,
-          name: campaign.name,
-          status: campaign.status,
-          objective: campaign.objective ?? null,
-          dailyBudget: campaign.dailyBudget ?? null,
-          startTime: campaign.startTime ?? null,
-          endTime: campaign.endTime ?? null,
-          userId: requester.id,
-          createdByUserId: requester.id,
-          storeId,
+            metaId: campaign.externalId,
+            externalId: campaign.externalId,
+            name: campaign.name,
+            status: campaign.status,
+            objective: campaign.objective ?? null,
+            dailyBudget: campaign.dailyBudget ?? null,
+            startTime: campaign.startTime ?? null,
+            endTime: campaign.endTime ?? null,
+            userId: requester.id,
+            createdByUserId: requester.id,
+            storeId,
             adAccountId: adAccount.id,
             lastSeenAt: now,
           }),
@@ -201,16 +241,157 @@ export class MetaSyncService {
     }
   }
 
-  private async acquireSyncLock(integration: StoreIntegration): Promise<void> {
+  async syncMetricsForConnectedStores(): Promise<{ stores: number; campaigns: number; metricRows: number; errors: number }> {
+    const integrations = await this.integrationRepository
+      .createQueryBuilder('integration')
+      .where('integration.provider = :provider', { provider: IntegrationProvider.META })
+      .andWhere('integration.status = :status', { status: IntegrationStatus.CONNECTED })
+      .addSelect(['integration.accessToken'])
+      .getMany();
+
+    let stores = 0;
+    let campaigns = 0;
+    let metricRows = 0;
+    let errors = 0;
+
+    for (const integration of integrations) {
+      try {
+        const result = await this.syncMetricsForIntegration(integration, undefined, 'cron-metric-sync');
+        stores += 1;
+        campaigns += result.campaigns;
+        metricRows += result.metricRows;
+      } catch (error) {
+        errors += 1;
+        this.logSync('Meta metrics sync failed for store', {
+          storeId: integration.storeId,
+          requestId: 'cron-metric-sync',
+          error: this.errorMessage(error),
+        }, 'error');
+      }
+    }
+
+    return { stores, campaigns, metricRows, errors };
+  }
+
+  private async syncMetricsForIntegration(
+    integration: StoreIntegration,
+    requester?: AuthenticatedUser,
+    requestId?: string,
+  ): Promise<MetricsSyncResult> {
+    await this.acquireSyncLock(integration, {
+      requestId,
+      actorId: requester?.id,
+      tenantId: requester?.tenantId ?? null,
+      storeId: integration.storeId,
+      action: requester ? 'meta.metrics.sync' : 'meta.metrics.sync.system',
+    });
+
+    try {
+      const dateRange = this.buildMetricsDateRange();
+      const campaigns = await this.campaignRepository
+        .createQueryBuilder('campaign')
+        .where('campaign.storeId = :storeId', { storeId: integration.storeId })
+        .andWhere('campaign.externalId IS NOT NULL')
+        .andWhere('campaign.status IN (:...statuses)', { statuses: ['ACTIVE', 'PAUSED'] })
+        .getMany();
+
+      let metricRows = 0;
+
+      for (const campaign of campaigns) {
+        const rows = await this.metaService.fetchCampaignMetricsRaw(
+          campaign.externalId as string,
+          integration.accessToken as string,
+          dateRange.since,
+          dateRange.until,
+          this.buildRetryContext(
+            integration.storeId,
+            requester,
+            requestId,
+            `/${campaign.externalId}/insights`,
+          ),
+        );
+
+        for (const row of rows) {
+          await this.metricsService.upsertDailyMetricForSystemJob({
+            campaignId: campaign.id,
+            date: row.date_start,
+            impressions: Number(row.impressions || 0),
+            clicks: Number(row.clicks || 0),
+            spend: Number(row.spend || 0),
+            conversions: this.sumMetaActionValues(row.actions),
+            revenue: this.estimateMetaRevenue(row),
+          });
+          metricRows += 1;
+        }
+      }
+
+      integration.lastSyncAt = new Date();
+      integration.lastSyncStatus = SyncStatus.SUCCESS;
+      integration.lastSyncError = null;
+      await this.integrationRepository.save(integration);
+
+      return {
+        campaigns: campaigns.length,
+        metricRows,
+      };
+    } catch (err) {
+      await this.recordSyncFailure(integration, this.resolveMetaErrorCode(err), err);
+      throw err;
+    }
+  }
+
+  private async acquireSyncLock(
+    integration: StoreIntegration,
+    context: {
+      requestId?: string;
+      actorId?: string;
+      tenantId?: string | null;
+      storeId: string;
+      action: string;
+    },
+  ): Promise<void> {
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - this.syncLockTtlMs);
+
+    if (
+      integration.lastSyncStatus === SyncStatus.IN_PROGRESS
+      && (!integration.lastSyncAt || integration.lastSyncAt.getTime() <= staleBefore.getTime())
+    ) {
+      integration.lastSyncStatus = SyncStatus.FAILED_RECOVERABLE;
+      integration.lastSyncError = 'STALE_SYNC_LOCK_RECOVERED';
+      integration.lastSyncAt = now;
+      await this.integrationRepository.save(integration);
+      this.auditService.record({
+        action: `${context.action}.stale_recovery`,
+        status: 'success',
+        actorId: context.actorId ?? null,
+        tenantId: context.tenantId ?? null,
+        targetType: 'meta_sync',
+        targetId: integration.id,
+        requestId: context.requestId,
+        reason: 'stale_sync_lock',
+        metadata: {
+          storeId: context.storeId,
+          previousStatus: SyncStatus.IN_PROGRESS,
+          recoveredTo: SyncStatus.FAILED_RECOVERABLE,
+          previousLastSyncAt: integration.lastSyncAt?.toISOString() ?? null,
+        },
+      });
+    }
+
     const result = await this.integrationRepository
       .createQueryBuilder()
       .update(StoreIntegration)
       .set({
         lastSyncStatus: SyncStatus.IN_PROGRESS,
         lastSyncError: null,
+        lastSyncAt: now,
       })
       .where('id = :id', { id: integration.id })
-      .andWhere('"lastSyncStatus" != :inProgress', { inProgress: SyncStatus.IN_PROGRESS })
+      .andWhere('("lastSyncStatus" != :inProgress OR "lastSyncAt" <= :staleBefore OR "lastSyncAt" IS NULL)', {
+        inProgress: SyncStatus.IN_PROGRESS,
+        staleBefore,
+      })
       .execute();
 
     if (!result.affected) {
@@ -219,12 +400,13 @@ export class MetaSyncService {
 
     integration.lastSyncStatus = SyncStatus.IN_PROGRESS;
     integration.lastSyncError = null;
+    integration.lastSyncAt = now;
   }
 
   private async validateCanManage(storeId: string, user: AuthenticatedUser): Promise<void> {
     await this.accessScope.validateStoreAccess(user, storeId);
-    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.OPERATIONAL].includes(user.role)) {
-      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN e OPERATIONAL podem gerenciar integrações com Meta');
+    if (![Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL].includes(user.role)) {
+      throw new ForbiddenException('Apenas PLATFORM_ADMIN, ADMIN, MANAGER e OPERATIONAL podem gerenciar integrações com Meta');
     }
   }
 
@@ -283,7 +465,9 @@ export class MetaSyncService {
     err?: unknown,
   ): Promise<void> {
     integration.lastSyncAt = new Date();
-    integration.lastSyncStatus = SyncStatus.ERROR;
+    integration.lastSyncStatus = code === 'STALE_SYNC_LOCK_RECOVERED'
+      ? SyncStatus.FAILED_RECOVERABLE
+      : SyncStatus.ERROR;
     integration.lastSyncError = code;
 
     if (code === 'TOKEN_INVALID') {
@@ -294,29 +478,47 @@ export class MetaSyncService {
     this.logger.warn(
       `Meta sync failure recorded | storeId=${integration.storeId} | code=${code} | error=${this.errorMessage(err)}`,
     );
+    if (['TOKEN_INVALID', 'RATE_LIMIT'].includes(code)) {
+      void this.incidentReporter.report({
+        title: 'Falha operacional na integração Meta',
+        severity: code === 'TOKEN_INVALID' ? 'high' : 'medium',
+        source: 'meta-sync',
+        summary: `Store ${integration.storeId} registrou ${code} durante sincronização`,
+        details: {
+          storeId: integration.storeId,
+          code,
+          status: integration.status,
+          syncStatus: integration.lastSyncStatus,
+          error: this.errorMessage(err),
+        },
+      });
+    }
   }
 
   private resolveMetaErrorCode(err: unknown): string {
-    const code = (err as any)?.response?.data?.error?.code;
-    const status = (err as any)?.response?.status;
+    const code = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+    const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
     if (status === 401 || code === 190) {
       return 'TOKEN_INVALID';
     }
-    if (code === 4) {
+    if (code === 4 || status === 429) {
       return 'RATE_LIMIT';
     }
     return this.sanitizeError(
-      (err as any)?.response?.data?.error?.message || this.errorMessage(err) || 'META_SYNC_ERROR',
+      (err as any)?.payload?.metaMessage
+      || (err as any)?.response?.data?.error?.message
+      || this.errorMessage(err)
+      || 'META_SYNC_ERROR',
     );
   }
 
   private toHttpError(err: unknown, fallback: string): Error {
-    const code = (err as any)?.response?.data?.error?.code;
-    const status = (err as any)?.response?.status;
+    const code = (err as any)?.payload?.metaCode ?? (err as any)?.response?.data?.error?.code;
+    const status = (err as any)?.payload?.status ?? (err as any)?.response?.status;
     if (status === 401 || code === 190) {
       return new UnauthorizedException('Token Meta inválido ou expirado. Reconecte a store.');
     }
-    if (code === 4) {
+    if (code === 4 || status === 429) {
       return new HttpException('Limite da Meta atingido. Tente novamente em instantes.', HttpStatus.TOO_MANY_REQUESTS);
     }
     if (status === 400 || code === 100) {
@@ -325,8 +527,69 @@ export class MetaSyncService {
     return new HttpException(`${fallback}: ${this.sanitizeError(this.errorMessage(err))}`, HttpStatus.BAD_GATEWAY);
   }
 
+  private buildRetryContext(
+    storeId: string,
+    requester: AuthenticatedUser | undefined,
+    requestId: string | undefined,
+    endpoint: string,
+  ): MetaGraphApiRetryContext {
+    return {
+      requestId,
+      actorId: requester?.id,
+      tenantId: requester?.tenantId ?? null,
+      storeId,
+      endpoint,
+    };
+  }
+
+  private buildMetricsDateRange(): { since: string; until: string } {
+    const until = new Date();
+    const since = new Date();
+    since.setDate(until.getDate() - this.metricsLookbackDays);
+
+    return {
+      since: since.toISOString().split('T')[0],
+      until: until.toISOString().split('T')[0],
+    };
+  }
+
+  private sumMetaActionValues(actions: unknown): number {
+    if (!Array.isArray(actions)) {
+      return 0;
+    }
+
+    const relevantActionTypes = new Set([
+      'lead',
+      'omni_lead',
+      'onsite_conversion.lead_grouped',
+      'offsite_conversion.fb_pixel_lead',
+      'purchase',
+      'omni_purchase',
+      'offsite_conversion.fb_pixel_purchase',
+    ]);
+
+    return actions.reduce((total, action) => {
+      const type = typeof action?.action_type === 'string' ? action.action_type : '';
+      if (!relevantActionTypes.has(type)) {
+        return total;
+      }
+
+      return total + (Number(action?.value) || 0);
+    }, 0);
+  }
+
+  private estimateMetaRevenue(row: any): number {
+    const spend = Number(row?.spend || 0);
+    const purchaseRoasEntry = Array.isArray(row?.purchase_roas) ? row.purchase_roas[0] : null;
+    const roas = Number(purchaseRoasEntry?.value || 0);
+    return Number.isFinite(roas) && roas > 0 ? spend * roas : 0;
+  }
+
   private errorMessage(err: unknown): string {
-    return (err as any)?.response?.data?.error?.message || (err as Error)?.message || 'erro desconhecido';
+    return (err as any)?.payload?.metaMessage
+      || (err as any)?.response?.data?.error?.message
+      || (err as Error)?.message
+      || 'erro desconhecido';
   }
 
   private sanitizeError(message: string): string {
