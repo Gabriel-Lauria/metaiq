@@ -1,7 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
-import { MetaCampaignRecoveryService } from '../src/modules/integrations/meta/meta-campaign-recovery.service';
-import { MetaCampaignCreation, MetaCampaignCreationStatus } from '../src/modules/integrations/meta/meta-campaign-creation.entity';
-import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../src/common/enums';
+import { IntegrationProvider, IntegrationStatus, Role, SyncStatus } from '../../../common/enums';
+import { MetaCampaignCreation, MetaCampaignCreationStatus } from './meta-campaign-creation.entity';
+import { MetaCampaignRecoveryService } from './meta-campaign-recovery.service';
 
 describe('MetaCampaignRecoveryService', () => {
   const user = {

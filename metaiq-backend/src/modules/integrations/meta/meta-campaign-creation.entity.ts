@@ -51,6 +51,17 @@ export interface MetaCampaignExecutionStepState {
 
 export type MetaCampaignExecutionStepStateMap = Record<MetaCampaignCreationStep, MetaCampaignExecutionStepState>;
 
+export interface MetaCampaignStoredMetaError {
+  step: MetaCampaignCreationStep;
+  message: string;
+  code?: number | null;
+  subcode?: number | null;
+  type?: string | null;
+  userTitle?: string | null;
+  userMessage?: string | null;
+  fbtraceId?: string | null;
+}
+
 @Entity("meta_campaign_creations")
 @Unique("UQ_meta_campaign_creations_store_idempotency", [
   "storeId",
@@ -139,6 +150,9 @@ export class MetaCampaignCreation {
 
   @Column({ type: "simple-json", nullable: true })
   requestPayload: Record<string, unknown> | null;
+
+  @Column({ type: "simple-json", nullable: true })
+  metaErrorDetails: MetaCampaignStoredMetaError | null;
 
   @Column({ nullable: true })
   payloadHash: string | null;

@@ -1,5 +1,6 @@
 import {
   CampaignBuilderReviewContext,
+  executivePublishBlockMessage,
   isValidCountry,
   isSecureHttpUrl,
   isLikelyDirectImageUrl,
@@ -218,6 +219,11 @@ export function validateReviewStep(
 
   if (!context.integration?.pageId) {
     errors.push('Configure a página da loja antes de publicar');
+  }
+
+  const executiveBlockMessage = executivePublishBlockMessage(state);
+  if (executiveBlockMessage) {
+    errors.push(executiveBlockMessage);
   }
 
   return {

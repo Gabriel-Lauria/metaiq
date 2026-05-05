@@ -18,6 +18,14 @@ const retryService = {
   executeWithCircuitBreaker: jest.fn(async <T>(fn: () => Promise<T>) => fn()),
 };
 
+function pngBuffer(width: number, height: number): Buffer {
+  const buffer = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(buffer, 0);
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
 function integration(overrides: Partial<StoreIntegration> = {}): StoreIntegration {
   return {
     id: 'integration-1',
@@ -68,8 +76,8 @@ function metaImageUploadResponse() {
 
 function downloadedImageResponse() {
   return {
-    data: Buffer.from('fake-image'),
-    headers: { 'content-type': 'image/jpeg' },
+    data: pngBuffer(1200, 628),
+    headers: { 'content-type': 'image/png' },
   };
 }
 
@@ -135,8 +143,8 @@ describe('MetaIntegrationService OAuth', () => {
         || normalizedUrl.includes('localhost:3004/api/assets/')
       ) {
         return {
-          data: Buffer.from('fake-image'),
-          headers: { 'content-type': 'image/jpeg' },
+          data: pngBuffer(1200, 628),
+          headers: { 'content-type': 'image/png' },
         } as any;
       }
 

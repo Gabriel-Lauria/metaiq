@@ -1,4 +1,5 @@
 import {
+  DeleteDateColumn,
   Column,
   CreateDateColumn,
   Entity,
@@ -17,6 +18,7 @@ export type AssetStatus = 'UPLOADED' | 'VALIDATED' | 'REJECTED' | 'SENT_TO_META'
 @Entity('assets')
 @Index(['storeId'])
 @Index(['uploadedByUserId'])
+@Index(['adAccountId'])
 export class Asset {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -45,8 +47,23 @@ export class Asset {
   @Column({ type: 'varchar', length: 1000 })
   storageUrl: string;
 
+  @Column({ nullable: true })
+  adAccountId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  originalName: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  fileName: string | null;
+
   @Column({ type: 'varchar', length: 255, nullable: true })
   metaImageHash: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  metaRawImageId: string | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  metaRawResponse: Record<string, unknown> | null;
 
   @Column({ type: 'varchar', length: 24, default: 'UPLOADED' })
   status: AssetStatus;
@@ -64,4 +81,10 @@ export class Asset {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  archivedAt: Date | null;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt: Date | null;
 }

@@ -1,4 +1,4 @@
-import { AdAccount, CreateMetaCampaignRequest, IntegrationStatus, StoreIntegration } from '../../core/models';
+﻿import { AdAccount, CreateMetaCampaignRequest, IntegrationStatus, StoreIntegration } from '../../core/models';
 import { getCtaLabelByValue, normalizeCtaValue } from './cta.constants';
 import { isLikelyDirectImageUrl, isSecureHttpUrl, isValidHttpUrl, normalizeCreativeText } from './creative-validation.util';
 import {
@@ -16,6 +16,15 @@ import {
 
 type ObjectiveOption = { value: CampaignObjective; label: string };
 type GenderOption = { value: CampaignGender; label: string };
+
+export const META_MESSAGES_PUBLISH_SCOPE_MESSAGE = 'Publicacao automatica indisponivel para campanhas de conversa no momento.';
+
+export interface ExecutivePublishState {
+  canPublish: boolean;
+  title: string;
+  message: string;
+  tone: 'success' | 'warning' | 'danger' | 'info';
+}
 
 export interface CampaignBuilderReviewContext {
   state: CampaignBuilderState;
@@ -67,16 +76,33 @@ export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaign
   const cityId = typeof state.audience.cityId === 'number' && state.audience.cityId > 0
     ? state.audience.cityId
     : undefined;
+  const assetId = state.creative.assetId.trim() || undefined;
+  const imageUrl = normalizeCreativeText(state.creative.imageUrl) || undefined;
+  const endTime = buildScheduleDateTime(state.schedule.endDate, state.schedule.endTime);
+  const pixelId = state.tracking.pixel.trim() || undefined;
+  const conversionEvent = state.tracking.mainEvent.trim() || undefined;
+  const placements = Array.from(new Set(
+    state.placements.selected
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ));
+  const specialAdCategories = normalizeSpecialAdCategories(state.campaign.specialCategory);
 
   return {
     name: state.campaign.name.trim(),
     objective: state.campaign.objective,
     dailyBudget: Number(state.budget.value),
+    startTime: `${state.schedule.startDate}T${state.schedule.startTime}:00`,
+    endTime,
     country: state.audience.country.trim().toUpperCase(),
+    ageMin: Number(state.audience.ageMin),
+    ageMax: Number(state.audience.ageMax),
+    gender: state.audience.gender,
     adAccountId: state.identity.adAccountId,
     message: normalizeCreativeText(state.creative.message),
-    assetId: state.creative.assetId.trim() || undefined,
-    imageUrl: normalizeCreativeText(state.creative.imageUrl),
+    assetId,
+    imageAssetId: assetId,
+    imageUrl,
     state: stateCode || undefined,
     stateName: stateName || undefined,
     city: city || undefined,
@@ -85,8 +111,36 @@ export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaign
     headline: normalizeCreativeText(state.creative.headline) || undefined,
     description: normalizeCreativeText(state.creative.description) || undefined,
     cta: normalizedCta,
+    pixelId,
+    conversionEvent,
+    placements: placements.length ? placements : undefined,
+    specialAdCategories: specialAdCategories.length ? specialAdCategories : undefined,
+    utmSource: state.tracking.utmSource.trim() || undefined,
+    utmMedium: state.tracking.utmMedium.trim() || undefined,
+    utmCampaign: state.tracking.utmCampaign.trim() || undefined,
     initialStatus: state.campaign.initialStatus,
   };
+}
+
+function buildScheduleDateTime(date: string, time: string): string | undefined {
+  const normalizedDate = date.trim();
+  const normalizedTime = time.trim();
+
+  if (!normalizedDate || !normalizedTime) {
+    return undefined;
+  }
+
+  return `${normalizedDate}T${normalizedTime}:00`;
+}
+
+function normalizeSpecialAdCategories(value: string): string[] {
+  const normalized = value.trim().toUpperCase().replace(/\s+/g, '_');
+
+  if (!normalized || normalized === 'NENHUMA' || normalized === 'NONE') {
+    return [];
+  }
+
+  return [normalized];
 }
 
 export function cloneCampaignBuilderState(state: CampaignBuilderState): CampaignBuilderState {
@@ -105,6 +159,88 @@ export function realPayloadComplete(state: CampaignBuilderState): boolean {
     && !!state.creative.message.trim()
     && !!state.creative.headline.trim()
     && isLikelyDirectImageUrl(state.creative.imageUrl);
+}
+
+function executiveAnalysisForPublish(state: CampaignBuilderState) {
+  if (state.ui.aiCopilotStale) {
+    return null;
+  }
+
+  return state.ui.aiCopilotAnalysis?.analysis || null;
+}
+
+export function executivePublishState(state: CampaignBuilderState): ExecutivePublishState | null {
+  const analysis = executiveAnalysisForPublish(state);
+
+  if (!analysis) {
+    return null;
+  }
+
+  if (analysis.riskLevel === 'CRITICAL') {
+    return {
+      canPublish: false,
+      title: 'Corrija antes de publicar',
+      message: 'Esta campanha ainda nao esta segura para publicar.',
+      tone: 'danger',
+    };
+  }
+
+  if (analysis.executiveDecision.decision === 'BLOCK') {
+    return {
+      canPublish: false,
+      title: 'Corrija antes de publicar',
+      message: 'Corrija os pontos abaixo antes de gastar dinheiro.',
+      tone: 'danger',
+    };
+  }
+
+  if (analysis.isReadyToPublish === false) {
+    return {
+      canPublish: false,
+      title: 'Corrija antes de publicar',
+      message: 'Esta campanha ainda nao esta segura para publicar.',
+      tone: 'danger',
+    };
+  }
+
+  if (analysis.executiveDecision.decision === 'REVIEW') {
+    return {
+      canPublish: false,
+      title: 'Revise antes de publicar',
+      message: 'A IA recomenda revisar esta campanha antes da publicacao.',
+      tone: 'warning',
+    };
+  }
+
+  if (analysis.executiveDecision.decision === 'RESTRUCTURE') {
+    return {
+      canPublish: false,
+      title: 'Ajuste a campanha antes de publicar',
+      message: 'Esta campanha precisa de ajustes maiores antes de publicar.',
+      tone: 'warning',
+    };
+  }
+
+  if (analysis.executiveDecision.decision === 'PUBLISH') {
+    return {
+      canPublish: true,
+      title: 'Campanha liberada pela analise',
+      message: 'A campanha pode seguir se os pontos obrigatorios ja estiverem corretos.',
+      tone: 'success',
+    };
+  }
+
+  return null;
+}
+
+export function executivePublishBlockMessage(state: CampaignBuilderState): string | null {
+  const publishState = executivePublishState(state);
+  return publishState && !publishState.canPublish ? publishState.message : null;
+}
+
+export function hasExecutivePublishBlock(state: CampaignBuilderState): boolean {
+  const publishState = executivePublishState(state);
+  return !!publishState && !publishState.canPublish;
 }
 
 export function generalSectionComplete(state: CampaignBuilderState): boolean {
@@ -271,11 +407,12 @@ export function buildSimulatedMetrics(state: CampaignBuilderState): {
 
 export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] {
   const signals: ReviewSignal[] = [];
+  const publishState = executivePublishState(state);
 
   if (!realPayloadComplete(state)) {
-    signals.push({ id: 'required', label: `Payload real incompleto: ${missingRealPayloadFields(state).join(', ')}.`, tone: 'warning' });
+    signals.push({ id: 'required', label: `Faltam dados obrigatorios para publicar: ${missingRealPayloadFields(state).join(', ')}.`, tone: 'warning' });
   } else {
-    signals.push({ id: 'required-ok', label: 'Payload real pronto para o backend atual.', tone: 'success' });
+    signals.push({ id: 'required-ok', label: 'Os dados obrigatorios para publicar foram preenchidos.', tone: 'success' });
   }
 
   if (!isValidImageUrl(state.creative.imageUrl)) {
@@ -307,7 +444,7 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
   }
 
   if (state.destination.type === 'site' && isValidHttpUrl(state.destination.websiteUrl) && !isSecureHttpUrl(state.destination.websiteUrl)) {
-    signals.push({ id: 'destination-https', label: 'Use uma URL final segura começando com https://.', tone: 'danger' });
+    signals.push({ id: 'destination-https', label: 'Use um link seguro com https:// antes de publicar.', tone: 'danger' });
   }
 
   if (!state.creative.headline.trim()) {
@@ -315,7 +452,11 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
   }
 
   if (state.destination.type !== 'site') {
-    signals.push({ id: 'destination-type', label: 'O backend atual só cria campanhas com destino de site.', tone: 'danger' });
+    signals.push({ id: 'destination-type', label: META_MESSAGES_PUBLISH_SCOPE_MESSAGE, tone: 'danger' });
+  }
+
+  if (publishState && !publishState.canPublish) {
+    signals.push({ id: 'executive-review', label: publishState.message, tone: publishState.tone === 'danger' ? 'danger' : 'warning' });
   }
 
   if (state.creative.headline.trim().length > 45) {
@@ -426,9 +567,11 @@ export function blockerMessage(context: CampaignBuilderReviewContext): string {
   if (!hasConfiguredPage(context.integration)) return 'Configure a Página do Facebook da loja antes de criar campanhas.';
   if (!hasSyncedAdAccounts(context.adAccounts)) return 'Sincronize as contas da store em Integrações para liberar a criação de campanhas.';
   if (fieldInvalid(context.state, 'audience.location')) return 'Selecione estado e cidade de forma consistente para evitar combinações geográficas inválidas.';
-  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Use uma URL final segura começando com https://.';
-  if (fieldInvalid(context.state, 'creative.headline')) return 'Preencha a headline do criativo antes de enviar para a Meta.';
+  if (context.state.destination.type !== 'site') return META_MESSAGES_PUBLISH_SCOPE_MESSAGE;
+  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Use um link seguro com https:// antes de publicar.';
+  if (fieldInvalid(context.state, 'creative.headline')) return 'Preencha o titulo principal antes de publicar.';
   if (!realPayloadComplete(context.state)) return `Complete os campos reais antes do envio: ${missingRealPayloadFields(context.state).join(', ')}.`;
+  if (hasExecutivePublishBlock(context.state)) return executivePublishBlockMessage(context.state) || 'Revise a campanha antes de publicar.';
   return 'Tudo pronto para revisar e enviar.';
 }
 
@@ -464,3 +607,4 @@ export function hasConsistentAudienceLocation(state: CampaignBuilderState): bool
 
   return true;
 }
+

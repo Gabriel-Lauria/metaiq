@@ -31,8 +31,7 @@ export const routes: Routes = [
   },
   {
     path: 'welcome',
-    loadComponent: () => import('./features/welcome/welcome.component').then((m) => m.WelcomeComponent),
-    canActivate: [authGuard, roleGuard],
+    redirectTo: '/dashboard',
     data: { roles: ALL_AUTHENTICATED_ROLES },
   },
   {

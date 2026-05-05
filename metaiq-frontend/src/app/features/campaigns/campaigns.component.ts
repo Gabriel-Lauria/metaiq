@@ -409,7 +409,7 @@ export class CampaignsComponent implements OnInit {
 
   creationStatusLabel(notice: CampaignCreationNotice): string {
     const status = notice.response.initialStatus || notice.response.executionStatus;
-    return status === 'ACTIVE' ? 'ativa' : 'pausada';
+    return status === 'ACTIVE' ? 'ativa' : status === 'COMPLETED' ? 'concluída' : 'pausada';
   }
 
   setFilter(filterValue: 'ALL' | 'ACTIVE' | 'PAUSED'): void {

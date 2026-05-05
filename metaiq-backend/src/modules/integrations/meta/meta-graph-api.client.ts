@@ -157,7 +157,9 @@ export class MetaGraphApiClient {
         },
         {
           label: `MetaGraph ${endpoint}`,
-          maxRetries: 3,
+          // Mutations against Meta are not safe to replay automatically because the
+          // first attempt may have created a resource before the timeout/error surfaced.
+          maxRetries: 0,
           baseDelayMs: 500,
           metadata: this.retryMetadata(context, endpoint),
           shouldRetry: (error) => this.shouldRetryMetaError(this.buildMetaGraphApiException('POST', endpoint, error)),
@@ -223,7 +225,9 @@ export class MetaGraphApiClient {
         },
         {
           label: `MetaGraph ${endpoint}`,
-          maxRetries: 3,
+          // Upload retries can create duplicate image assets/hashes when Meta already
+          // processed the first request, so recovery must be explicit instead.
+          maxRetries: 0,
           baseDelayMs: 500,
           metadata: this.retryMetadata(context, endpoint),
           shouldRetry: (error) => this.shouldRetryMetaError(this.buildMetaGraphApiException('POST_MULTIPART', endpoint, error)),
@@ -290,7 +294,7 @@ export class MetaGraphApiClient {
         },
         {
           label: `MetaGraph ${endpoint}`,
-          maxRetries: 3,
+          maxRetries: 0,
           baseDelayMs: 500,
           metadata: this.retryMetadata(context, endpoint),
           shouldRetry: (error) => this.shouldRetryMetaError(this.buildMetaGraphApiException('DELETE', endpoint, error)),

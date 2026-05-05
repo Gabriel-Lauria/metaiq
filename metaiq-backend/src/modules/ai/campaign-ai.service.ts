@@ -21,12 +21,18 @@ import { Store } from '../stores/store.entity';
 import {
   AiAdSetOutput,
   AiCampaignBudgetOutput,
+  AiCampaignDestinationType,
+  CampaignAiIntent,
   CampaignAiFailureDebug,
   CampaignAiFailureReason,
   CampaignAiFailureResponse,
   AiCampaignCopilotAnalysis,
+  AiCampaignBusinessDiagnosis,
+  AiCampaignAudienceSummary,
   AiCampaignCopilotImprovement,
   AiCampaignCopilotImprovementType,
+  AiCampaignExecutiveDecision,
+  AiCampaignExecutiveDecisionValue,
   AiCampaignObjective,
   AiCampaignOutput,
   AiCreativeOutput,
@@ -34,6 +40,8 @@ import {
   AiGenderOutput,
   AiPlacement,
   AiPlannerOutput,
+  AiCampaignPerformanceAnalysis,
+  AiCampaignRiskLevel,
   AiReviewOutput,
   AiValidationOutput,
   CampaignCopilotAnalysisRequest,
@@ -45,7 +53,7 @@ import {
 type CampaignObjective = AiCampaignObjective;
 type CampaignGender = 'ALL' | 'MALE' | 'FEMALE';
 type CampaignBudgetType = 'daily' | 'lifetime';
-type CampaignDestinationType = 'messages' | 'site';
+type CampaignDestinationType = AiCampaignDestinationType;
 type CampaignRecommendationBasis = 'business_context_only' | 'business_context_with_operational_signals' | 'fallback_business_context';
 
 interface CampaignAiSuggestions {
@@ -77,8 +85,6 @@ export interface CampaignAiSuggestionResponse {
   suggestions: CampaignAiSuggestions;
 }
 
-type AiConfidence = 'low' | 'medium' | 'high';
-
 export type CampaignSuggestionResponse = CampaignAiStructuredResponse | CampaignAiFailureResponse;
 export type CampaignAnalysisResponse = CampaignCopilotAnalysisResponse | CampaignAiFailureResponse;
 
@@ -89,6 +95,8 @@ interface StoreAiContext {
   segment: string;
   description: string;
   website: string | null;
+  instagram: string | null;
+  whatsapp: string | null;
   targetAudience: string;
   businessType: string;
   managerName: string | null;
@@ -102,6 +110,8 @@ interface StoreAiContext {
     businessType: string;
     city: string | null;
     region: string | null;
+    instagram: string | null;
+    whatsapp: string | null;
     salesModel: 'local' | 'ecommerce' | 'hybrid' | 'unknown';
     mainOffer: string | null;
     targetAudienceBase: string;
@@ -149,7 +159,29 @@ interface StoreAiContext {
     hasPerformanceMetrics: boolean;
     hasConnectedMetaAccount: boolean;
     hasConnectedPage: boolean;
+    hasWebsite: boolean;
+    hasWhatsapp: boolean;
+    hasInstagram: boolean;
+    hasMessageDestinationAvailable: boolean;
   };
+  fieldOrigins: {
+    segment: CampaignIntentFieldSource | null;
+    businessType: CampaignIntentFieldSource | null;
+    city: CampaignIntentFieldSource | null;
+    region: CampaignIntentFieldSource | null;
+    goal: CampaignIntentFieldSource | null;
+    funnelStage: CampaignIntentFieldSource | null;
+    budget: CampaignIntentFieldSource | null;
+    destinationType: CampaignIntentFieldSource | null;
+    channelPreference: CampaignIntentFieldSource | null;
+    primaryOffer: CampaignIntentFieldSource | null;
+    extraContext: CampaignIntentFieldSource | null;
+  };
+}
+
+interface DeterministicCampaignIntent extends CampaignAiIntent {
+  budgetType: CampaignBudgetType | null;
+  destinationType: CampaignDestinationType | null;
 }
 
 interface ParsedCampaignSuggestion {
@@ -158,6 +190,8 @@ interface ParsedCampaignSuggestion {
   truncated?: boolean;
   rawText?: string;
   candidateText?: string;
+  finishReason?: string | null;
+  maxOutputTokens?: number | null;
   validationPath?: string;
   normalizedKeys?: string[];
 }
@@ -167,19 +201,65 @@ interface GeminiTextResponse {
   rawText: string;
   candidateText: string;
   finishReason: string | null;
+  maxOutputTokens: number | null;
+}
+
+interface BriefingConstraints {
+  expectedSegment: string | null;
+  expectedObjective: AiCampaignObjective | null;
+  expectedBudget: number | null;
+  expectedBudgetType: AiCampaignBudgetOutput['type'];
+  expectedCta: string | null;
+  expectedDestinationType: CampaignDestinationType | null;
+  expectsRemarketing: boolean;
+}
+
+type CampaignIntentFieldSource =
+  | 'prompt'
+  | 'input'
+  | 'backend_inference'
+  | 'store'
+  | 'tenant_default'
+  | 'fallback';
+
+interface ExtractedPromptBriefing {
+  goal: string | null;
+  objective: AiCampaignObjective | null;
+  budget: number | null;
+  budgetType: AiCampaignBudgetOutput['type'];
+  destinationType: CampaignDestinationType | null;
+  segment: string | null;
+  region: string | null;
+  city: string | null;
+  funnelStage: string | null;
+  channelPreference: string | null;
+  primaryOffer: string | null;
+  remarketingExpected: boolean;
+  cta: string | null;
+}
+
+interface ConsistencyDebugInfo {
+  consistencyErrors: string[];
+  expectedBriefingSignals: Record<string, unknown>;
+  detectedResponseSignals: Record<string, unknown>;
+  failedRules: string[];
+  immutableFieldsExpected?: Record<string, unknown>;
+  immutableFieldsReceived?: Record<string, unknown>;
+  immutableFieldMismatches?: string[];
 }
 
 @Injectable()
 export class CampaignAiService {
   private readonly logger = new Logger(CampaignAiService.name);
   private readonly aiFeature = 'campaign_suggestions';
-  private readonly promptVersion = 'campaign-structured-v3.1.0';
-  private readonly analysisPromptVersion = 'campaign-copilot-v1.0.0';
+  private readonly promptVersion = 'campaign-structured-v3.2.0';
+  private readonly analysisPromptVersion = 'campaign-copilot-v2.0.0';
   private readonly model: string;
   private readonly apiVersion: string;
   private readonly ai?: GoogleGenAI;
   private readonly defaultModel = 'gemini-2.5-flash';
   private readonly aiTimeoutMs: number;
+  private readonly campaignSuggestionMaxOutputTokens: number;
   private readonly isDevelopment: boolean;
   private readonly supportedModels = new Set([
     'gemini-2.5-flash',
@@ -217,7 +297,11 @@ export class CampaignAiService {
     this.model = configuredModel && this.supportedModels.has(configuredModel)
       ? configuredModel
       : this.defaultModel;
-    this.aiTimeoutMs = Math.max(5000, Number(this.readEnv('GEMINI_TIMEOUT_MS')) || 15000);
+    this.aiTimeoutMs = Math.max(15000, Number(this.readEnv('GEMINI_TIMEOUT_MS')) || 30000);
+    this.campaignSuggestionMaxOutputTokens = Math.max(
+      4096,
+      Number(this.readEnv('GEMINI_CAMPAIGN_SUGGESTION_MAX_OUTPUT_TOKENS')) || 4096,
+    );
     this.isDevelopment = (this.readEnv('NODE_ENV') || this.readEnv('APP_NODE_ENV') || 'development') !== 'production';
 
     if (configuredModel && configuredModel !== this.model) {
@@ -317,6 +401,8 @@ export class CampaignAiService {
 
     await this.validateStoreScopeIfPossible(storeId, requester);
     const storeContext = await this.resolveStoreAiContext(storeId, normalizedPrompt, input);
+    const campaignIntent = this.buildCampaignIntent(normalizedPrompt, storeContext);
+    this.logCampaignIntentResolution(requestId, storeId, normalizedPrompt, storeContext, campaignIntent);
     const modelsToTry = [this.model, ...this.getFallbackModels(this.model)].filter(
       (model, index, list) => model && list.indexOf(model) === index,
     );
@@ -328,16 +414,28 @@ export class CampaignAiService {
         const model = modelsToTry[index];
 
         try {
-          const geminiResponse = await this.generateGeminiCampaignSuggestionText(normalizedPrompt, storeContext, model);
+          const geminiResponse = await this.generateGeminiCampaignSuggestionText(
+            normalizedPrompt,
+            storeContext,
+            campaignIntent,
+            model,
+          );
           const text = geminiResponse.text || geminiResponse.rawText || geminiResponse.candidateText || '';
-          const parsed = this.parseCampaignSuggestionJson(text, geminiResponse.rawText, geminiResponse.candidateText);
+          const parsed = this.parseCampaignSuggestionJson(
+            text,
+            geminiResponse.rawText,
+            geminiResponse.candidateText,
+            geminiResponse.finishReason,
+            geminiResponse.maxOutputTokens,
+          );
 
-          if (parsed.payload && typeof parsed.payload === 'object') {
+          if (!parsed.error && parsed.payload && typeof parsed.payload === 'object') {
             const response = this.normalizeCampaignSuggestionResponse(
               parsed.payload,
               normalizedPrompt,
               storeContext,
-              { model, usedFallback: false, responseValid: !parsed.error },
+              campaignIntent,
+              { model, usedFallback: false, responseValid: true },
             );
             this.logAiEvent('Campaign AI suggestion generated', {
               requestId,
@@ -345,32 +443,7 @@ export class CampaignAiService {
               durationMs: Date.now() - startedAt,
               model,
               usedFallback: false,
-              responseValid: !parsed.error,
-              failureReason: parsed.error || undefined,
-            });
-            return response;
-          }
-
-          const textualDraftPayload = this.buildTextualDraftCampaignPayload(
-            text || geminiResponse.rawText || geminiResponse.candidateText,
-            normalizedPrompt,
-            storeContext,
-          );
-          if (textualDraftPayload) {
-            const response = this.normalizeCampaignSuggestionResponse(
-              textualDraftPayload,
-              normalizedPrompt,
-              storeContext,
-              { model, usedFallback: false, responseValid: false },
-            );
-            this.logAiEvent('Campaign AI suggestion generated from textual fallback', {
-              requestId,
-              storeId,
-              durationMs: Date.now() - startedAt,
-              model,
-              usedFallback: false,
-              responseValid: false,
-              failureReason: parsed.error || 'textual_draft_fallback',
+              responseValid: true,
             });
             return response;
           }
@@ -397,11 +470,16 @@ export class CampaignAiService {
     }
 
     if (lastInvalidResponse) {
+      const invalidResponseMessage = lastInvalidResponse.truncated
+        ? 'A IA retornou um JSON truncado antes de concluir a sugestão. Gere novamente antes de aplicar qualquer sugestão.'
+        : undefined;
       const failure = this.buildAiFailureResponse(
         'invalid_response',
         this.promptVersion,
         this.model,
         this.buildSafeAiFailureDebug(lastInvalidResponse),
+        'AI_NEEDS_RETRY',
+        invalidResponseMessage,
       );
       this.logAiEvent('Campaign AI failed after invalid model response', {
         requestId,
@@ -416,6 +494,27 @@ export class CampaignAiService {
     }
 
     const reason = this.classifyAiFailureReason(undefined, lastError);
+    if (reason === 'timeout' || reason === 'api_error') {
+      const failure = this.buildAiFailureResponse(
+        reason,
+        this.promptVersion,
+        this.model,
+        undefined,
+        'AI_FAILED',
+        'A IA não respondeu de forma confiável. Gere novamente antes de aplicar qualquer sugestão.',
+      );
+      this.logAiEvent('Campaign AI failed after upstream timeout or API error', {
+        requestId,
+        storeId,
+        durationMs: Date.now() - startedAt,
+        model: this.model,
+        usedFallback: false,
+        responseValid: false,
+        failureReason: lastError ? this.getGeminiErrorMessage(lastError) : reason,
+      });
+      return failure;
+    }
+
     const failure = this.buildAiFailureResponse(reason, this.promptVersion, this.model);
     this.logAiEvent('Campaign AI failed', {
       requestId,
@@ -559,12 +658,14 @@ export class CampaignAiService {
       const rawText = this.extractTextFromGeminiResponse(response);
       const candidateText = this.extractCandidateTextFromGeminiResponse(response);
       const finishReason = this.extractFinishReasonFromGeminiResponse(response);
+      const maxOutputTokens = this.extractMaxOutputTokensFromRequestConfig(requestPayload.config);
+      const usageMetadata = this.extractUsageMetadataFromGeminiResponse(response);
       this.logger.log(JSON.stringify({
         operation,
         stage: 'gemini_response_received',
         durationMs,
         payload: this.sanitizeAiLogPayload(requestPayload),
-        responseText: this.truncateForLog(rawText),
+        responseText: this.isDevelopment ? this.truncateForLog(rawText) : '[redacted_in_production]',
       }));
       if (this.isDevelopment) {
         this.logger.log(JSON.stringify({
@@ -573,6 +674,12 @@ export class CampaignAiService {
           promptVersion: this.promptVersionForOperation(operation),
           model: requestPayload.model,
           finishReason,
+          maxOutputTokens,
+          rawTextLength: rawText.length,
+          responseTextLength: this.asString((response as { text?: unknown })?.text).length,
+          candidateTextLength: candidateText.length,
+          candidateTextEndsWithClosingBrace: candidateText.trim().endsWith('}'),
+          usageMetadata,
           rawText,
           candidateText,
         }));
@@ -582,6 +689,7 @@ export class CampaignAiService {
         rawText,
         candidateText,
         finishReason,
+        maxOutputTokens,
       };
     } catch (error) {
       const durationMs = Date.now() - startedAt;
@@ -626,7 +734,13 @@ export class CampaignAiService {
 
     if (value && typeof value === 'object') {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, this.sanitizeAiLogPayload(entry)]),
+        Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
+          if (!this.isDevelopment && (key === 'contents' || key === 'responseJsonSchema')) {
+            return [key, '[redacted_in_production]'];
+          }
+
+          return [key, this.sanitizeAiLogPayload(entry)];
+        }),
       );
     }
 
@@ -681,17 +795,33 @@ export class CampaignAiService {
     return typeof finishReason === 'string' && finishReason.trim() ? finishReason.trim() : null;
   }
 
+  private extractMaxOutputTokensFromRequestConfig(config: Record<string, unknown>): number | null {
+    const value = config?.maxOutputTokens;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  }
+
+  private extractUsageMetadataFromGeminiResponse(response: unknown): Record<string, unknown> | null {
+    const usage = (response as { usageMetadata?: unknown })?.usageMetadata;
+    if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
+      return null;
+    }
+    return usage as Record<string, unknown>;
+  }
+
   private async generateGeminiCampaignSuggestionText(
     prompt: string,
     storeContext: StoreAiContext,
+    campaignIntent: DeterministicCampaignIntent,
     model: string,
   ): Promise<GeminiTextResponse> {
     const requestPayload = {
       model,
-      contents: this.buildCampaignSuggestionPrompt(prompt, storeContext),
+      contents: this.buildCampaignSuggestionPrompt(prompt, storeContext, campaignIntent),
       config: {
-        temperature: 0.25,
-        maxOutputTokens: 1800,
+        temperature: 0.2,
+        candidateCount: 1,
+        maxOutputTokens: this.campaignSuggestionMaxOutputTokens,
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
         responseJsonSchema: this.campaignSuggestionSchema(),
       },
@@ -713,7 +843,7 @@ export class CampaignAiService {
   ): Promise<string> {
     const requestPayload = {
       model,
-      contents: this.buildCampaignAnalysisPrompt(input, storeContext),
+      contents: this.buildStrategicCampaignAnalysisPrompt(input, storeContext),
       config: {
         temperature: 0.2,
         maxOutputTokens: 1200,
@@ -746,9 +876,14 @@ export class CampaignAiService {
     storeName?: string | null;
     managerName?: string | null;
     tenantName?: string | null;
+    tenantBusinessName?: string | null;
     managerNotes?: string | null;
     tenantNotes?: string | null;
     tenantWebsite?: string | null;
+    tenantInstagram?: string | null;
+    tenantWhatsapp?: string | null;
+    tenantDefaultCity?: string | null;
+    tenantDefaultState?: string | null;
     tenantBusinessType?: string | null;
     tenantAccountType?: string | null;
     historicalContext?: StoreAiContext['historicalContext'];
@@ -758,15 +893,36 @@ export class CampaignAiService {
     const storeName = this.asString(input.storeName) || 'Store não identificada';
     const managerName = this.asString(input.managerName) || null;
     const tenantName = this.asString(input.tenantName) || null;
+    const tenantBusinessName = this.asString(input.tenantBusinessName) || null;
     const managerNotes = this.asString(input.managerNotes);
     const tenantNotes = this.asString(input.tenantNotes);
     const tenantWebsite = this.asNullableString(input.tenantWebsite);
+    const tenantInstagram = this.asNullableString(input.tenantInstagram);
+    const tenantWhatsapp = this.asNullableString(input.tenantWhatsapp);
+    const tenantDefaultCity = this.asNullableString(input.tenantDefaultCity);
+    const tenantDefaultState = this.asNullableString(input.tenantDefaultState);
     const tenantBusinessType = this.asNullableString(input.tenantBusinessType);
     const tenantAccountType = this.asNullableString(input.tenantAccountType);
     const commercialInput = input.input;
+    const promptBriefing = this.extractPromptBriefing(input.prompt);
     const extraContext = this.asString(commercialInput?.extraContext);
-    const primaryOffer = this.firstSpecificText(commercialInput?.primaryOffer, this.inferMainOffer(input.prompt));
-    const region = this.firstSpecificText(commercialInput?.region, this.inferRegionText(input.prompt));
+    const inputPrimaryOffer = this.asString(commercialInput?.primaryOffer);
+    const inferredExtraContextOffer = this.inferMainOffer(extraContext);
+    const primaryOffer = this.firstSpecificText(
+      promptBriefing.primaryOffer,
+      inputPrimaryOffer,
+      inferredExtraContextOffer,
+    );
+    const region = this.firstSpecificText(
+      promptBriefing.region,
+      commercialInput?.region,
+      tenantDefaultState,
+    );
+    const city = this.firstSpecificText(
+      promptBriefing.city,
+      this.inferCityText(extraContext),
+      tenantDefaultCity,
+    ) || null;
     const historicalContext = input.historicalContext || {
       campaignCount: 0,
       recentCampaigns: [],
@@ -781,15 +937,39 @@ export class CampaignAiService {
       storeName,
       managerName,
       tenantName,
+      tenantBusinessName,
       tenantNotes,
       managerNotes,
       tenantWebsite,
+      tenantInstagram,
+      tenantWhatsapp,
+      tenantDefaultCity,
+      tenantDefaultState,
       tenantBusinessType,
       ...historicalContext.audienceSignals,
     ].filter(Boolean).join('\n');
-    const companyName = this.firstSpecificText(storeName, tenantName, managerName) || 'Store não identificada';
-    const segment = this.inferStoreSegment(sourceText);
-    const businessType = this.firstSpecificText(tenantBusinessType) || this.inferBusinessType(sourceText, segment);
+    const companyName = this.firstSpecificText(tenantBusinessName, storeName, tenantName, managerName) || 'Store não identificada';
+    const tenantInferredSegment = this.inferStoreSegment([
+      tenantBusinessType,
+      tenantNotes,
+      managerNotes,
+      tenantBusinessName,
+      storeName,
+    ].filter(Boolean).join('\n'));
+    const inferredPromptVertical = this.inferVertical(input.prompt);
+    const segment = this.firstSpecificText(
+      promptBriefing.segment,
+      tenantInferredSegment !== 'campanha comercial' ? tenantInferredSegment : '',
+      inferredPromptVertical !== 'negócio' ? inferredPromptVertical : '',
+    ) || 'campanha comercial';
+    const promptBusinessType = promptBriefing.segment
+      ? this.inferBusinessType(input.prompt, promptBriefing.segment)
+      : '';
+    const businessType = this.firstSpecificText(
+      promptBusinessType,
+      tenantBusinessType,
+      this.inferBusinessType(sourceText, segment),
+    ) || 'operação comercial';
     const description = this.firstSpecificText(tenantNotes, managerNotes)
       || `Empresa ${companyName} no segmento ${segment}, com operação de ${businessType}.`;
     const targetAudience = this.inferTargetAudience(sourceText, segment, businessType);
@@ -799,9 +979,15 @@ export class CampaignAiService {
     const contextSources = [
       this.asString(input.storeName) ? 'store.name' : '',
       tenantName ? 'tenant.name' : '',
+      tenantBusinessName ? 'tenant.businessName' : '',
       managerName ? 'manager.name' : '',
       tenantNotes ? 'tenant.notes' : '',
       managerNotes ? 'manager.notes' : '',
+      tenantWebsite ? 'tenant.website' : '',
+      tenantInstagram ? 'tenant.instagram' : '',
+      tenantWhatsapp ? 'tenant.whatsapp' : '',
+      tenantDefaultCity ? 'tenant.defaultCity' : '',
+      tenantDefaultState ? 'tenant.defaultState' : '',
       commercialInput?.goal ? 'campaign.goal' : '',
       commercialInput?.funnelStage ? 'campaign.funnelStage' : '',
       commercialInput?.budget ? 'campaign.budget' : '',
@@ -820,6 +1006,8 @@ export class CampaignAiService {
       segment,
       description,
       website: tenantWebsite,
+      instagram: tenantInstagram,
+      whatsapp: tenantWhatsapp,
       targetAudience,
       businessType,
       managerName,
@@ -831,8 +1019,10 @@ export class CampaignAiService {
         name: companyName,
         segment,
         businessType,
-        city: this.inferCityText(input.prompt),
+        city,
         region: region || null,
+        instagram: tenantInstagram,
+        whatsapp: tenantWhatsapp,
         salesModel,
         mainOffer: primaryOffer || null,
         targetAudienceBase: targetAudience,
@@ -848,12 +1038,27 @@ export class CampaignAiService {
         notes: managerNotes || null,
       },
       campaignIntent: {
-        goal: this.firstSpecificText(commercialInput?.goal, this.inferFallbackObjective(input.prompt)),
-        funnelStage: this.normalizeFunnelStage(commercialInput?.funnelStage, input.prompt),
-        channelPreference: this.firstSpecificText(commercialInput?.destinationType, this.inferChannelPreference(input.prompt)),
+        goal: this.firstSpecificText(
+          promptBriefing.goal,
+          commercialInput?.goal,
+          this.inferFallbackObjective(input.prompt),
+        ),
+        funnelStage: this.firstSpecificText(
+          promptBriefing.funnelStage,
+          this.normalizeFunnelStage(commercialInput?.funnelStage, input.prompt),
+        ) || null,
+        channelPreference: this.firstSpecificText(
+          promptBriefing.channelPreference,
+          this.normalizeCommercialDestinationType(commercialInput?.destinationType),
+          this.inferChannelPreference(input.prompt),
+        ),
         budgetRange: this.formatBudgetRange(commercialInput?.budget, input.prompt),
         durationDays: this.normalizePositiveNumber(commercialInput?.durationDays),
-        destinationType: this.asString(commercialInput?.destinationType) || null,
+        destinationType: this.firstSpecificText(
+          promptBriefing.destinationType,
+          this.normalizeCommercialDestinationType(commercialInput?.destinationType),
+          this.resolveCampaignIntentDestinationType(undefined, extraContext),
+        ) || null,
         primaryOffer: primaryOffer || null,
         region: region || null,
         extraContext: extraContext || null,
@@ -867,6 +1072,77 @@ export class CampaignAiService {
           || historicalContext.metrics.roas !== null,
         hasConnectedMetaAccount: !!input.hasConnectedMetaAccount,
         hasConnectedPage: !!input.hasConnectedPage,
+        hasWebsite: !!tenantWebsite,
+        hasWhatsapp: !!tenantWhatsapp,
+        hasInstagram: !!tenantInstagram,
+        hasMessageDestinationAvailable: !!(input.hasConnectedPage || tenantWhatsapp || tenantInstagram),
+      },
+      fieldOrigins: {
+        segment: promptBriefing.segment
+          ? 'prompt'
+          : tenantInferredSegment !== 'campanha comercial'
+          ? 'tenant_default'
+          : inferredPromptVertical !== 'negócio'
+          ? 'backend_inference'
+          : 'fallback',
+        businessType: promptBusinessType
+          ? 'prompt'
+          : tenantBusinessType
+          ? 'tenant_default'
+          : 'backend_inference',
+        city: promptBriefing.city
+          ? 'prompt'
+          : this.inferCityText(extraContext)
+          ? 'input'
+          : tenantDefaultCity
+          ? 'tenant_default'
+          : null,
+        region: promptBriefing.region
+          ? 'prompt'
+          : commercialInput?.region
+          ? 'input'
+          : tenantDefaultState
+          ? 'tenant_default'
+          : null,
+        goal: promptBriefing.goal
+          ? 'prompt'
+          : commercialInput?.goal
+          ? 'input'
+          : 'backend_inference',
+        funnelStage: promptBriefing.funnelStage
+          ? 'prompt'
+          : commercialInput?.funnelStage
+          ? 'input'
+          : this.normalizeFunnelStage(undefined, input.prompt)
+          ? 'backend_inference'
+          : null,
+        budget: promptBriefing.budget
+          ? 'prompt'
+          : this.normalizePositiveNumber(commercialInput?.budget)
+          ? 'input'
+          : null,
+        destinationType: promptBriefing.destinationType
+          ? 'prompt'
+          : this.normalizeCommercialDestinationType(commercialInput?.destinationType)
+          ? 'input'
+          : this.resolveCampaignIntentDestinationType(undefined, extraContext)
+          ? 'input'
+          : null,
+        channelPreference: promptBriefing.channelPreference
+          ? 'prompt'
+          : this.normalizeCommercialDestinationType(commercialInput?.destinationType)
+          ? 'input'
+          : this.inferChannelPreference(input.prompt)
+          ? 'backend_inference'
+          : null,
+        primaryOffer: promptBriefing.primaryOffer
+          ? 'prompt'
+          : inputPrimaryOffer
+          ? 'input'
+          : inferredExtraContextOffer
+          ? 'input'
+          : null,
+        extraContext: extraContext ? 'input' : null,
       },
     };
   }
@@ -909,9 +1185,14 @@ export class CampaignAiService {
           storeName: store.name,
           managerName: store.manager?.name || null,
           tenantName: store.tenant?.name || null,
+          tenantBusinessName: store.tenant?.businessName || null,
           managerNotes: store.manager?.notes || null,
           tenantNotes: store.tenant?.notes || null,
           tenantWebsite: store.tenant?.website || null,
+          tenantInstagram: store.tenant?.instagram || null,
+          tenantWhatsapp: store.tenant?.whatsapp || null,
+          tenantDefaultCity: store.tenant?.defaultCity || null,
+          tenantDefaultState: store.tenant?.defaultState || null,
           tenantBusinessType: store.tenant?.businessSegment || null,
           tenantAccountType: store.tenant?.accountType || null,
           historicalContext,
@@ -1209,7 +1490,51 @@ ${prompt}
     `.trim();
   }
 
-  private buildCampaignSuggestionPrompt(prompt: string, storeContext: StoreAiContext): string {
+  private buildCampaignSuggestionPrompt(
+    prompt: string,
+    storeContext: StoreAiContext,
+    campaignIntent: DeterministicCampaignIntent,
+  ): string {
+    const compactContext = {
+      companyName: storeContext.companyName || null,
+      segment: storeContext.segment || null,
+      businessType: storeContext.businessType || null,
+      description: storeContext.description || null,
+      targetAudience: storeContext.targetAudience || null,
+      website: storeContext.website || null,
+      instagram: storeContext.instagram || null,
+      whatsapp: storeContext.whatsapp || null,
+      storeProfile: {
+        city: storeContext.storeProfile.city || null,
+        region: storeContext.storeProfile.region || null,
+        salesModel: storeContext.storeProfile.salesModel || null,
+        mainOffer: storeContext.storeProfile.mainOffer || null,
+        differentiators: storeContext.storeProfile.differentiators.slice(0, 4),
+      },
+      campaignIntent,
+      historicalContext: {
+        campaignCount: storeContext.historicalContext?.campaignCount || 0,
+        audienceSignals: (storeContext.historicalContext?.audienceSignals || []).slice(0, 4),
+      },
+      dataAvailability: storeContext.dataAvailability,
+    };
+
+    return [
+      'Retorne APENAS JSON minificado em uma unica linha, sem markdown e sem texto fora do JSON.',
+      'Nao invente metricas, historico, benchmark, promessas, publico, orcamento, objetivo ou CTA fora do que o contexto sustenta.',
+      'Use null ou [] quando nao souber.',
+      'Campos obrigatorios: strategy, planner, campaign, adSet, creative, review, validation.',
+      'Regras: campaign.objective=OUTCOME_TRAFFIC|OUTCOME_LEADS|REACH|null; campaign.buyingType=AUCTION; campaign.status=PAUSED; campaign.budget.type=daily|lifetime|null; campaign.budget.amount=number|null; campaign.budget.currency=BRL; creative.primaryText<=260; creative.headline<=80; creative.description<=120; creative.cta nao vazio; creative.destinationUrl=https:// ou null; adSet.targeting.country=ISO-2 ou null; adSet.targeting.stateCode=UF ou null; adSet.targeting.interests=array curto; review.confidence=0..100; validation.qualityScore=0..100; validation.isReadyToPublish=false se houver blockingIssues.',
+      `Contrato deterministico: use exatamente objective=${campaignIntent.objective || 'null'}; destinationType=${campaignIntent.destinationType || 'null'}; cta=${campaignIntent.cta || 'null'}; budgetAmount=${campaignIntent.budgetAmount ?? 'null'}; budgetType=${campaignIntent.budgetType || 'null'}; funnelStage=${campaignIntent.funnelStage || 'null'}.`,
+      'Campos de controle imutáveis: objective, budget, budgetType, cta, destinationType, segment, storeId, campaignType. NUNCA altere esses campos.',
+      'Nao altere campos de controle. Gere apenas textos, audiencia, recomendacoes e explicacoes compativeis com esse contrato.',
+      'Se destinationType=messages, nao exija URL de site e nao invente destinationUrl https.',
+      'Se destinationType=site, destinationUrl HTTPS é obrigatório e a IA nunca pode retornar mensagens/WhatsApp para uma campanha de site.',
+      'Se remarketingExpected=true, descreva publico quente realista e nao invente pixel, audiencia ou infraestrutura inexistente.',
+      `Contexto:${JSON.stringify(compactContext)}`,
+      `Briefing:${JSON.stringify(prompt)}`,
+    ].join(' ');
+
     return `
 Você é um assistente de criação de campanhas para o MetaIQ.
 
@@ -1307,8 +1632,12 @@ Formato obrigatório:
 
 Regras:
 - Retorne sempre JSON válido e previsível.
+- Trate esta saída como campanha inicial para uma empresa real de pequeno ou médio porte. Evite linguagem vaga de consultoria.
 - strategy deve resumir a linha mestra da campanha em linguagem humana e sem jargão excessivo.
 - primaryText, headline, description e cta não podem vir vazios.
+- NÃO use copy genérica com palavras vagas como "produto", "serviço", "solução", "negócio", "empresa", "qualidade" ou "atendimento" sem qualificadores concretos.
+- Sempre que houver contexto suficiente, cite a oferta principal, a cidade/região, o canal de destino e o diferencial real da operação.
+- Se faltar contexto crítico para deixar a copy específica, registre a lacuna em planner.missingInputs e review.risks em vez de preencher com texto genérico.
 - audience deve explicar gênero, faixa etária e interesses em formato útil para preenchimento do builder.
 - budgetSuggestion deve repetir a recomendação de orçamento principal.
 - risks, improvements e reasoning devem ser específicos ao contexto real da store e do briefing.
@@ -1330,6 +1659,7 @@ Regras:
 - creative.primaryText deve ter até 260 caracteres, em português do Brasil, com dor explícita, benefício claro e CTA coerente.
 - creative.headline deve ter até 80 caracteres.
 - creative.description deve ter até 120 caracteres.
+- creative.primaryText, creative.headline e creative.description devem soar compatíveis com Meta Ads para pequenos negócios: simples, claros, específicos e sem promessas absolutas.
 - creative.destinationUrl só pode ser https:// se existir.
 - review.summary deve resumir a proposta sem inventar performance.
 - review.strengths deve listar pontos fortes do setup sugerido.
@@ -1363,6 +1693,8 @@ ${JSON.stringify({
       segment: storeContext.segment,
       description: storeContext.description,
       website: storeContext.website,
+      instagram: storeContext.instagram,
+      whatsapp: storeContext.whatsapp,
       storeName: storeContext.storeName,
       tenantName: storeContext.tenantName,
       managerName: storeContext.managerName,
@@ -1487,6 +1819,112 @@ ${JSON.stringify({
     `.trim();
   }
 
+  private buildStrategicCampaignAnalysisPrompt(
+    input: CampaignCopilotAnalysisRequest,
+    storeContext: StoreAiContext,
+  ): string {
+    const analysisContext = {
+      companyName: storeContext.companyName,
+      segment: storeContext.segment,
+      businessType: storeContext.businessType,
+      targetAudience: storeContext.targetAudience,
+      dataAvailability: storeContext.dataAvailability,
+      tenantNotes: storeContext.tenantProfile?.notes || null,
+      managerNotes: storeContext.managerProfile?.notes || null,
+      historicalContext: storeContext.historicalContext || null,
+    };
+
+    const campaignPayload = {
+      campaign: input.campaign,
+      adSet: input.adSet || {},
+      creative: input.creative || {},
+      targeting: input.targeting || {},
+      budget: input.budget || {},
+      location: input.location || {},
+      objective: input.objective || null,
+      cta: input.cta || null,
+      destinationUrl: input.destinationUrl || null,
+    };
+
+    return `
+Você é a IA estratégica principal do MetaIQ.
+
+Sua função não é apenas preencher campos.
+Sua função é atuar como um copiloto sênior de performance de marketing para impedir campanhas ruins, reduzir desperdício financeiro, aumentar a segurança operacional e decidir se uma campanha deve ou não deve ser publicada.
+
+Pergunta principal:
+Essa campanha deve ou não deve ser publicada?
+
+Regras absolutas:
+- Nunca invente informações.
+- Nunca assuma dados não fornecidos.
+- Nunca invente CTR, CPC, CPA, ROAS, conversão, benchmark, taxa ou projeção.
+- Se faltar contexto crítico, deixe isso explícito em warnings, blockingIssues ou recommendations usando a ideia de informação insuficiente para validação segura.
+- Priorize segurança financeira. Se o risco for alto, bloqueie ou mande revisar.
+- Não seja otimista por padrão.
+- Quando existir regra objetiva, a regra prevalece.
+
+Escopo oficial do Meta Publisher atual:
+- O publish automático atual suporta apenas campanhas de website.
+- Website com destinationUrl em HTTPS pode ser candidato a publish automático.
+- WhatsApp, Messenger, Instagram DM e campanhas reais de mensagens ainda não são suportados end-to-end para publicação automática.
+- Se a campanha for de mensagens, ela pode receber estratégia, estrutura, copy e CTA compatível, mas não pode ser marcada como pronta para publish automático.
+- Se detectar destinationType/messages, WhatsApp, Messenger ou Instagram DM como destino real, marque isReadyToPublish=false e use REVIEW ou BLOCK conforme a gravidade.
+
+Analise obrigatoriamente:
+1. Diagnóstico de negócio: tipo de empresa, maturidade, urgência, ticket, recorrência, dificuldade de conversão, dependência de confiança, lead ideal, concorrência e sensibilidade a preço.
+2. Risco de prejuízo: verba incompatível, oferta fraca, criativo fraco, CTA ruim, público desalinhado, copy fraca, funil ruim, landing ruim, baixa chance de conversão e risco de lead desqualificado.
+3. Risco de reprovação Meta: claims agressivas, promessa sensível, segmentação problemática, criativo inadequado, copy com risco de reprovação e estrutura fraca.
+4. Potencial de performance: chance relativa de CTR saudável, CPC competitivo, CPA viável, escala e otimização futura, sem usar números inventados.
+5. Recomendação executiva: publicar, bloquear, revisar ou reestruturar.
+
+Regras objetivas que devem bloquear ou rebaixar severamente a campanha quando aplicáveis:
+- orçamento zerado ou inválido
+- destinationUrl ausente ou inválida em campanha de website
+- headline ausente
+- copy principal ausente
+- CTA ausente
+- oferta pouco clara
+- tracking/pixel claramente ausente quando o objetivo depende disso
+- campanha de mensagens marcada como pronta para publish automático
+
+Responda APENAS JSON válido.
+NUNCA use markdown.
+NUNCA explique fora do JSON.
+
+Formato obrigatório:
+{
+  "overallScore": 0,
+  "riskLevel": "LOW | MEDIUM | HIGH | CRITICAL",
+  "isReadyToPublish": false,
+  "businessDiagnosis": {
+    "summary": "",
+    "mainProblem": "",
+    "mainOpportunity": ""
+  },
+  "blockingIssues": [""],
+  "warnings": [""],
+  "recommendations": [""],
+  "performanceAnalysis": {
+    "conversionPotential": "",
+    "financialRisk": "",
+    "metaApprovalRisk": "",
+    "scalabilityPotential": ""
+  },
+  "executiveDecision": {
+    "decision": "PUBLISH | BLOCK | REVIEW | RESTRUCTURE",
+    "reason": ""
+  }
+}
+
+Contexto da store:
+${JSON.stringify(analysisContext, null, 2)}
+
+Campanha estruturada:
+${JSON.stringify(campaignPayload, null, 2)}
+    `.trim();
+  }
+
   private responseSchema(): unknown {
     return {
       type: 'object',
@@ -1532,47 +1970,16 @@ ${JSON.stringify({
     return {
       type: 'object',
       additionalProperties: false,
-      required: ['strategy', 'primaryText', 'headline', 'description', 'cta', 'audience', 'budgetSuggestion', 'risks', 'improvements', 'reasoning', 'explanation', 'planner', 'campaign', 'adSet', 'creative', 'review', 'validation'],
+      required: ['strategy', 'planner', 'campaign', 'adSet', 'creative', 'review', 'validation'],
       properties: {
         strategy: { type: 'string', minLength: 1 },
-        primaryText: { type: 'string', minLength: 1 },
-        headline: { type: 'string', minLength: 1 },
-        description: { type: 'string', minLength: 1 },
-        cta: { type: 'string', minLength: 1 },
-        audience: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['gender', 'ageRange', 'interests'],
-          properties: {
-            gender: { type: ['string', 'null'], enum: ['all', 'male', 'female', null] },
-            ageRange: { type: ['string', 'null'] },
-            interests: { type: 'array', items: { type: 'string' } },
-          },
-        },
-        budgetSuggestion: { type: ['number', 'null'] },
-        risks: { type: 'array', items: { type: 'string' } },
-        improvements: { type: 'array', items: { type: 'string' } },
-        reasoning: { type: 'array', items: { type: 'string' } },
-        explanation: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['strategy', 'audience', 'copy', 'budget'],
-          properties: {
-            strategy: { type: 'string', minLength: 1 },
-            audience: { type: 'string', minLength: 1 },
-            copy: { type: 'string', minLength: 1 },
-            budget: { type: 'string', minLength: 1 },
-          },
-        },
         planner: {
           type: 'object',
           additionalProperties: false,
-          required: ['businessType', 'goal', 'funnelStage', 'offer', 'audienceIntent', 'missingInputs', 'assumptions'],
+          required: ['goal', 'funnelStage', 'audienceIntent', 'missingInputs', 'assumptions'],
           properties: {
-            businessType: { type: ['string', 'null'] },
             goal: { type: ['string', 'null'] },
             funnelStage: { type: ['string', 'null'], enum: ['top', 'middle', 'bottom', null] },
-            offer: { type: ['string', 'null'] },
             audienceIntent: { type: ['string', 'null'] },
             missingInputs: { type: 'array', items: { type: 'string' } },
             assumptions: { type: 'array', items: { type: 'string' } },
@@ -1632,24 +2039,21 @@ ${JSON.stringify({
         creative: {
           type: 'object',
           additionalProperties: false,
-          required: ['name', 'primaryText', 'headline', 'description', 'cta', 'imageSuggestion', 'destinationUrl'],
+          required: ['primaryText', 'headline', 'description', 'cta', 'destinationUrl'],
           properties: {
-            name: { type: ['string', 'null'] },
             primaryText: { type: ['string', 'null'] },
             headline: { type: ['string', 'null'] },
             description: { type: ['string', 'null'] },
             cta: { type: ['string', 'null'] },
-            imageSuggestion: { type: ['string', 'null'] },
             destinationUrl: { type: ['string', 'null'] },
           },
         },
         review: {
           type: 'object',
           additionalProperties: false,
-          required: ['summary', 'strengths', 'risks', 'recommendations', 'confidence'],
+          required: ['summary', 'risks', 'recommendations', 'confidence'],
           properties: {
             summary: { type: 'string', minLength: 1 },
-            strengths: { type: 'array', items: { type: 'string' } },
             risks: { type: 'array', items: { type: 'string' } },
             recommendations: { type: 'array', items: { type: 'string' } },
             confidence: { type: 'number' },
@@ -1675,42 +2079,58 @@ ${JSON.stringify({
     return {
       type: 'object',
       additionalProperties: false,
-      required: ['analysis'],
+      required: [
+        'overallScore',
+        'riskLevel',
+        'isReadyToPublish',
+        'businessDiagnosis',
+        'blockingIssues',
+        'warnings',
+        'recommendations',
+        'performanceAnalysis',
+        'executiveDecision',
+      ],
       properties: {
-        analysis: {
+        overallScore: { type: 'number' },
+        riskLevel: {
+          type: 'string',
+          enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
+        },
+        isReadyToPublish: { type: 'boolean' },
+        businessDiagnosis: {
           type: 'object',
           additionalProperties: false,
-          required: ['summary', 'strengths', 'issues', 'improvements', 'confidence'],
+          required: ['summary', 'mainProblem', 'mainOpportunity'],
           properties: {
             summary: { type: 'string', minLength: 1 },
-            strengths: { type: 'array', items: { type: 'string' } },
-            issues: { type: 'array', items: { type: 'string' } },
-            improvements: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['id', 'type', 'label', 'description', 'suggestedValue', 'confidence'],
-                properties: {
-                  id: { type: 'string', minLength: 1 },
-                  type: {
-                    type: 'string',
-                    enum: ['headline', 'primaryText', 'targeting', 'cta', 'budget', 'url'],
-                  },
-                  label: { type: 'string', minLength: 1 },
-                  description: { type: 'string', minLength: 1 },
-                  suggestedValue: {
-                    anyOf: [
-                      { type: 'string' },
-                      { type: 'number' },
-                      { type: 'object', additionalProperties: true },
-                    ],
-                  },
-                  confidence: { type: 'number' },
-                },
-              },
+            mainProblem: { type: 'string' },
+            mainOpportunity: { type: 'string' },
+          },
+        },
+        blockingIssues: { type: 'array', items: { type: 'string' } },
+        warnings: { type: 'array', items: { type: 'string' } },
+        recommendations: { type: 'array', items: { type: 'string' } },
+        performanceAnalysis: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['conversionPotential', 'financialRisk', 'metaApprovalRisk', 'scalabilityPotential'],
+          properties: {
+            conversionPotential: { type: 'string' },
+            financialRisk: { type: 'string' },
+            metaApprovalRisk: { type: 'string' },
+            scalabilityPotential: { type: 'string' },
+          },
+        },
+        executiveDecision: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['decision', 'reason'],
+          properties: {
+            decision: {
+              type: 'string',
+              enum: ['PUBLISH', 'BLOCK', 'REVIEW', 'RESTRUCTURE'],
             },
-            confidence: { type: 'number' },
+            reason: { type: 'string' },
           },
         },
       },
@@ -1770,8 +2190,11 @@ ${JSON.stringify({
     payload: any,
     prompt = '',
     storeContext?: StoreAiContext,
+    campaignIntent?: DeterministicCampaignIntent,
     metadata: { model?: string; usedFallback?: boolean; responseValid?: boolean } = {},
   ): CampaignSuggestionResponse {
+    const constraints = this.buildBriefingConstraintsPrioritizingPrompt(prompt, storeContext);
+    const intent = campaignIntent || this.buildCampaignIntent(prompt, storeContext);
     const normalizedPayload = this.normalizeCampaignAiResponse(payload) as Record<string, any>;
     const normalizedPlanner = this.firstObject(normalizedPayload.planner);
     const normalizedCampaign = this.firstObject(normalizedPayload.campaign);
@@ -1785,9 +2208,6 @@ ${JSON.stringify({
       storeContext?.businessType,
     ].filter(Boolean).join(' '));
     const segment = this.firstSpecificText(storeContext?.segment) || vertical;
-    const storeName = storeContext?.companyName && storeContext.companyName !== 'Store não identificada'
-      ? storeContext.companyName
-      : '';
     const normalizedAssumptions = this.normalizeStringArray(normalizedPlanner.assumptions).length
       ? this.normalizeStringArray(normalizedPlanner.assumptions)
       : this.buildFallbackAssumptions(segment, storeContext);
@@ -1807,7 +2227,8 @@ ${JSON.stringify({
           this.buildFallbackBudgetRationale(prompt, storeContext),
           ...this.buildFallbackNextDataNeeded().slice(0, 2),
         ].filter(Boolean);
-    const objective = this.normalizeStructuredObjective(normalizedCampaign.objective, prompt);
+    const messageIntent = intent.destinationType === 'messages';
+    const objective = intent.objective || this.normalizeStructuredObjective(normalizedCampaign.objective, prompt);
     const funnelStage = this.normalizeStructuredFunnelStage(
       normalizedPlanner.funnelStage ?? storeContext?.campaignIntent.funnelStage,
       prompt,
@@ -1815,33 +2236,22 @@ ${JSON.stringify({
     const budget = this.normalizeStructuredBudget(
       normalizedCampaign.budget ?? normalizedPayload.budgetSuggestion ?? normalizedPayload.budget,
       prompt,
-      storeContext,
     );
-    const normalizedCampaignName = this.normalizeStructuredText(
-      normalizedCampaign.campaignName,
-      this.buildFallbackCampaignName(segment, storeName, prompt),
-      80,
-    );
-    const primaryText = this.normalizeStructuredText(
-      normalizedCreative.primaryText,
-      this.buildFallbackCopy(segment, storeContext),
-      260,
-    );
-    const headline = this.normalizeStructuredText(
-      normalizedCreative.headline,
-      normalizedCampaignName,
-      80,
-    );
-    const audienceIntent = this.normalizeStructuredText(
-      normalizedPlanner.audienceIntent,
-      this.buildFallbackAudience(segment, storeContext),
-      260,
-    );
+    const normalizedCampaignName = this.normalizeOptionalStructuredText(normalizedCampaign.campaignName, 80) || '';
+    const primaryText = this.normalizeOptionalStructuredText(normalizedCreative.primaryText, 260) || '';
+    const headline = this.normalizeOptionalStructuredText(normalizedCreative.headline, 80) || '';
+    const audienceIntent = this.normalizeOptionalStructuredText(normalizedPlanner.audienceIntent, 260) || '';
     const description = this.normalizeOptionalStructuredText(normalizedCreative.description, 120);
-    const cta = this.normalizeStructuredCta(normalizedCreative.cta, prompt, storeContext);
-    const destinationUrl = this.normalizeHttpsUrl(normalizedCreative.destinationUrl);
-    const interestFallbacks = this.buildInterestFallbacks(segment, storeContext);
-    const targeting = this.normalizeStructuredTargeting(normalizedAdSet.targeting, prompt, storeContext, interestFallbacks);
+    const cta = intent.cta || (messageIntent ? 'MESSAGE_PAGE' : this.normalizeStructuredCta(normalizedCreative.cta));
+    const destinationUrl = intent.destinationType === 'site'
+      ? this.normalizeHttpsUrl(normalizedCreative.destinationUrl) || this.normalizeHttpsUrl(storeContext?.website)
+      : null;
+    const targeting = this.normalizeStructuredTargeting(normalizedAdSet.targeting, prompt);
+    const remarketingAudienceGuard = this.sanitizeAudienceForRemarketing(
+      targeting,
+      constraints,
+      audienceIntent,
+    );
     const planner: AiPlannerOutput = {
       businessType: this.normalizeOptionalStructuredText(
         normalizedPlanner.businessType,
@@ -1868,14 +2278,14 @@ ${JSON.stringify({
       objective,
       buyingType: 'AUCTION',
       status: 'PAUSED',
-      budget,
+      budget: {
+        ...budget,
+        type: intent.budgetType || budget.type,
+        amount: intent.budgetAmount ?? budget.amount,
+      },
     };
     const adSet: AiAdSetOutput = {
-      name: this.normalizeStructuredText(
-        normalizedAdSet.name,
-        `${normalizedCampaignName} | Publico 1`,
-        120,
-      ),
+      name: this.normalizeOptionalStructuredText(normalizedAdSet.name, 120) || '',
       optimizationGoal: this.normalizeOptionalStructuredText(
         normalizedAdSet.optimizationGoal,
         80,
@@ -1884,14 +2294,10 @@ ${JSON.stringify({
         normalizedAdSet.billingEvent,
         80,
       ) || this.buildFallbackBillingEvent(objective),
-      targeting,
+      targeting: remarketingAudienceGuard.targeting,
     };
     const creative: AiCreativeOutput = {
-      name: this.normalizeStructuredText(
-        normalizedCreative.name,
-        `${normalizedCampaignName} | Criativo 1`,
-        120,
-      ),
+      name: this.normalizeOptionalStructuredText(normalizedCreative.name, 120) || '',
       primaryText,
       headline,
       description,
@@ -1925,24 +2331,18 @@ ${JSON.stringify({
       this.buildFallbackStrategy(segment, storeContext),
       260,
     );
-    const rootPrimaryText = this.normalizeStructuredText(
-      normalizedPayload?.primaryText,
-      creative.primaryText || this.buildFallbackCopy(segment, storeContext),
-      260,
-    );
-    const rootHeadline = this.normalizeStructuredText(
-      normalizedPayload?.headline,
-      creative.headline || normalizedCampaignName,
-      80,
-    );
-    const rootDescription = this.normalizeStructuredText(
-      normalizedPayload?.description,
-      creative.description || this.buildFallbackDifferentialText(storeContext, segment),
-      120,
-    );
-    const rootCta = this.normalizeCtaValue(normalizedPayload?.cta)
+    const rootPrimaryText = this.normalizeOptionalStructuredText(normalizedPayload?.primaryText, 260)
+      || creative.primaryText
+      || '';
+    const rootHeadline = this.normalizeOptionalStructuredText(normalizedPayload?.headline, 80)
+      || creative.headline
+      || '';
+    const rootDescription = this.normalizeOptionalStructuredText(normalizedPayload?.description, 120)
+      || creative.description
+      || '';
+    const rootCta = (intent.cta || (messageIntent ? 'MESSAGE_PAGE' : this.normalizeCtaValue(normalizedPayload?.cta)))
       || creative.cta
-      || this.inferFallbackCta(prompt, storeContext);
+      || '';
     const reasoning = this.normalizeStringArrayUnique(
       Array.isArray(normalizedPayload?.reasoning) ? normalizedPayload.reasoning : this.buildFallbackReasoningLines(storeContext, planner, campaign, adSet, creative),
       6,
@@ -1964,7 +2364,13 @@ ${JSON.stringify({
       creative,
       strategy,
     );
-    const audienceSummary = this.normalizeAudienceSummary(normalizedPayload?.audience, adSet.targeting);
+    const rawAudienceSummary = this.normalizeAudienceSummary(normalizedPayload?.audience, adSet.targeting);
+    const audienceSummary = remarketingAudienceGuard.sanitized
+      ? {
+        ...rawAudienceSummary,
+        interests: [],
+      }
+      : rawAudienceSummary;
     const completenessImprovements = this.buildCampaignSuggestionCompletenessImprovements(normalizedPayload);
     const degradedResponseRisk = metadata.responseValid === false
       ? ['A resposta da IA exige revisão manual antes da publicação.']
@@ -1972,9 +2378,120 @@ ${JSON.stringify({
     const effectiveConfidence = metadata.responseValid === false
       ? Math.min(review.confidence, 45)
       : review.confidence;
+    const consistency = this.postProcessConsistencyForRemarketing(
+      this.validateSuggestionConsistency(
+        constraints,
+        {
+          strategy,
+          primaryText: rootPrimaryText,
+          headline: rootHeadline,
+          description: rootDescription,
+          cta: rootCta,
+          audience: audienceSummary,
+          planner,
+          campaign,
+          adSet,
+          creative,
+        },
+        normalizedPayload,
+      ),
+      constraints,
+      remarketingAudienceGuard.sanitized,
+    );
+    const mergedBlockingIssues = this.normalizeStringArrayUnique(
+      [...validation.blockingIssues, ...consistency.blockingIssues],
+      8,
+    );
+    const mergedWarnings = this.normalizeStringArrayUnique(
+      [...validation.warnings, ...consistency.warnings, ...remarketingAudienceGuard.warnings],
+      8,
+    );
+    const mergedRecommendations = this.normalizeStringArrayUnique(
+      [
+        ...validation.recommendations,
+        ...consistency.recommendations,
+        ...remarketingAudienceGuard.recommendations,
+        ...completenessImprovements,
+      ],
+      8,
+    );
+    const responseValid = metadata.responseValid === undefined ? true : metadata.responseValid;
+    const mergedValidation: AiValidationOutput = {
+      isReadyToPublish: validation.isReadyToPublish
+      && mergedBlockingIssues.length === 0
+      && effectiveConfidence >= 60
+      && metadata.usedFallback !== true
+      && responseValid,
+      qualityScore: this.adjustQualityScoreForIssues(
+        this.deriveQualityScore(
+          { review: { ...review, confidence: effectiveConfidence } },
+          mergedBlockingIssues,
+          mergedWarnings,
+          metadata.usedFallback,
+        ),
+        mergedBlockingIssues,
+        mergedWarnings,
+      ),
+      blockingIssues: mergedBlockingIssues,
+      warnings: mergedWarnings,
+      recommendations: mergedRecommendations,
+    };
+    const isStrictSuccess = responseValid
+      && metadata.usedFallback !== true
+      && consistency.blockingIssues.length === 0
+      && mergedValidation.blockingIssues.length === 0
+      && effectiveConfidence >= 60;
+    const finalDestinationType: CampaignDestinationType | null = intent.destinationType
+      || (this.isHttpsUrl(creative.destinationUrl) ? 'site' : constraints.expectedDestinationType);
+
+    if (consistency.shouldRetry || effectiveConfidence < 40 || !responseValid || metadata.usedFallback === true) {
+      this.logger.log(JSON.stringify({
+        operation: 'campaign_ai_suggestion',
+        stage: 'campaign_ai_response_finalized',
+        status: 'AI_NEEDS_RETRY',
+        responseValid,
+        finalCreativeCta: creative.cta,
+        finalCampaignObjective: campaign.objective,
+        finalDestinationType,
+        finalBlockingIssues: mergedValidation.blockingIssues,
+      }));
+      return this.buildAiFailureResponse(
+        'invalid_response',
+        this.promptVersion,
+        metadata.model || this.model,
+        consistency.shouldRetry
+          ? this.buildConsistencyFailureDebug(
+            consistency,
+            constraints,
+            {
+              strategy,
+              cta: rootCta,
+              audience: audienceSummary,
+              campaign,
+              adSet,
+              creative,
+            },
+          )
+          : undefined,
+        'AI_NEEDS_RETRY',
+        consistency.userMessage || 'A IA gerou uma sugestão inconsistente com o briefing. Gere novamente.',
+      );
+    }
+
+    this.logger.log(JSON.stringify({
+      operation: 'campaign_ai_suggestion',
+      stage: 'campaign_ai_response_finalized',
+      status: isStrictSuccess ? 'AI_SUCCESS' : 'AI_NEEDS_REVIEW',
+      responseValid,
+      finalCreativeCta: creative.cta,
+      finalCampaignObjective: campaign.objective,
+      finalDestinationType,
+      finalBlockingIssues: mergedValidation.blockingIssues,
+    }));
 
     return {
-      status: 'AI_SUCCESS',
+      status: isStrictSuccess ? 'AI_SUCCESS' : 'AI_NEEDS_REVIEW',
+      intent,
       strategy,
       primaryText: rootPrimaryText,
       headline: rootHeadline,
@@ -1983,7 +2500,7 @@ ${JSON.stringify({
       audience: audienceSummary,
       budgetSuggestion: campaign.budget.amount,
       risks: this.normalizeStringArrayUnique([...risks, ...degradedResponseRisk], 6),
-      improvements: this.normalizeStringArrayUnique([...improvements, ...completenessImprovements], 6),
+      improvements: this.normalizeStringArrayUnique([...improvements, ...mergedRecommendations], 8),
       reasoning,
       explanation,
       planner,
@@ -1994,15 +2511,17 @@ ${JSON.stringify({
         ...review,
         confidence: effectiveConfidence,
         risks: this.normalizeStringArrayUnique([...review.risks, ...degradedResponseRisk], 6),
-        recommendations: this.normalizeStringArrayUnique([...review.recommendations, ...completenessImprovements], 6),
+        recommendations: mergedRecommendations,
       },
-      validation,
+      validation: mergedValidation,
       meta: {
         promptVersion: this.promptVersion,
         model: metadata.model || this.model,
         usedFallback: !!metadata.usedFallback,
-        responseValid: metadata.responseValid !== false,
+        responseValid,
+        consistencyApproved: consistency.blockingIssues.length === 0,
       },
+      debug: consistency.debug,
     };
   }
 
@@ -2010,55 +2529,101 @@ ${JSON.stringify({
     raw: string,
     rawText = raw,
     candidateText = '',
+    finishReason: string | null = null,
+    maxOutputTokens: number | null = null,
   ): ParsedCampaignSuggestion {
-    const sanitized = this.sanitizeJson(raw);
-    const truncated = this.looksTruncatedJson(sanitized);
-    const extracted = this.extractJsonFromAiText(raw);
-    if (extracted === null) {
-      return {
-        payload: null,
-        error: sanitized ? (truncated ? 'parse_failed' : 'parse_failed') : 'empty_response',
-        truncated,
-        rawText,
-        candidateText,
-        validationPath: 'extractJsonFromAiText',
-      };
-    }
-    const payload = extracted;
-    const validationError = this.getCampaignSuggestionValidationError(payload);
-    if (this.isDevelopment) {
-      const normalizedPreview = typeof payload === 'object' && payload !== null
-        ? this.normalizeCampaignAiResponse(payload)
-        : null;
-      this.logger.log(JSON.stringify({
-        operation: 'campaign_suggestion',
-        stage: 'campaign_parse_debug',
-        rawText,
-        candidateText,
-        parsedResult: payload,
-        normalizedResult: normalizedPreview,
-        validationError: validationError || null,
-      }));
-    }
-    if (validationError) {
-      const normalized = this.normalizeCampaignAiResponse(payload);
+    const sources = [
+      { label: 'responseText', value: raw },
+      { label: 'candidateText', value: candidateText },
+      { label: 'rawText', value: rawText },
+    ].filter((source, index, list) => {
+      const normalized = this.asString(source.value);
+      return normalized && list.findIndex((entry) => this.asString(entry.value) === normalized) === index;
+    });
+
+    let sawTruncatedSource = false;
+
+    for (const source of sources) {
+      const sanitized = this.sanitizeJson(source.value);
+      if (!sanitized) {
+        continue;
+      }
+
+      sawTruncatedSource = sawTruncatedSource || this.looksTruncatedJson(sanitized);
+      const extracted = this.extractJsonFromAiText(source.value);
+      if (extracted === null) {
+        continue;
+      }
+
+      const payload = extracted;
+      const validationError = this.getCampaignSuggestionValidationError(payload);
+      if (this.isDevelopment) {
+        const normalizedPreview = typeof payload === 'object' && payload !== null
+          ? this.normalizeCampaignAiResponse(payload)
+          : null;
+        this.logger.log(JSON.stringify({
+          operation: 'campaign_suggestion',
+          stage: 'campaign_parse_debug',
+          parsedFrom: source.label,
+          rawText,
+          candidateText,
+          finishReason,
+          maxOutputTokens,
+          parsedResult: payload,
+          normalizedResult: normalizedPreview,
+          validationError: validationError || null,
+        }));
+      }
+
+      if (validationError) {
+        const normalized = this.normalizeCampaignAiResponse(payload);
+        return {
+          payload,
+          error: validationError,
+          truncated: false,
+          rawText,
+          candidateText,
+          finishReason,
+          maxOutputTokens,
+          validationPath: `getCampaignSuggestionValidationError.${source.label}`,
+          normalizedKeys: Object.keys(normalized),
+        };
+      }
+
       return {
         payload,
-        error: validationError,
         truncated: false,
         rawText,
         candidateText,
-        validationPath: 'getCampaignSuggestionValidationError',
-        normalizedKeys: Object.keys(normalized),
+        finishReason,
+        maxOutputTokens,
+        validationPath: `extractJsonFromAiText.${source.label}`,
+        normalizedKeys: payload && typeof payload === 'object' ? Object.keys(this.normalizeCampaignAiResponse(payload)) : [],
+      };
+    }
+
+    if (!sources.length) {
+      return {
+        payload: null,
+        error: 'empty_response',
+        truncated: false,
+        rawText,
+        candidateText,
+        finishReason,
+        maxOutputTokens,
+        validationPath: 'extractJsonFromAiText.empty',
       };
     }
 
     return {
-      payload,
-      truncated: false,
+      payload: null,
+      error: sawTruncatedSource || this.isMaxTokensFinishReason(finishReason) ? 'truncated_response' : 'parse_failed',
+      truncated: sawTruncatedSource || this.isMaxTokensFinishReason(finishReason),
       rawText,
       candidateText,
-      normalizedKeys: payload && typeof payload === 'object' ? Object.keys(this.normalizeCampaignAiResponse(payload)) : [],
+      finishReason,
+      maxOutputTokens,
+      validationPath: 'extractJsonFromAiText',
     };
   }
 
@@ -2075,6 +2640,11 @@ ${JSON.stringify({
       hasRawText: !!this.asString(parsed.rawText || parsed.candidateText),
       rawTextPreview: this.previewAiText(parsed.rawText),
       candidateTextPreview: this.previewAiText(parsed.candidateText),
+      rawTextLength: this.asString(parsed.rawText).length,
+      candidateTextLength: this.asString(parsed.candidateText).length,
+      finishReason: parsed.finishReason ?? null,
+      maxOutputTokens: parsed.maxOutputTokens ?? null,
+      candidateTextEndsWithClosingBrace: this.asString(parsed.candidateText).trim().endsWith('}'),
       parsedType: this.describeParsedType(parsed.payload),
       normalizedKeys: Object.keys(normalized),
       validationError: parsed.error || 'invalid_response',
@@ -2148,6 +2718,209 @@ ${JSON.stringify({
         blockingIssues: [],
         warnings: ['Resposta aproveitada em modo degradado; revisão manual obrigatória.'],
         recommendations: ['Revise texto, público, orçamento e URL antes de publicar.'],
+      },
+    };
+  }
+
+  private buildConsistencyFailureDebug(
+    consistency: {
+      blockingIssues: string[];
+      warnings: string[];
+      recommendations: string[];
+      shouldRetry: boolean;
+      userMessage?: string;
+      debug?: ConsistencyDebugInfo;
+    },
+    constraints: BriefingConstraints,
+    detected: {
+      strategy: string;
+      cta: string;
+      audience: AiCampaignAudienceSummary;
+      campaign: AiCampaignOutput;
+      adSet: AiAdSetOutput;
+      creative: AiCreativeOutput;
+    },
+  ): CampaignAiFailureDebug | undefined {
+    if (!this.isDevelopment) {
+      return undefined;
+    }
+
+    return {
+      hasRawText: false,
+      rawTextPreview: '',
+      candidateTextPreview: '',
+      rawTextLength: 0,
+      candidateTextLength: 0,
+      finishReason: null,
+      maxOutputTokens: null,
+      candidateTextEndsWithClosingBrace: false,
+      consistencyErrors: consistency.blockingIssues,
+      expectedBriefingSignals: consistency.debug?.expectedBriefingSignals || {
+        expectedSegment: constraints.expectedSegment,
+        expectedObjective: constraints.expectedObjective,
+        expectedBudget: constraints.expectedBudget,
+        expectedBudgetType: constraints.expectedBudgetType,
+        expectedCta: constraints.expectedCta,
+        expectedDestinationType: constraints.expectedDestinationType,
+        expectsRemarketing: constraints.expectsRemarketing,
+      },
+      detectedResponseSignals: consistency.debug?.detectedResponseSignals || {
+        objective: detected.campaign.objective,
+        budget: detected.campaign.budget.amount,
+        budgetType: detected.campaign.budget.type,
+        cta: detected.creative.cta || detected.cta,
+        destinationUrl: detected.creative.destinationUrl,
+        destinationType: this.isHttpsUrl(detected.creative.destinationUrl) ? 'site' : 'messages',
+        segment: this.inferVertical([
+          detected.strategy,
+          detected.creative.primaryText,
+          detected.creative.headline,
+          detected.adSet.targeting.interests.join(', '),
+        ].filter(Boolean).join(' ')),
+        audience: {
+          gender: detected.audience.gender,
+          ageRange: detected.audience.ageRange,
+          interests: detected.audience.interests,
+          targetingInterests: detected.adSet.targeting.interests,
+          city: detected.adSet.targeting.city,
+        },
+      },
+      failedRules: consistency.debug?.failedRules || [],
+      immutableFieldsExpected: consistency.debug?.immutableFieldsExpected || {
+        objective: constraints.expectedObjective,
+        budgetAmount: constraints.expectedBudget,
+        budgetType: constraints.expectedBudgetType,
+        cta: constraints.expectedCta,
+        destinationType: constraints.expectedDestinationType,
+        segment: constraints.expectedSegment,
+        campaignType: 'AUCTION',
+        storeId: null,
+      },
+      immutableFieldsReceived: consistency.debug?.immutableFieldsReceived || {
+        objective: detected.campaign.objective,
+        budgetAmount: detected.campaign.budget.amount,
+        budgetType: detected.campaign.budget.type,
+        cta: detected.creative.cta || detected.cta,
+        destinationType: this.isHttpsUrl(detected.creative.destinationUrl) ? 'site' : 'messages',
+        segment: this.inferVertical([
+          detected.strategy,
+          detected.creative.primaryText,
+          detected.creative.headline,
+          detected.adSet.targeting.interests.join(', '),
+        ].filter(Boolean).join(' ')),
+        campaignType: detected.campaign.buyingType,
+        storeId: null,
+      },
+      immutableFieldMismatches: consistency.debug?.immutableFieldMismatches || [],
+      parsedType: 'object',
+      normalizedKeys: [],
+      validationError: 'consistency_retry',
+      validationPath: 'validateSuggestionConsistency',
+    };
+  }
+
+  private buildContextOnlyDraftCampaignPayload(
+    prompt: string,
+    storeContext: StoreAiContext | undefined,
+    reason: 'timeout' | 'api_error',
+  ): Record<string, unknown> {
+    const segment = this.firstSpecificText(storeContext?.segment) || this.inferVertical(prompt);
+    const campaignName = this.buildFallbackCampaignName(
+      segment,
+      storeContext?.companyName || storeContext?.storeName || '',
+      prompt,
+    );
+    const objective = this.normalizeStructuredObjective(storeContext?.campaignIntent.goal, prompt);
+    const budget = this.normalizeStructuredBudget(null, prompt);
+    const targeting = this.normalizeStructuredTargeting(null, prompt);
+    const primaryText = this.buildFallbackCopy(segment, storeContext);
+    const description = this.buildFallbackDifferentialText(storeContext, segment);
+    const cta = this.inferFallbackCta(prompt, storeContext);
+    const destinationUrl = this.normalizeHttpsUrl(storeContext?.website);
+    const reviewWarning = reason === 'timeout'
+      ? 'A IA externa excedeu o tempo limite e o MetaIQ montou um rascunho local para não travar o fluxo.'
+      : 'A IA externa ficou indisponível e o MetaIQ montou um rascunho local com base no contexto da store.';
+
+    return {
+      strategy: this.buildFallbackStrategy(segment, storeContext),
+      primaryText,
+      headline: campaignName,
+      description,
+      cta,
+      audience: {
+        gender: targeting.gender,
+        ageRange: targeting.ageMin && targeting.ageMax ? `${targeting.ageMin}-${targeting.ageMax}` : null,
+        interests: targeting.interests,
+      },
+      budgetSuggestion: budget.amount,
+      risks: [
+        reviewWarning,
+        'Revise copy, público, orçamento e URL antes de publicar.',
+      ],
+      improvements: [
+        'Confirmar a oferta principal e o diferencial que mais converte para a store.',
+        'Validar URL final, criativo e público antes do envio para a Meta.',
+      ],
+      reasoning: [
+        `O rascunho foi montado usando o contexto real da store no segmento ${segment}.`,
+        storeContext?.campaignIntent.primaryOffer
+          ? `A oferta principal considerada foi ${storeContext.campaignIntent.primaryOffer}.`
+          : 'A oferta principal ainda precisa de revisão manual.',
+        reviewWarning,
+      ],
+      explanation: {
+        strategy: 'O MetaIQ usou apenas o contexto real da store e do briefing para não deixar o usuário sem ponto de partida.',
+        audience: 'O público foi montado com base nos sinais disponíveis da operação e precisa de revisão humana antes da publicação.',
+        copy: 'A copy foi escrita com foco em especificidade mínima segura, sem inventar dados comerciais críticos.',
+        budget: 'O orçamento foi inferido de forma conservadora até a IA externa voltar a responder normalmente.',
+      },
+      planner: {
+        businessType: storeContext?.businessType || segment,
+        goal: storeContext?.campaignIntent.goal || this.inferFallbackObjective(prompt),
+        funnelStage: this.normalizeStructuredFunnelStage(storeContext?.campaignIntent.funnelStage, prompt),
+        offer: storeContext?.campaignIntent.primaryOffer || storeContext?.storeProfile.mainOffer || null,
+        audienceIntent: storeContext?.targetAudience || null,
+        missingInputs: this.buildFallbackMissingInputs(prompt, storeContext),
+        assumptions: this.buildFallbackAssumptions(segment, storeContext),
+      },
+      campaign: {
+        campaignName,
+        objective,
+        buyingType: 'AUCTION',
+        status: 'PAUSED',
+        budget,
+      },
+      adSet: {
+        name: `${campaignName} | Publico 1`,
+        optimizationGoal: this.buildFallbackOptimizationGoal(objective),
+        billingEvent: this.buildFallbackBillingEvent(objective),
+        targeting,
+      },
+      creative: {
+        name: `${campaignName} | Criativo 1`,
+        primaryText,
+        headline: campaignName,
+        description,
+        cta,
+        imageSuggestion: null,
+        destinationUrl,
+      },
+      review: {
+        summary: this.buildFallbackCampaignAngle(segment, prompt, storeContext),
+        strengths: this.buildKnownFacts(storeContext, prompt),
+        risks: [reviewWarning],
+        recommendations: [
+          'Revise a proposta comercial, o público e os dados operacionais antes de publicar.',
+          'Quando possível, regenere a campanha com a IA externa para obter uma versão mais detalhada.',
+        ],
+        confidence: 34,
+      },
+      validation: {
+        isReadyToPublish: false,
+        qualityScore: 35,
+        blockingIssues: [],
+        warnings: [reviewWarning],
+        recommendations: ['Use este rascunho apenas como ponto de partida e revise todos os campos.'],
       },
     };
   }
@@ -2314,6 +3087,11 @@ ${JSON.stringify({
     return quotes % 2 !== 0;
   }
 
+  private isMaxTokensFinishReason(value: string | null | undefined): boolean {
+    const normalized = this.asString(value).toUpperCase();
+    return normalized === 'MAX_TOKENS' || normalized === 'LENGTH';
+  }
+
   private getCampaignSuggestionValidationError(payload: unknown): string | null {
     if (payload === null || payload === undefined) {
       return 'empty_response';
@@ -2336,12 +3114,16 @@ ${JSON.stringify({
 
     if (!Object.keys(candidate).length) return 'normalized_empty';
     if (objective && !this.isObjective(objective)) return 'invalid_objective';
+    if (this.containsRawJsonArtifact(primaryText) || this.containsRawJsonArtifact(headline) || this.containsRawJsonArtifact(strategy)) {
+      return 'raw_json_in_copy';
+    }
     if (!primaryText && !headline && !strategy) {
       return 'missing_primaryText_headline_strategy';
     }
     if (!primaryText) return 'missing_primaryText';
     if (!headline) return 'missing_headline';
     if (!hasAudience) return 'missing_audience';
+    if (!this.asString(candidate.cta) && !this.asString(creative?.cta)) return 'missing_cta';
 
     return null;
   }
@@ -2352,24 +3134,28 @@ ${JSON.stringify({
     }
 
     const candidate = payload as Record<string, unknown>;
-    if (typeof candidate.analysis !== 'object' || candidate.analysis === null || Array.isArray(candidate.analysis)) {
-      return 'missing_or_invalid_analysis';
-    }
+    const businessDiagnosis = this.firstObject(candidate.businessDiagnosis);
+    const performanceAnalysis = this.firstObject(candidate.performanceAnalysis);
+    const executiveDecision = this.firstObject(candidate.executiveDecision);
 
-    const analysis = candidate.analysis as Record<string, unknown>;
-    if (!this.asString(analysis.summary)) {
-      return 'missing_or_empty_summary';
-    }
-    if (!Array.isArray(analysis.strengths) || !Array.isArray(analysis.issues) || !Array.isArray(analysis.improvements)) {
-      return 'missing_or_invalid_analysis_arrays';
-    }
-    const hasInvalidImprovement = analysis.improvements.some((item) => this.getCampaignAnalysisImprovementValidationError(item));
-    if (hasInvalidImprovement) {
-      return 'missing_or_invalid_analysis_improvement_items';
-    }
-    if (typeof analysis.confidence !== 'number') {
-      return 'missing_or_invalid_analysis_confidence';
-    }
+    if (typeof candidate.overallScore !== 'number') return 'missing_or_invalid_overallScore';
+    if (!this.isCampaignRiskLevel(candidate.riskLevel)) return 'missing_or_invalid_riskLevel';
+    if (typeof candidate.isReadyToPublish !== 'boolean') return 'missing_or_invalid_isReadyToPublish';
+    if (!businessDiagnosis) return 'missing_or_invalid_businessDiagnosis';
+    if (!this.asString(businessDiagnosis.summary)) return 'missing_business_summary';
+    if (!this.asString(businessDiagnosis.mainProblem)) return 'missing_business_mainProblem';
+    if (!this.asString(businessDiagnosis.mainOpportunity)) return 'missing_business_mainOpportunity';
+    if (!Array.isArray(candidate.blockingIssues)) return 'missing_or_invalid_blockingIssues';
+    if (!Array.isArray(candidate.warnings)) return 'missing_or_invalid_warnings';
+    if (!Array.isArray(candidate.recommendations)) return 'missing_or_invalid_recommendations';
+    if (!performanceAnalysis) return 'missing_or_invalid_performanceAnalysis';
+    if (!this.asString(performanceAnalysis.conversionPotential)) return 'missing_conversionPotential';
+    if (!this.asString(performanceAnalysis.financialRisk)) return 'missing_financialRisk';
+    if (!this.asString(performanceAnalysis.metaApprovalRisk)) return 'missing_metaApprovalRisk';
+    if (!this.asString(performanceAnalysis.scalabilityPotential)) return 'missing_scalabilityPotential';
+    if (!executiveDecision) return 'missing_or_invalid_executiveDecision';
+    if (!this.isCampaignExecutiveDecision(executiveDecision.decision)) return 'missing_or_invalid_decision';
+    if (!this.asString(executiveDecision.reason)) return 'missing_decision_reason';
 
     return null;
   }
@@ -2407,31 +3193,97 @@ ${JSON.stringify({
     input: CampaignCopilotAnalysisRequest,
     metadata: { model?: string; usedFallback?: boolean; responseValid?: boolean } = {},
   ): CampaignAnalysisResponse {
-    const derived = this.buildDerivedCampaignAnalysis(input);
+    const derived = this.buildStrategicDerivedCampaignAnalysis(input);
     const candidate = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {};
-    const analysisPayload = typeof candidate.analysis === 'object' && candidate.analysis !== null
-      ? candidate.analysis as Record<string, unknown>
-      : {};
+    const analysisPayload = this.firstObject(candidate.analysis) ?? candidate;
+    const overallScore = this.normalizeConfidenceScore(analysisPayload.overallScore) ?? derived.overallScore;
+    const blockingIssues = this.normalizeStringArrayUnique(
+      [
+        ...(Array.isArray(analysisPayload.blockingIssues) ? analysisPayload.blockingIssues : []),
+        ...derived.blockingIssues,
+      ],
+      6,
+    );
+    const warnings = this.normalizeStringArrayUnique(
+      [
+        ...(Array.isArray(analysisPayload.warnings) ? analysisPayload.warnings : []),
+        ...derived.warnings,
+      ],
+      6,
+    );
+    const recommendations = this.normalizeStringArrayUnique(
+      [
+        ...(Array.isArray(analysisPayload.recommendations) ? analysisPayload.recommendations : []),
+        ...derived.recommendations,
+      ],
+      6,
+    );
+    const derivedRiskLevel = this.deriveCampaignRiskLevel(overallScore, blockingIssues);
+    const candidateRiskLevel = this.normalizeCampaignRiskLevel(analysisPayload.riskLevel);
+    const riskLevel = candidateRiskLevel
+      ? this.moreSevereRiskLevel(candidateRiskLevel, derivedRiskLevel)
+      : derivedRiskLevel;
+    const derivedIsReadyToPublish = derived.isReadyToPublish && blockingIssues.length === 0 && riskLevel !== 'CRITICAL';
+    const candidateIsReadyToPublish = this.normalizeBooleanValue(analysisPayload.isReadyToPublish);
+    const isReadyToPublish = derivedIsReadyToPublish
+      && candidateIsReadyToPublish !== false
+      && blockingIssues.length === 0;
+    const derivedExecutiveDecision: AiCampaignExecutiveDecision = {
+      decision: this.deriveCampaignExecutiveDecision(
+        isReadyToPublish,
+        riskLevel,
+        blockingIssues,
+        warnings,
+      ),
+      reason: derived.executiveDecision.reason,
+    };
+    const candidateExecutiveDecision = this.normalizeCampaignExecutiveDecision(
+      analysisPayload.executiveDecision,
+      derivedExecutiveDecision,
+    );
+    const executiveDecision: AiCampaignExecutiveDecision = {
+      decision: this.moreRestrictiveExecutiveDecision(candidateExecutiveDecision.decision, derivedExecutiveDecision.decision),
+      reason: this.normalizeStructuredText(
+        candidateExecutiveDecision.reason,
+        derivedExecutiveDecision.reason,
+        220,
+      ),
+    };
     const analysis: AiCampaignCopilotAnalysis = {
+      overallScore,
+      riskLevel,
+      isReadyToPublish,
+      businessDiagnosis: this.normalizeCampaignBusinessDiagnosis(analysisPayload.businessDiagnosis, derived.businessDiagnosis),
+      blockingIssues,
+      warnings,
+      recommendations,
+      performanceAnalysis: this.normalizeCampaignPerformanceAnalysis(
+        analysisPayload.performanceAnalysis,
+        derived.performanceAnalysis,
+      ),
+      executiveDecision,
       summary: this.normalizeStructuredText(
-        analysisPayload.summary,
-        derived.summary,
+        this.asString(analysisPayload.summary) || this.firstObject(analysisPayload.businessDiagnosis)?.summary,
+        derived.summary || derived.businessDiagnosis.summary,
         220,
       ),
       strengths: this.normalizeStringArrayUnique(
-        Array.isArray(analysisPayload.strengths) ? analysisPayload.strengths : derived.strengths,
+        Array.isArray(analysisPayload.strengths) ? analysisPayload.strengths : (derived.strengths || []),
         4,
       ),
       issues: this.normalizeStringArrayUnique(
-        Array.isArray(analysisPayload.issues) ? analysisPayload.issues : derived.issues,
-        5,
+        [
+          ...(Array.isArray(analysisPayload.issues) ? analysisPayload.issues : []),
+          ...blockingIssues,
+        ],
+        6,
       ),
       improvements: this.normalizeCampaignAnalysisImprovements(
-        Array.isArray(analysisPayload.improvements) ? analysisPayload.improvements : derived.improvements,
+        Array.isArray(analysisPayload.improvements) ? analysisPayload.improvements : (derived.improvements || []),
         5,
-        derived.improvements,
+        derived.improvements || [],
       ),
-      confidence: this.normalizeConfidenceScore(analysisPayload.confidence) ?? derived.confidence,
+      confidence: this.normalizeConfidenceScore(analysisPayload.confidence) ?? derived.confidence ?? derived.overallScore,
     };
 
     return {
@@ -2557,16 +3409,19 @@ ${JSON.stringify({
     promptVersion: string,
     model: string,
     debug?: CampaignAiFailureDebug,
+    status: 'AI_FAILED' | 'AI_NEEDS_RETRY' = 'AI_FAILED',
+    messageOverride?: string,
   ): CampaignAiFailureResponse {
     return {
-      status: 'AI_FAILED',
+      status,
       reason,
-      message: this.failureReasonMessage(reason),
+      message: messageOverride || this.failureReasonMessage(reason),
       meta: {
         promptVersion,
         model,
         usedFallback: false,
         responseValid: false,
+        consistencyApproved: false,
       },
       debug: this.isDevelopment ? debug : undefined,
     };
@@ -2600,6 +3455,64 @@ ${JSON.stringify({
       default:
         return 'Não conseguimos gerar a campanha com IA agora.';
     }
+  }
+
+  private logCampaignIntentResolution(
+    requestId: string | undefined,
+    storeId: string,
+    prompt: string,
+    storeContext: StoreAiContext,
+    campaignIntent: DeterministicCampaignIntent,
+  ): void {
+    const briefing = this.extractPromptBriefing(prompt);
+    const payload = {
+      module: CampaignAiService.name,
+      requestId,
+      storeId,
+      briefingExtracted: briefing,
+      campaignIntentFinal: campaignIntent,
+      fieldOrigins: {
+        objective: briefing.objective || briefing.destinationType === 'messages'
+          ? 'prompt'
+          : storeContext.fieldOrigins.goal || 'backend_inference',
+        destinationType: briefing.destinationType
+          ? 'prompt'
+          : storeContext.fieldOrigins.destinationType || 'backend_inference',
+        budgetAmount: briefing.budget
+          ? 'prompt'
+          : storeContext.fieldOrigins.budget || 'backend_inference',
+        budgetType: briefing.budgetType
+          ? 'prompt'
+          : campaignIntent.budgetType
+          ? 'backend_inference'
+          : null,
+        segment: briefing.segment
+          ? 'prompt'
+          : storeContext.fieldOrigins.segment,
+        region: briefing.region
+          ? 'prompt'
+          : storeContext.fieldOrigins.region,
+        funnelStage: briefing.funnelStage
+          ? 'prompt'
+          : storeContext.fieldOrigins.funnelStage || 'backend_inference',
+        channel: briefing.channelPreference
+          ? 'prompt'
+          : storeContext.fieldOrigins.channelPreference || 'backend_inference',
+        offer: briefing.primaryOffer
+          ? 'prompt'
+          : storeContext.fieldOrigins.primaryOffer,
+      },
+    };
+
+    if (this.structuredLogger) {
+      this.structuredLogger.info('Campaign AI resolved briefing and intent before Gemini', payload);
+      return;
+    }
+
+    this.logger.log(JSON.stringify({
+      event: 'campaign_ai_intent_resolved',
+      ...payload,
+    }));
   }
 
   private logAiEvent(message: string, metadata: {
@@ -2645,6 +3558,106 @@ ${JSON.stringify({
     const numeric = this.normalizePositiveNumber(value);
     if (numeric === null) return null;
     return Math.min(100, Math.max(0, numeric));
+  }
+
+  private normalizeBooleanValue(value: unknown): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+  }
+
+  private isCampaignRiskLevel(value: unknown): value is AiCampaignRiskLevel {
+    return value === 'LOW' || value === 'MEDIUM' || value === 'HIGH' || value === 'CRITICAL';
+  }
+
+  private normalizeCampaignRiskLevel(value: unknown): AiCampaignRiskLevel | null {
+    return this.isCampaignRiskLevel(value) ? value : null;
+  }
+
+  private isCampaignExecutiveDecision(value: unknown): value is AiCampaignExecutiveDecisionValue {
+    return value === 'PUBLISH' || value === 'BLOCK' || value === 'REVIEW' || value === 'RESTRUCTURE';
+  }
+
+  private normalizeCampaignBusinessDiagnosis(
+    value: unknown,
+    fallback: AiCampaignBusinessDiagnosis,
+  ): AiCampaignBusinessDiagnosis {
+    const candidate = this.firstObject(value);
+    return {
+      summary: this.normalizeStructuredText(candidate?.summary, fallback.summary, 220),
+      mainProblem: this.normalizeStructuredText(candidate?.mainProblem, fallback.mainProblem, 220),
+      mainOpportunity: this.normalizeStructuredText(candidate?.mainOpportunity, fallback.mainOpportunity, 220),
+    };
+  }
+
+  private normalizeCampaignPerformanceAnalysis(
+    value: unknown,
+    fallback: AiCampaignPerformanceAnalysis,
+  ): AiCampaignPerformanceAnalysis {
+    const candidate = this.firstObject(value);
+    return {
+      conversionPotential: this.normalizeStructuredText(candidate?.conversionPotential, fallback.conversionPotential, 220),
+      financialRisk: this.normalizeStructuredText(candidate?.financialRisk, fallback.financialRisk, 220),
+      metaApprovalRisk: this.normalizeStructuredText(candidate?.metaApprovalRisk, fallback.metaApprovalRisk, 220),
+      scalabilityPotential: this.normalizeStructuredText(candidate?.scalabilityPotential, fallback.scalabilityPotential, 220),
+    };
+  }
+
+  private normalizeCampaignExecutiveDecision(
+    value: unknown,
+    fallback: AiCampaignExecutiveDecision,
+  ): AiCampaignExecutiveDecision {
+    const candidate = this.firstObject(value);
+    return {
+      decision: this.isCampaignExecutiveDecision(candidate?.decision) ? candidate.decision : fallback.decision,
+      reason: this.normalizeStructuredText(candidate?.reason, fallback.reason, 220),
+    };
+  }
+
+  private deriveCampaignRiskLevel(score: number, blockingIssues: string[]): AiCampaignRiskLevel {
+    if (blockingIssues.length >= 2 || score <= 25) return 'CRITICAL';
+    if (blockingIssues.length >= 1 || score <= 49) return 'HIGH';
+    if (score <= 74) return 'MEDIUM';
+    return 'LOW';
+  }
+
+  private moreSevereRiskLevel(
+    left: AiCampaignRiskLevel,
+    right: AiCampaignRiskLevel,
+  ): AiCampaignRiskLevel {
+    const severity: Record<AiCampaignRiskLevel, number> = {
+      LOW: 0,
+      MEDIUM: 1,
+      HIGH: 2,
+      CRITICAL: 3,
+    };
+
+    return severity[left] >= severity[right] ? left : right;
+  }
+
+  private deriveCampaignExecutiveDecision(
+    isReadyToPublish: boolean,
+    riskLevel: AiCampaignRiskLevel,
+    blockingIssues: string[],
+    warnings: string[],
+  ): AiCampaignExecutiveDecisionValue {
+    if (isReadyToPublish && riskLevel === 'LOW') return 'PUBLISH';
+    if (blockingIssues.length >= 2 || riskLevel === 'CRITICAL') return 'BLOCK';
+    if (blockingIssues.length === 1 || riskLevel === 'HIGH') return 'REVIEW';
+    if (warnings.length >= 3) return 'RESTRUCTURE';
+    return 'REVIEW';
+  }
+
+  private moreRestrictiveExecutiveDecision(
+    left: AiCampaignExecutiveDecisionValue,
+    right: AiCampaignExecutiveDecisionValue,
+  ): AiCampaignExecutiveDecisionValue {
+    const severity: Record<AiCampaignExecutiveDecisionValue, number> = {
+      PUBLISH: 0,
+      REVIEW: 1,
+      RESTRUCTURE: 2,
+      BLOCK: 3,
+    };
+
+    return severity[left] >= severity[right] ? left : right;
   }
 
   private isCopilotImprovementType(value: unknown): value is AiCampaignCopilotImprovementType {
@@ -2753,7 +3766,7 @@ ${JSON.stringify({
 
   private buildDerivedCampaignAnalysis(
     input: CampaignCopilotAnalysisRequest,
-  ): AiCampaignCopilotAnalysis {
+  ): any {
     const objective = this.asString(input.objective || (input.campaign as Record<string, unknown>)?.objective);
     const creative = (input.creative || {}) as Record<string, unknown>;
     const targeting = (input.targeting || {}) as Record<string, unknown>;
@@ -2765,7 +3778,6 @@ ${JSON.stringify({
     const cta = this.asString(input.cta || creative.cta).toUpperCase();
     const destinationUrl = this.asString(input.destinationUrl || creative.destinationUrl);
     const interests = this.normalizeStringArray((targeting as Record<string, unknown>).interests);
-    const placements = this.normalizeStringArray((targeting as Record<string, unknown>).placements);
     const city = this.asString(location.city || targeting.city);
     const stateCode = this.asString(location.state || targeting.stateCode || targeting.state);
     const country = this.asString(location.country || targeting.country).toUpperCase();
@@ -2963,6 +3975,173 @@ ${JSON.stringify({
     };
   }
 
+  private buildStrategicDerivedCampaignAnalysis(
+    input: CampaignCopilotAnalysisRequest,
+  ): AiCampaignCopilotAnalysis {
+    const objective = this.asString(input.objective || (input.campaign as Record<string, unknown>)?.objective);
+    const campaign = (input.campaign || {}) as Record<string, unknown>;
+    const creative = (input.creative || {}) as Record<string, unknown>;
+    const targeting = (input.targeting || {}) as Record<string, unknown>;
+    const budget = (input.budget || {}) as Record<string, unknown>;
+    const location = (input.location || {}) as Record<string, unknown>;
+    const message = this.asString(creative.message || creative.primaryText);
+    const headline = this.asString(creative.headline);
+    const description = this.asString(creative.description);
+    const cta = this.asString(input.cta || creative.cta).toUpperCase();
+    const destinationUrl = this.asString(input.destinationUrl || creative.destinationUrl);
+    const destinationType = this.asString(campaign.destinationType || creative.destinationType || targeting.destinationType).toLowerCase();
+    const interests = this.normalizeStringArray((targeting as Record<string, unknown>).interests);
+    const city = this.asString(location.city || targeting.city);
+    const stateCode = this.asString(location.state || targeting.stateCode || targeting.state);
+    const country = this.asString(location.country || targeting.country).toUpperCase();
+    const autoAudience = targeting.autoAudience === true;
+    const ageMin = this.normalizePositiveNumber(targeting.ageMin);
+    const ageMax = this.normalizePositiveNumber(targeting.ageMax);
+    const budgetValue = this.normalizePositiveNumber(budget.value || budget.amount);
+    const blockingIssues: string[] = [];
+    const warnings: string[] = [];
+    const recommendations: string[] = [];
+    const destinationSignals = `${destinationUrl} ${destinationType} ${message} ${headline}`.toLowerCase();
+    const isMessagesCampaign = destinationType === 'messages' || /(whatsapp|messenger|instagram dm|direct|messages?)/i.test(destinationSignals);
+
+    if (budgetValue === null || budgetValue <= 0) {
+      blockingIssues.push('Orçamento ausente, zerado ou inválido.');
+    }
+
+    if (!objective) {
+      blockingIssues.push('Objetivo da campanha ausente.');
+    }
+
+    if (!message) {
+      blockingIssues.push('Copy principal ausente.');
+    } else if (this.isGenericValidationCopy(message)) {
+      warnings.push('A copy principal está genérica e reduz a força da oferta.');
+      recommendations.push('Deixe benefício, oferta e próximo passo explícitos na primeira leitura.');
+    }
+
+    if (!headline || headline.length < 8) {
+      blockingIssues.push('Headline ausente ou fraca para comunicar o benefício.');
+    }
+
+    if (!cta) {
+      blockingIssues.push('CTA ausente.');
+    } else if (this.isWeakValidationCta(cta, this.normalizeStructuredObjective(objective, objective))) {
+      warnings.push('O CTA atual parece pouco acionável para o objetivo escolhido.');
+      recommendations.push('Use um CTA mais próximo da conversão esperada.');
+    }
+
+    if (isMessagesCampaign) {
+      blockingIssues.push('Campanhas de mensagens não estão prontas para publish automático no escopo atual.');
+      recommendations.push('Mantenha revisão manual ou troque o destino para website com URL HTTPS válida.');
+    } else if (!destinationUrl || !this.isHttpsUrl(destinationUrl)) {
+      blockingIssues.push('Destination URL ausente ou sem HTTPS para campanha de website.');
+    }
+
+    if ((autoAudience || !interests.length) && (budgetValue || 0) <= 100) {
+      warnings.push('O público está amplo demais para o orçamento atual.');
+      recommendations.push('Reduza a dispersão inicial com cidade, faixa etária ou interesses mais próximos da intenção de compra.');
+    }
+
+    if ((ageMin === 18 && ageMax === 65) || ((ageMax || 0) - (ageMin || 0) >= 35)) {
+      warnings.push('A faixa etária está aberta demais para uma campanha inicial.');
+      recommendations.push('Aperte a faixa etária para concentrar a entrega no perfil com maior chance de resposta.');
+    }
+
+    if (country === 'BR' && city && !stateCode) {
+      warnings.push('A localização está incompleta porque a cidade não tem UF definida.');
+      recommendations.push('Preencha a UF junto com a cidade para evitar inconsistência operacional.');
+    } else if (!city && !interests.length && (objective === 'OUTCOME_LEADS' || objective === 'OUTCOME_TRAFFIC')) {
+      warnings.push('A segmentação geográfica está aberta demais para uma campanha inicial.');
+      recommendations.push('Defina uma cidade principal ou um recorte geográfico mais objetivo.');
+    }
+
+    if (!description && !/(garantia|especialista|entrega|benef[ií]cio|diferencial|resultado|agende|frete)/i.test(message)) {
+      warnings.push('O diferencial da oferta ainda não está claro na peça.');
+      recommendations.push('Adicione prova de valor, diferencial operacional ou motivo concreto para agir agora.');
+    }
+
+    if (objective === 'OUTCOME_LEADS' && budgetValue !== null && budgetValue < 50) {
+      warnings.push('O orçamento parece curto para aprendizagem de campanha de leads.');
+      recommendations.push('Aumente levemente a verba inicial ou reduza o escopo do público.');
+    }
+
+    const normalizedBlockingIssues = this.normalizeStringArrayUnique(blockingIssues, 6);
+    const normalizedWarnings = this.normalizeStringArrayUnique(warnings, 6);
+    const normalizedRecommendations = this.normalizeStringArrayUnique(recommendations, 6);
+    const overallScore = this.adjustQualityScoreForIssues(
+      Math.max(18, Math.min(92, 82 - (normalizedBlockingIssues.length * 18) - (normalizedWarnings.length * 7))),
+      normalizedBlockingIssues,
+      normalizedWarnings,
+    );
+    const riskLevel = this.deriveCampaignRiskLevel(overallScore, normalizedBlockingIssues);
+    const isReadyToPublish = normalizedBlockingIssues.length === 0 && !isMessagesCampaign;
+    const executiveDecision = this.deriveCampaignExecutiveDecision(
+      isReadyToPublish,
+      riskLevel,
+      normalizedBlockingIssues,
+      normalizedWarnings,
+    );
+
+    return {
+      overallScore,
+      riskLevel,
+      isReadyToPublish,
+      businessDiagnosis: {
+        summary: normalizedBlockingIssues.length
+          ? 'A campanha apresenta risco operacional e comercial acima do aceitável para publicação automática.'
+          : 'A campanha tem base utilizável, mas ainda depende de validação fina de oferta, público e execução.',
+        mainProblem: normalizedBlockingIssues[0]
+          || normalizedWarnings[0]
+          || 'Informação insuficiente para validação segura.',
+        mainOpportunity: city
+          ? `Explorar uma proposta mais específica para ${city} com oferta e CTA mais diretos.`
+          : 'Ganhar eficiência tornando oferta, público e próximo passo mais específicos.',
+      },
+      blockingIssues: normalizedBlockingIssues,
+      warnings: normalizedWarnings,
+      recommendations: normalizedRecommendations,
+      performanceAnalysis: {
+        conversionPotential: isMessagesCampaign
+          ? 'A campanha pode gerar interesse, mas o destino de mensagens impede publish automático no fluxo atual.'
+          : normalizedBlockingIssues.length
+            ? 'O potencial de conversão está comprometido por falhas estruturais que precisam ser corrigidas antes do envio.'
+            : 'Há potencial moderado de conversão se a oferta e a segmentação forem refinadas antes da publicação.',
+        financialRisk: normalizedBlockingIssues.length
+          ? 'Risco alto de desperdício financeiro se a campanha subir sem correção das travas atuais.'
+          : normalizedWarnings.length
+            ? 'Risco financeiro moderado: a campanha pode gastar com aprendizado ineficiente se mantiver público amplo ou copy genérica.'
+            : 'Risco financeiro relativamente controlado para um teste inicial.',
+        metaApprovalRisk: isMessagesCampaign
+          ? 'Baixo a moderado em política, mas alto em risco operacional porque o fluxo automático atual não suporta mensagens end-to-end.'
+          : 'Sem sinais graves de reprovação por política com os dados atuais, mas a copy ainda deve permanecer conservadora.',
+        scalabilityPotential: normalizedBlockingIssues.length
+          ? 'Baixo enquanto persistirem falhas de base em oferta, destino, CTA ou segmentação.'
+          : normalizedWarnings.length >= 3
+            ? 'Moderado, desde que a campanha prove aderência antes de ampliar verba.'
+            : 'Moderado a bom para iteração futura, desde que o tracking e a landing sustentem o aprendizado.',
+      },
+      executiveDecision: {
+        decision: executiveDecision,
+        reason: executiveDecision === 'PUBLISH'
+          ? 'A campanha não apresenta travas objetivas de publicação e o risco está em nível administrável.'
+          : normalizedBlockingIssues[0]
+            || normalizedWarnings[0]
+            || 'A campanha ainda precisa de revisão antes da publicação.',
+      },
+      summary: normalizedBlockingIssues.length
+        ? 'A campanha ainda não deve ser publicada no estado atual.'
+        : 'A campanha tem base válida, mas ainda merece revisão executiva antes da escala.',
+      strengths: this.normalizeStringArrayUnique([
+        objective ? `Objetivo definido para ${this.mapObjectiveLabel(objective)}.` : '',
+        !isMessagesCampaign && destinationUrl && this.isHttpsUrl(destinationUrl) ? 'Destino final em HTTPS preenchido.' : '',
+        city || stateCode || interests.length ? 'Há sinais concretos de segmentação inicial.' : '',
+      ], 4),
+      issues: normalizedBlockingIssues,
+      improvements: [],
+      confidence: overallScore,
+    };
+  }
+
   private buildSuggestedHeadline(message: string, objective: string, city: string): string {
     if (city) {
       return `Agende agora em ${city}`;
@@ -3083,7 +4262,7 @@ ${JSON.stringify({
     metadata: { usedFallback?: boolean } = {},
   ): AiValidationOutput {
     const candidate = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
-    const derivedBlockingIssues = this.buildDerivedBlockingIssues(response, storeContext);
+    const derivedBlockingIssues = this.buildDerivedBlockingIssuesV2(response, storeContext);
     const derivedWarnings = this.buildDerivedValidationWarnings(response, storeContext, metadata.usedFallback);
     const derivedRecommendations = this.buildDerivedValidationRecommendations(response, storeContext);
     const hasBlockingIssues = Object.prototype.hasOwnProperty.call(candidate, 'blockingIssues');
@@ -3091,24 +4270,33 @@ ${JSON.stringify({
     const hasRecommendations = Object.prototype.hasOwnProperty.call(candidate, 'recommendations');
 
     const blockingIssues = this.normalizeStringArrayUnique(
-      hasBlockingIssues && Array.isArray(candidate.blockingIssues)
-        ? candidate.blockingIssues
-        : derivedBlockingIssues.length
-        ? derivedBlockingIssues
+      [
+        ...(hasBlockingIssues && Array.isArray(candidate.blockingIssues) ? candidate.blockingIssues : []),
+        ...derivedBlockingIssues,
+      ].length
+        ? [
+            ...(hasBlockingIssues && Array.isArray(candidate.blockingIssues) ? candidate.blockingIssues : []),
+            ...derivedBlockingIssues,
+          ]
         : ['Não foi possível validar a campanha automaticamente.'],
       6,
     );
     const warnings = this.normalizeStringArrayUnique(
-      hasWarnings && Array.isArray(candidate.warnings)
-        ? candidate.warnings
-        : derivedWarnings,
+      [
+        ...(hasWarnings && Array.isArray(candidate.warnings) ? candidate.warnings : []),
+        ...derivedWarnings,
+      ],
       6,
     );
     const recommendations = this.normalizeStringArrayUnique(
-      hasRecommendations && Array.isArray(candidate.recommendations)
-        ? candidate.recommendations
-        : derivedRecommendations.length
-        ? derivedRecommendations
+      [
+        ...(hasRecommendations && Array.isArray(candidate.recommendations) ? candidate.recommendations : []),
+        ...derivedRecommendations,
+      ].length
+        ? [
+            ...(hasRecommendations && Array.isArray(candidate.recommendations) ? candidate.recommendations : []),
+            ...derivedRecommendations,
+          ]
         : ['Revise manualmente antes de enviar.'],
       6,
     );
@@ -3137,21 +4325,139 @@ ${JSON.stringify({
     },
     storeContext?: StoreAiContext,
   ): string[] {
+    const messageIntent = this.hasExplicitMessageIntent(
+      [
+        response.strategy,
+        response.planner.goal,
+        response.creative.primaryText,
+        response.creative.headline,
+        storeContext?.campaignIntent.destinationType,
+        storeContext?.campaignIntent.channelPreference,
+      ].filter(Boolean).join(' '),
+      storeContext,
+    );
     const issues = [
       storeContext?.dataAvailability.hasConnectedPage ? '' : 'A página da Meta não está conectada para esta store.',
+      response.campaign.objective ? '' : 'A campanha precisa de um objetivo válido antes da publicação.',
+      (response.campaign.budget.amount || 0) > 0 ? '' : 'A campanha precisa de orçamento maior que zero antes da publicação.',
       response.creative.headline ? '' : 'A campanha precisa de headline antes da publicação.',
       response.creative.primaryText ? '' : 'A campanha precisa de primaryText antes da publicação.',
+      messageIntent || this.isHttpsUrl(response.creative.destinationUrl) ? '' : 'A campanha precisa de uma destinationUrl válida em https.',
       response.adSet.targeting.country ? '' : 'O país do público precisa ser definido.',
       response.adSet.targeting.country !== 'BR' || !response.adSet.targeting.city || response.adSet.targeting.stateCode
         ? ''
         : 'A cidade brasileira precisa estar acompanhada de uma UF válida.',
     ];
 
+    if (!response.planner.audienceIntent && !response.adSet.targeting.interests.length && !response.adSet.targeting.city) {
+      issues.push('A campanha precisa de um público utilizável antes da publicação.');
+    }
+
     if (response.campaign.objective === 'OUTCOME_LEADS' && !response.creative.cta) {
       issues.push('A campanha de leads precisa de CTA coerente com o próximo passo.');
     }
 
+    if (messageIntent && response.campaign.objective !== 'OUTCOME_LEADS') {
+      issues.push('Briefings de WhatsApp/mensagens precisam manter objetivo coerente com mensagens antes da publicação.');
+    }
+
+    if (messageIntent && response.creative.cta !== 'MESSAGE_PAGE') {
+      issues.push('Briefings de WhatsApp/mensagens precisam usar CTA compatível com conversa.');
+    }
+
+    if (messageIntent && !this.hasConfiguredMessageDestination(storeContext)) {
+      issues.push('Campanhas de WhatsApp/mensagens precisam de destino de mensagem configurado: página conectada, WhatsApp ou Instagram.');
+    }
+
     return issues.filter(Boolean);
+  }
+
+  private hasConfiguredMessageDestination(storeContext?: StoreAiContext): boolean {
+    return !!(
+      storeContext?.dataAvailability.hasConnectedPage
+      || this.asString(storeContext?.whatsapp)
+      || this.asString(storeContext?.instagram)
+    );
+  }
+
+  private buildDerivedBlockingIssuesV2(
+    response: {
+      planner: AiPlannerOutput;
+      campaign: AiCampaignOutput;
+      adSet: AiAdSetOutput;
+      creative: AiCreativeOutput;
+      strategy?: string;
+    },
+    storeContext?: StoreAiContext,
+  ): string[] {
+    const intent = this.buildCampaignIntent(
+      [
+        response.strategy,
+        response.planner.goal,
+        response.creative.primaryText,
+        response.creative.headline,
+        storeContext?.campaignIntent.destinationType,
+        storeContext?.campaignIntent.channelPreference,
+      ].filter(Boolean).join(' '),
+      storeContext,
+    );
+    const issues = [
+      intent.metaConnected ? '' : 'Conecte a conta Meta da store antes de publicar a campanha.',
+      intent.pageConnected || intent.destinationType === 'messages' ? '' : 'Conecte uma Página do Facebook antes de publicar a campanha.',
+      response.campaign.objective ? '' : 'A campanha precisa de um objetivo válido antes da publicação.',
+      (response.campaign.budget.amount || 0) > 0 ? '' : 'A campanha precisa de orçamento maior que zero antes da publicação.',
+      response.creative.headline ? '' : 'A campanha precisa de headline antes da publicação.',
+      response.creative.primaryText ? '' : 'A campanha precisa de primaryText antes da publicação.',
+      intent.destinationType === 'messages' || this.isHttpsUrl(response.creative.destinationUrl)
+        ? ''
+        : 'Defina uma destinationUrl em HTTPS antes de publicar a campanha de site.',
+      response.adSet.targeting.country ? '' : 'O país do público precisa ser definido.',
+      response.adSet.targeting.country !== 'BR' || !response.adSet.targeting.city || response.adSet.targeting.stateCode
+        ? ''
+        : 'A cidade brasileira precisa estar acompanhada de uma UF válida.',
+    ];
+
+    if (!response.planner.audienceIntent && !response.adSet.targeting.interests.length && !response.adSet.targeting.city) {
+      issues.push('A campanha precisa de um público utilizável antes da publicação.');
+    }
+
+    if (response.campaign.objective === 'OUTCOME_LEADS' && !response.creative.cta) {
+      issues.push('A campanha de leads precisa de CTA coerente com o próximo passo.');
+    }
+
+    if (intent.destinationType === 'messages' && response.campaign.objective !== 'OUTCOME_LEADS') {
+      issues.push('Briefings de WhatsApp/mensagens precisam manter objetivo coerente com mensagens antes da publicação.');
+    }
+
+    if (intent.destinationType === 'messages' && response.creative.cta !== 'MESSAGE_PAGE') {
+      issues.push('Briefings de WhatsApp/mensagens precisam usar CTA compatível com conversa.');
+    }
+
+    if (intent.destinationType === 'messages') {
+      issues.push('Campanhas de mensagens (WhatsApp, Messenger, Instagram) ainda não possuem publicação automática nesta versão. A IA pode sugerir estratégia e estrutura, mas a publicação automática atual é apenas para campanhas de website.');
+    }
+
+    if (intent.destinationType === 'messages' && !intent.messageDestinationAvailable) {
+      issues.push('Conecte uma Página, Instagram ou WhatsApp Business antes de publicar campanha de mensagens.');
+    }
+
+    if (intent.destinationType === 'site' && !intent.websiteAvailable) {
+      issues.push('Defina o website da store ou uma URL HTTPS válida antes de publicar campanha de site.');
+    }
+
+    if (intent.remarketingExpected && !this.hasRemarketingInfrastructure(storeContext)) {
+      issues.push('Estrutura de remarketing não encontrada. Conecte pixel, audiência ou sinais de engajamento antes de publicar.');
+    }
+
+    return issues.filter(Boolean);
+  }
+
+  private hasRemarketingInfrastructure(storeContext?: StoreAiContext): boolean {
+    return !!(
+      storeContext?.historicalContext.audienceSignals?.length
+      || storeContext?.dataAvailability.hasHistoricalCampaigns
+      || storeContext?.dataAvailability.hasPerformanceMetrics
+    );
   }
 
   private buildDerivedValidationWarnings(
@@ -3281,7 +4587,10 @@ ${JSON.stringify({
     return normalized ? normalized.slice(0, maxLength) : null;
   }
 
-  private normalizeStructuredObjective(value: unknown, prompt: string): AiCampaignObjective {
+  private normalizeStructuredObjective(
+    value: unknown,
+    prompt: string,
+  ): AiCampaignObjective | null {
     const normalized = this.asString(value).toUpperCase();
     if (['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH'].includes(normalized)) {
       return normalized as AiCampaignObjective;
@@ -3294,10 +4603,7 @@ ${JSON.stringify({
       return 'REACH';
     }
 
-    const fallback = this.inferFallbackObjective(prompt);
-    if (fallback === 'Leads' || fallback === 'Conversas') return 'OUTCOME_LEADS';
-    if (fallback === 'Alcance') return 'REACH';
-    return 'OUTCOME_TRAFFIC';
+    return this.inferExpectedObjective(prompt);
   }
 
   private normalizeStructuredFunnelStage(value: unknown, prompt: string): AiFunnelStage | null {
@@ -3323,7 +4629,6 @@ ${JSON.stringify({
   private normalizeStructuredBudget(
     budget: unknown,
     prompt: string,
-    storeContext?: StoreAiContext,
   ): AiCampaignBudgetOutput {
     const candidate = typeof budget === 'object' && budget !== null ? budget as Record<string, unknown> : {};
     const normalizedType = this.asString(candidate.type);
@@ -3334,10 +4639,7 @@ ${JSON.stringify({
       : /por dia|\/dia|di[aá]rio/i.test(prompt)
       ? 'daily'
       : null;
-    const amount = this.parseBudgetValue(candidate.amount ?? budget)
-      ?? this.normalizePositiveNumber(storeContext?.campaignIntent.budgetRange?.match(/\d+/)?.[0] || null)
-      ?? this.parseBudgetValue(prompt.match(/r\$\s*\d[\d.,]*/i)?.[0] || null)
-      ?? this.normalizePositiveNumber(prompt.match(/\d{2,6}/)?.[0] || null);
+    const amount = this.parseBudgetValue(candidate.amount ?? budget);
 
     return {
       type,
@@ -3346,13 +4648,8 @@ ${JSON.stringify({
     };
   }
 
-  private normalizeStructuredCta(
-    value: unknown,
-    prompt: string,
-    storeContext?: StoreAiContext,
-  ): string {
-    const normalized = this.normalizeCtaValue(value);
-    return normalized || this.inferFallbackCta(prompt, storeContext);
+  private normalizeStructuredCta(value: unknown): string {
+    return this.normalizeCtaValue(value) || '';
   }
 
   private normalizeHttpsUrl(value: unknown): string | null {
@@ -3375,28 +4672,15 @@ ${JSON.stringify({
     }
   }
 
-  private buildInterestFallbacks(segment: string, storeContext?: StoreAiContext): string[] {
-    const explicit = this.asString(storeContext?.targetAudience);
-    const combined = [explicit, segment].filter(Boolean).join(', ');
-
-    return combined
-      .split(/[;,]/)
-      .map((item) => item.trim())
-      .filter((item) => item.length >= 3)
-      .slice(0, 6);
-  }
-
   private normalizeStructuredTargeting(
     targeting: unknown,
     prompt: string,
-    storeContext: StoreAiContext | undefined,
-    interestFallbacks: string[],
   ): AiAdSetOutput['targeting'] {
     const candidate = typeof targeting === 'object' && targeting !== null ? targeting as Record<string, unknown> : {};
     const gender = this.normalizeStructuredGender(candidate.gender);
     const ageMin = this.normalizeStructuredAge(candidate.ageMin);
     const ageMax = this.normalizeStructuredAge(candidate.ageMax);
-    const normalizedCountry = this.normalizeCountry(candidate.country) || this.inferStructuredCountry(prompt);
+    const normalizedCountry = this.normalizeCountry(candidate.country);
     const normalizedState = this.normalizeStructuredBrazilianState(
       candidate.stateCode,
       candidate.state,
@@ -3414,9 +4698,7 @@ ${JSON.stringify({
       ageMin,
       ageMax: ageMin !== null && ageMax !== null && ageMax < ageMin ? ageMin : ageMax,
       gender,
-      interests: this.normalizeArrayOfStrings(candidate.interests, 8).length
-        ? this.normalizeArrayOfStrings(candidate.interests, 8)
-        : interestFallbacks,
+      interests: this.normalizeArrayOfStrings(candidate.interests, 8),
       excludedInterests: this.normalizeArrayOfStrings(candidate.excludedInterests, 8),
       placements: this.normalizePlacements(candidate.placements, prompt),
     };
@@ -3580,6 +4862,17 @@ ${JSON.stringify({
     };
   }
 
+  private extractBudgetAmountFromNormalizedPayload(payload: Record<string, unknown>): number | null {
+    const campaign = this.firstObject(payload.campaign);
+    const campaignBudget = this.firstObject(campaign.budget);
+    return this.asNullableInteger(
+      campaignBudget.amount
+      ?? this.firstObject(payload.intent).budgetAmount
+      ?? payload.budgetSuggestion
+      ?? payload.budget,
+    );
+  }
+
   private parseBudgetValue(value: unknown): number | null {
     if (typeof value === 'number') {
       return Number.isFinite(value) && value > 0 ? value : null;
@@ -3587,6 +4880,25 @@ ${JSON.stringify({
 
     const text = this.asString(value);
     if (!text) {
+      return null;
+    }
+
+    const contextualPatterns = [
+      /(?:or[cç]amento|orcamento|budget|investimento|verba|valor)[^\d]{0,24}(r\$\s*)?(\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)/i,
+      /r\$\s*(\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)/i,
+      /(\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)\s*(?:por dia|\/dia|ao dia|di[aá]ri[oa])/i,
+      /(\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)\s*(?:por campanha|campanha inteira|total)/i,
+    ];
+    for (const pattern of contextualPatterns) {
+      const match = text.match(pattern);
+      const candidate = match?.[2] || match?.[1];
+      const parsed = this.parseLocalizedBudgetCandidate(candidate);
+      if (parsed !== null) {
+        return parsed;
+      }
+    }
+
+    if (!/^[\d\s.,-]+$/.test(text)) {
       return null;
     }
 
@@ -3617,23 +4929,48 @@ ${JSON.stringify({
     return this.normalizePositiveNumber(cleaned);
   }
 
+  private parseLocalizedBudgetCandidate(value: unknown): number | null {
+    const text = this.asString(value).replace(/\s+/g, '');
+    if (!text) {
+      return null;
+    }
+
+    if (text.includes(',') && text.includes('.')) {
+      const parsed = Number(text.replace(/\./g, '').replace(',', '.'));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    if (text.includes(',') && !text.includes('.')) {
+      const commaParts = text.split(',');
+      if (commaParts[1] && commaParts[1].length === 2) {
+        const parsed = Number(text.replace(',', '.'));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      }
+      return this.normalizePositiveNumber(text.replace(/,/g, ''));
+    }
+
+    return this.normalizePositiveNumber(text);
+  }
+
   private normalizeCtaValue(value: unknown): string | null {
     const normalized = this.normalizeOptionalStructuredText(value, 60)?.toLowerCase() || '';
     if (!normalized) {
       return null;
     }
 
+    if (/(whatsapp|falar no whatsapp|fale conosco no whatsapp|chamar no whatsapp|conversar|mensagens|mensagem|direct|inbox|messenger|chamar agora|message page|message us|enviar mensagem|mandar mensagem)/i.test(normalized)) {
+      return 'MESSAGE_PAGE';
+    }
     if (/(saiba mais|learn more)/i.test(normalized)) return 'LEARN_MORE';
     if (/(fale conosco|contact us|entre em contato)/i.test(normalized)) return 'CONTACT_US';
     if (/(comprar agora|shop now)/i.test(normalized)) return 'SHOP_NOW';
-    if (/(enviar mensagem|mandar mensagem|mensagem|whatsapp|message)/i.test(normalized)) return 'MESSAGE_PAGE';
 
     const upper = normalized.toUpperCase();
     if (['LEARN_MORE', 'CONTACT_US', 'SHOP_NOW', 'MESSAGE_PAGE', 'SIGN_UP', 'BOOK_NOW', 'DOWNLOAD'].includes(upper)) {
       return upper;
     }
 
-    return 'LEARN_MORE';
+    return null;
   }
 
   private hasUsefulAudience(value: unknown): boolean {
@@ -3930,7 +5267,66 @@ ${JSON.stringify({
     return 'Tráfego';
   }
 
-  private inferFallbackCta(prompt: string, storeContext?: StoreAiContext): string {
+  private extractPromptBriefing(prompt: string): ExtractedPromptBriefing {
+    const destinationType = this.detectDestinationTypeFromText(prompt);
+    const objective = destinationType === 'messages'
+      ? 'OUTCOME_LEADS'
+      : this.inferExpectedObjective(prompt);
+    const segment = this.inferVertical(prompt);
+    const rawRegion = this.inferRegionText(prompt);
+    const region = /\bbrasil\b/i.test(prompt)
+      ? 'Brasil'
+      : this.normalizePromptLocation(rawRegion);
+    const city = region && region !== 'Brasil'
+      ? region
+      : this.normalizePromptLocation(this.inferCityText(prompt));
+
+    return {
+      goal: this.firstSpecificText(this.inferFallbackObjective(prompt)),
+      objective,
+      budget: this.parseBudgetValue(prompt),
+      budgetType: /por dia|\/dia|di[aá]ri/i.test(prompt)
+        ? 'daily'
+        : /total|campanha inteira|vital/i.test(prompt)
+        ? 'lifetime'
+        : null,
+      destinationType,
+      segment: segment !== 'negócio' ? segment : null,
+      region,
+      city,
+      funnelStage: this.normalizeFunnelStage(undefined, prompt),
+      channelPreference: this.inferChannelPreference(prompt),
+      primaryOffer: this.inferMainOffer(prompt) || null,
+      remarketingExpected: /(remarketing|retargeting|reimpactar|visitantes|engajados|clientes)/i.test(prompt),
+      cta: this.parsePromptCta(prompt),
+    };
+  }
+
+  private parsePromptCta(prompt: string): string | null {
+    const normalized = prompt.toUpperCase();
+    const match = /CTA\s*[:\-]?\s*(CONTACT_US|MESSAGE_PAGE|SHOP_NOW|LEARN_MORE|SIGN_UP|BOOK_NOW|DOWNLOAD)\b/.exec(normalized);
+    return match ? match[1] : null;
+  }
+
+  private normalizePromptLocation(value: string | null): string | null {
+    const normalized = this.asString(value)
+      .replace(/\s+(com|cta|foco|objetivo|orcamento|orçamento)\b.*$/i, '')
+      .replace(/[.,;:].*$/, '')
+      .trim();
+    if (/^(whatsapp|mensagens?|messenger|instagram|direct|site|website)$/i.test(normalized)) {
+      return null;
+    }
+    return normalized || null;
+  }
+
+  private inferFallbackCta(
+    prompt: string,
+    storeContext?: StoreAiContext,
+    constraints?: BriefingConstraints,
+  ): string {
+    if (constraints?.expectedCta) {
+      return constraints.expectedCta;
+    }
     const normalized = `${prompt} ${storeContext?.businessType || ''}`.toLowerCase();
     if (/(whatsapp|direct|mensagem|conversa|lead|servi[cç]o|consultoria|im[oó]vel)/i.test(normalized)) {
       return 'Fale conosco';
@@ -3999,16 +5395,69 @@ ${JSON.stringify({
     return null;
   }
 
+  private detectDestinationTypeFromText(text: string): CampaignDestinationType | null {
+    if (this.hasMessageIntentSignal(text)) {
+      return 'messages';
+    }
+    if (/(site|website|landing|ecommerce|loja online)/i.test(text)) {
+      return 'site';
+    }
+    return null;
+  }
+
+  private resolveCampaignIntentDestinationType(value: unknown, sourceText: string): string | null {
+    const explicit = this.normalizeCommercialDestinationType(value);
+    if (explicit) {
+      return explicit;
+    }
+
+    return this.hasMessageIntentSignal(sourceText)
+      ? 'messages'
+      : /(site|website|landing|ecommerce|loja online)/i.test(sourceText)
+      ? 'site'
+      : null;
+  }
+
+  private normalizeCommercialDestinationType(value: unknown): CampaignDestinationType | null {
+    const normalized = this.asString(value).toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    if (['messages', 'whatsapp'].includes(normalized)) return 'messages';
+    if (['website', 'site'].includes(normalized)) return 'site';
+    if (['instagram', 'messenger'].includes(normalized)) return 'messages';
+    if (['leads'].includes(normalized)) return 'messages';
+    return null;
+  }
+
+  private hasExplicitMessageIntent(prompt: string, storeContext?: StoreAiContext): boolean {
+    return this.hasMessageIntentSignal([
+      prompt,
+      storeContext?.campaignIntent.destinationType,
+      storeContext?.campaignIntent.channelPreference,
+      storeContext?.campaignIntent.goal,
+      storeContext?.campaignIntent.extraContext,
+    ].filter(Boolean).join(' '));
+  }
+
+  private hasMessageIntentSignal(text: string): boolean {
+    return /(whatsapp|falar no whatsapp|chamar no whatsapp|conversar|mensagens|mensagem|direct|inbox|messenger|chamar agora|fale conosco|message page|message us)/i.test(text);
+  }
+
   private inferChannelPreference(prompt: string): string | null {
-    if (/whatsapp/i.test(prompt)) return 'whatsapp';
+    if (/(whatsapp|falar no whatsapp|chamar no whatsapp|conversar|mensagens|messenger|inbox|fale conosco|chamar agora)/i.test(prompt)) return 'messages';
     if (/direct|instagram/i.test(prompt)) return 'instagram';
     if (/formul[aá]rio|lead form|cadastro/i.test(prompt)) return 'leads';
     if (/site|landing|ecommerce|loja online/i.test(prompt)) return 'website';
-    if (/mensagem|messenger|conversa/i.test(prompt)) return 'messages';
     return null;
   }
 
   private formatBudgetRange(budget: unknown, prompt: string): string | null {
+    const promptBudget = this.parseBudgetValue(prompt);
+    if (promptBudget) {
+      return `R$ ${promptBudget.toLocaleString('pt-BR')} informado no briefing.`;
+    }
     const numericBudget = this.normalizePositiveNumber(budget);
     if (numericBudget) {
       return `R$ ${numericBudget.toLocaleString('pt-BR')} informados pelo usuário.`;
@@ -4308,4 +5757,576 @@ ${JSON.stringify({
       return false;
     }
   }
+
+  private buildBriefingConstraints(prompt: string, storeContext?: StoreAiContext): BriefingConstraints {
+    const referenceText = [
+      prompt,
+      storeContext?.campaignIntent.goal,
+      storeContext?.campaignIntent.destinationType,
+      storeContext?.campaignIntent.primaryOffer,
+      storeContext?.segment,
+    ].filter(Boolean).join(' ');
+    const expectedSegment = this.inferVertical(referenceText);
+    const expectedObjective = this.inferExpectedObjective(referenceText, storeContext?.campaignIntent.goal);
+    const expectedBudget = this.parseBudgetValue(prompt)
+      ?? this.parseBudgetValue(storeContext?.campaignIntent.budgetRange)
+      ?? null;
+    const expectedBudgetType = /por dia|\/dia|di[aá]ri/i.test(referenceText) ? 'daily'
+      : /total|campanha inteira|vital/i.test(referenceText) ? 'lifetime'
+      : null;
+    const expectedDestinationType = /(whatsapp|mensagem|message|messenger|inbox|direct|conversa|fale conosco|chamar agora)/i.test(referenceText)
+      ? 'messages'
+      : /(site|website|landing|ecommerce|loja online)/i.test(referenceText)
+      ? 'site'
+      : null;
+    const expectedCta = expectedDestinationType === 'messages'
+      ? 'MESSAGE_PAGE'
+      : /(comprar|shop now|ecommerce|loja online)/i.test(referenceText)
+      ? 'SHOP_NOW'
+      : expectedObjective === 'OUTCOME_LEADS'
+      ? 'CONTACT_US'
+      : null;
+
+    return {
+      expectedSegment: expectedSegment !== 'negócio' ? expectedSegment : null,
+      expectedObjective,
+      expectedBudget,
+      expectedBudgetType,
+      expectedCta,
+      expectedDestinationType,
+      expectsRemarketing: /(remarketing|retargeting|reimpactar|visitantes|engajados|clientes)/i.test(referenceText),
+    };
+  }
+
+  private buildBriefingConstraintsPrioritizingPrompt(
+    prompt: string,
+    storeContext?: StoreAiContext,
+  ): BriefingConstraints {
+    const base = this.buildBriefingConstraints(prompt, storeContext);
+    const promptBriefing = this.extractPromptBriefing(prompt);
+    const fallbackText = [
+      storeContext?.campaignIntent.goal,
+      storeContext?.campaignIntent.destinationType,
+      storeContext?.campaignIntent.primaryOffer,
+      storeContext?.segment,
+    ].filter(Boolean).join(' ');
+    const fallbackSegment = this.inferVertical(fallbackText);
+    const promptSegment = promptBriefing.segment
+      ?? (fallbackSegment !== 'negócio' ? fallbackSegment : null);
+    const promptDestinationType = promptBriefing.destinationType
+      ?? this.detectDestinationTypeFromText(fallbackText)
+      ?? base.expectedDestinationType;
+    const promptObjective = promptBriefing.objective ?? base.expectedObjective;
+    const promptBudgetType = promptBriefing.budgetType ?? base.expectedBudgetType;
+    const promptCta = promptBriefing.cta
+      ? promptBriefing.cta
+      : promptDestinationType === 'messages'
+      ? 'MESSAGE_PAGE'
+      : /(comprar|shop now|ecommerce|loja online)/i.test(`${prompt} ${fallbackText}`)
+      ? 'SHOP_NOW'
+      : promptObjective === 'OUTCOME_LEADS'
+      ? 'CONTACT_US'
+      : base.expectedCta;
+
+    if (prompt.includes('CTA CONTACT_US')) {
+      console.error('DEBUG PROMPT CTA', {
+        promptBriefingCta: promptBriefing.cta,
+        promptDestinationType,
+        promptObjective,
+        promptCta,
+      });
+    }
+
+    return {
+      expectedSegment: promptSegment !== 'negócio' ? promptSegment : null,
+      expectedObjective: promptObjective,
+      expectedBudget: promptBriefing.budget ?? base.expectedBudget,
+      expectedBudgetType: promptBudgetType,
+      expectedCta: promptCta,
+      expectedDestinationType: promptDestinationType,
+      expectsRemarketing: promptBriefing.remarketingExpected || base.expectsRemarketing,
+    };
+  }
+
+  private buildCampaignIntent(prompt: string, storeContext?: StoreAiContext): DeterministicCampaignIntent {
+    const constraints = this.buildBriefingConstraintsPrioritizingPrompt(prompt, storeContext);
+    const destinationType = constraints.expectedDestinationType
+      ?? this.normalizeCommercialDestinationType(storeContext?.campaignIntent.destinationType)
+      ?? this.normalizeCommercialDestinationType(storeContext?.campaignIntent.channelPreference);
+    const objective = destinationType === 'messages'
+      ? 'OUTCOME_LEADS'
+      : constraints.expectedObjective
+      ?? this.inferExpectedObjective(
+        [
+          prompt,
+          storeContext?.campaignIntent.goal,
+          storeContext?.campaignIntent.destinationType,
+        ].filter(Boolean).join(' '),
+      );
+    const budgetAmount = constraints.expectedBudget ?? this.deriveDeterministicBudgetAmount(objective, destinationType, storeContext);
+    const budgetType = constraints.expectedBudgetType ?? (budgetAmount ? 'daily' : null);
+    const channel = this.firstSpecificText(
+      this.inferChannelPreference(prompt),
+      storeContext?.campaignIntent.channelPreference,
+      storeContext?.campaignIntent.destinationType,
+    );
+    const segment = this.firstSpecificText(constraints.expectedSegment, storeContext?.segment);
+    const offer = this.firstSpecificText(storeContext?.campaignIntent.primaryOffer, storeContext?.storeProfile.mainOffer);
+    const remarketingExpected = constraints.expectsRemarketing
+      || ['remarketing', 'retention'].includes(this.asString(storeContext?.campaignIntent.funnelStage).toLowerCase());
+    const websiteAvailable = !!this.normalizeHttpsUrl(storeContext?.website);
+    const whatsappAvailable = !!this.asString(storeContext?.whatsapp);
+    const instagramAvailable = !!this.asString(storeContext?.instagram);
+    const pageConnected = !!storeContext?.dataAvailability.hasConnectedPage;
+    const messageDestinationAvailable = pageConnected || whatsappAvailable || instagramAvailable;
+
+    return {
+      objective: objective || null,
+      destinationType: destinationType || null,
+      funnelStage: this.normalizeStructuredFunnelStage(storeContext?.campaignIntent.funnelStage, prompt),
+      budgetAmount,
+      budgetType,
+      region: this.firstSpecificText(
+        this.extractPromptBriefing(prompt).region,
+        storeContext?.campaignIntent.region,
+        storeContext?.storeProfile.region,
+      ),
+      segment,
+      offer,
+      channel,
+      cta: this.resolveDeterministicIntentCta(objective, destinationType, prompt),
+      remarketingExpected,
+      messageDestinationAvailable,
+      websiteAvailable,
+      metaConnected: !!storeContext?.dataAvailability.hasConnectedMetaAccount,
+      pageConnected,
+      whatsappAvailable,
+      instagramAvailable,
+    };
+  }
+
+  private deriveDeterministicBudgetAmount(
+    objective: AiCampaignObjective | null,
+    destinationType: CampaignDestinationType | null,
+    storeContext?: StoreAiContext,
+  ): number | null {
+    if (storeContext?.campaignIntent.budgetRange) {
+      const parsed = this.parseBudgetValue(storeContext.campaignIntent.budgetRange);
+      if (parsed) {
+        return parsed;
+      }
+    }
+
+    const salesModel = storeContext?.storeProfile.salesModel;
+    if (destinationType === 'messages') {
+      return salesModel === 'local' ? 80 : 100;
+    }
+    if (objective === 'REACH') {
+      return 70;
+    }
+    if (objective === 'OUTCOME_TRAFFIC') {
+      return salesModel === 'ecommerce' ? 120 : 90;
+    }
+    if (objective === 'OUTCOME_LEADS') {
+      return salesModel === 'local' ? 80 : 100;
+    }
+    return null;
+  }
+
+  private resolveDeterministicIntentCta(
+    objective: AiCampaignObjective | null,
+    destinationType: CampaignDestinationType | null,
+    prompt: string,
+  ): string | null {
+    if (destinationType === 'messages') {
+      return 'MESSAGE_PAGE';
+    }
+    if (destinationType === 'site' && /(comprar|shop now|ecommerce|loja online)/i.test(prompt)) {
+      return 'SHOP_NOW';
+    }
+    if (objective === 'OUTCOME_LEADS') {
+      return 'CONTACT_US';
+    }
+    if (objective === 'OUTCOME_TRAFFIC') {
+      return 'LEARN_MORE';
+    }
+    return null;
+  }
+
+  private inferExpectedObjective(text: string, goal?: string | null): AiCampaignObjective | null {
+    const normalized = `${text} ${goal || ''}`;
+    if (/(lead|leads|cadastro|capta|whatsapp|mensagem|conversa|messenger|inbox|direct|formul[aá]rio|fale conosco)/i.test(normalized)) {
+      return 'OUTCOME_LEADS';
+    }
+    if (/(alcance|awareness|reconhecimento)/i.test(normalized)) {
+      return 'REACH';
+    }
+    if (/(tr[aá]fego|cliques|visitas|site|ecommerce|loja online)/i.test(normalized)) {
+      return 'OUTCOME_TRAFFIC';
+    }
+    return null;
+  }
+
+  private normalizeStructuredInterests(values: string[], constraints?: BriefingConstraints): string[] {
+    const normalized = this.normalizeStringArrayUnique(values, 8);
+    if (!constraints?.expectsRemarketing) {
+      return normalized;
+    }
+    return normalized;
+  }
+
+  private hasRemarketingAudienceSignals(value: string): boolean {
+    return /(remarketing|retargeting|visitantes|engajados|clientes|carrinho|recorrente|site visitors|custom audience|audiencia personalizada|pixel)/i.test(value);
+  }
+
+  private sanitizeAudienceForRemarketing(
+    targeting: AiAdSetOutput['targeting'],
+    constraints: BriefingConstraints,
+    plannerAudienceIntent?: string | null,
+  ): {
+    targeting: AiAdSetOutput['targeting'];
+    warnings: string[];
+    recommendations: string[];
+    sanitized: boolean;
+  } {
+    if (!constraints.expectsRemarketing) {
+      return {
+        targeting,
+        warnings: [],
+        recommendations: [],
+        sanitized: false,
+      };
+    }
+
+    const normalizedInterests = this.normalizeStructuredInterests(targeting.interests, constraints);
+    const audienceText = `${plannerAudienceIntent || ''} ${normalizedInterests.join(', ')}`.trim();
+    if (!normalizedInterests.length || this.hasRemarketingAudienceSignals(audienceText)) {
+      return {
+        targeting: {
+          ...targeting,
+          interests: normalizedInterests,
+        },
+        warnings: [],
+        recommendations: [],
+        sanitized: false,
+      };
+    }
+
+    return {
+      targeting: {
+        ...targeting,
+        interests: [],
+      },
+      warnings: [
+        'Os interesses sugeridos vieram como público frio, então foram removidos do targeting final até existir uma audiência real de remarketing.',
+      ],
+      recommendations: [
+        'Configure uma audiência personalizada, pixel ou sinais reais de engajamento antes de definir o público de remarketing.',
+      ],
+      sanitized: true,
+    };
+  }
+
+  private validateSuggestionConsistency(
+    constraints: BriefingConstraints,
+    suggestion: {
+      strategy: string;
+      primaryText: string;
+      headline: string;
+      description: string;
+      cta: string;
+      audience: AiCampaignAudienceSummary;
+      planner: AiPlannerOutput;
+      campaign: AiCampaignOutput;
+      adSet: AiAdSetOutput;
+      creative: AiCreativeOutput;
+    },
+    normalizedPayload: Record<string, unknown>,
+  ): {
+    blockingIssues: string[];
+    warnings: string[];
+    recommendations: string[];
+    shouldRetry: boolean;
+    userMessage?: string;
+    debug?: ConsistencyDebugInfo;
+  } {
+    const combinedText = [
+      suggestion.strategy,
+      suggestion.primaryText,
+      suggestion.headline,
+      suggestion.description,
+      suggestion.planner.audienceIntent,
+      suggestion.campaign.campaignName,
+      suggestion.adSet.name,
+      suggestion.audience.interests.join(', '),
+      suggestion.adSet.targeting.interests.join(', '),
+      JSON.stringify(normalizedPayload),
+    ].join(' ');
+    const blockingIssues: string[] = [];
+    const warnings: string[] = [];
+    const recommendations: string[] = [];
+    const failedRules: string[] = [];
+    const rawModelBudget = this.extractBudgetAmountFromNormalizedPayload(normalizedPayload);
+    const detectedDestinationType = this.isHttpsUrl(suggestion.creative.destinationUrl) ? 'site' : 'messages';
+    const detectedSegment = this.inferVertical(combinedText);
+    const detectedCta = suggestion.creative.cta || suggestion.cta;
+    const detectedBudgetType = suggestion.campaign.budget.type;
+    const detectedBudgetAmount = suggestion.campaign.budget.amount;
+    const immutableFieldMismatches: string[] = [];
+
+    if (this.containsRawJsonArtifact(suggestion.primaryText)
+      || this.containsRawJsonArtifact(suggestion.headline)
+      || this.containsRawJsonArtifact(suggestion.strategy)
+      || this.containsRawJsonArtifact(suggestion.description)) {
+      blockingIssues.push('A resposta da IA trouxe JSON bruto ou texto corrompido em campos de copy.');
+      failedRules.push('raw_json_in_copy');
+    }
+    if (!suggestion.campaign.campaignName?.trim()) {
+      blockingIssues.push('A IA não retornou um nome de campanha utilizável.');
+    }
+    if (!suggestion.creative.primaryText?.trim()) {
+      blockingIssues.push('A IA não retornou primaryText utilizável.');
+    }
+    if (!suggestion.creative.headline?.trim()) {
+      blockingIssues.push('A IA não retornou headline utilizável.');
+    }
+    if (!suggestion.campaign.objective?.trim()) {
+      blockingIssues.push('A IA não retornou um objetivo de campanha utilizável.');
+    }
+    if (!suggestion.campaign.budget.amount || suggestion.campaign.budget.amount <= 0) {
+      blockingIssues.push('A IA não retornou um orçamento utilizável.');
+    }
+    if (!suggestion.creative.cta?.trim() && !suggestion.cta?.trim()) {
+      blockingIssues.push('A IA não retornou CTA utilizável.');
+    }
+    if (!suggestion.planner.audienceIntent?.trim()
+      && !suggestion.audience.interests.length
+      && !suggestion.adSet.targeting.interests.length
+      && !suggestion.adSet.targeting.city?.trim()) {
+      blockingIssues.push('A IA não retornou público utilizável.');
+    }
+    if (constraints.expectedSegment) {
+      if (detectedSegment !== 'negócio' && detectedSegment !== constraints.expectedSegment) {
+        blockingIssues.push(`A IA desviou do segmento esperado no briefing (${constraints.expectedSegment}).`);
+        failedRules.push('segment_mismatch');
+        immutableFieldMismatches.push('segment');
+      }
+    }
+    if (
+      constraints.expectedBudget
+      && (
+        (detectedBudgetAmount && detectedBudgetAmount !== constraints.expectedBudget)
+        || (rawModelBudget && rawModelBudget !== constraints.expectedBudget)
+      )
+    ) {
+      blockingIssues.push(`A IA alterou o orçamento informado no briefing (esperado R$ ${constraints.expectedBudget}).`);
+      failedRules.push('budget_mismatch');
+      immutableFieldMismatches.push('budgetAmount');
+    }
+    if (constraints.expectedBudgetType && detectedBudgetType !== constraints.expectedBudgetType) {
+      blockingIssues.push(`A IA alterou o tipo de orçamento informado no briefing (${constraints.expectedBudgetType}).`);
+      failedRules.push('budget_type_mismatch');
+      immutableFieldMismatches.push('budgetType');
+    }
+    if (constraints.expectedObjective && suggestion.campaign.objective !== constraints.expectedObjective) {
+      blockingIssues.push(`A IA alterou o objetivo principal do briefing (${constraints.expectedObjective}).`);
+      failedRules.push('objective_mismatch');
+      immutableFieldMismatches.push('objective');
+    }
+    if (constraints.expectedCta && detectedCta !== constraints.expectedCta) {
+      // For message campaigns, we always normalize the CTA to MESSAGE_PAGE deterministically,
+      // so a CTA mismatch is not a blocking issue - it will be corrected automatically.
+      const isMessageCampaign = constraints.expectedDestinationType === 'messages' 
+        && constraints.expectedCta === 'MESSAGE_PAGE';
+      
+      if (!isMessageCampaign) {
+        if (constraints.expectedCta === 'CONTACT_US' && suggestion.campaign.objective === 'OUTCOME_TRAFFIC') {
+          console.error('DEBUG CTA MISMATCH', {
+            expectedCta: constraints.expectedCta,
+            detectedCta,
+            creativeCta: suggestion.creative.cta,
+            rootCta: suggestion.cta,
+            prompt: suggestion.strategy,
+          });
+        }
+        blockingIssues.push(`A IA gerou CTA incompatível com o briefing (${constraints.expectedCta}).`);
+        failedRules.push('cta_mismatch');
+        immutableFieldMismatches.push('cta');
+      } else {
+        // For message campaigns, just warn about the CTA mismatch since we'll normalize it
+        warnings.push(`A IA retornou CTA diferente (${detectedCta}), mas será normalizado para MESSAGE_PAGE em campanhas de mensagens.`);
+      }
+    }
+    if (constraints.expectedDestinationType && detectedDestinationType !== constraints.expectedDestinationType) {
+      blockingIssues.push(
+        constraints.expectedDestinationType === 'site'
+          ? 'A IA mudou o destino esperado de site para mensagens/WhatsApp.'
+          : 'A IA mudou o destino esperado de mensagens/WhatsApp para site.',
+      );
+      failedRules.push('destination_mismatch');
+      immutableFieldMismatches.push('destinationType');
+    }
+    if (constraints.expectedDestinationType === 'site' && !this.isHttpsUrl(suggestion.creative.destinationUrl)) {
+      blockingIssues.push('A IA não forneceu destinationUrl em HTTPS para a campanha de site.');
+      failedRules.push('destination_url_missing');
+      if (!immutableFieldMismatches.includes('destinationType')) {
+        immutableFieldMismatches.push('destinationType');
+      }
+    }
+    if (constraints.expectedDestinationType === 'messages'
+      && suggestion.creative.destinationUrl
+      && this.isHttpsUrl(suggestion.creative.destinationUrl)) {
+      warnings.push('O briefing indica mensagens/WhatsApp, mas a sugestão ainda trouxe URL de destino externa.');
+    }
+    if (constraints.expectsRemarketing) {
+      const remarketingSignals = /(remarketing|retargeting|visitantes|engajados|clientes|carrinho|recorrente)/i;
+      const audienceText = `${suggestion.planner.audienceIntent || ''} ${suggestion.audience.interests.join(', ')} ${suggestion.adSet.targeting.interests.join(', ')}`;
+      if (!remarketingSignals.test(audienceText)) {
+        blockingIssues.push('O briefing pede remarketing, mas o público sugerido não reflete esse contexto.');
+        failedRules.push('audience_mismatch');
+      }
+    }
+
+    if (blockingIssues.length) {
+      recommendations.push('Gere novamente a sugestão com a IA para obter uma resposta coerente com o briefing.');
+    }
+
+    const immutableFieldError = immutableFieldMismatches.length
+      ? 'A resposta anterior foi rejeitada porque alterou campos imutáveis do briefing. Gere novamente preservando exatamente os campos esperados.'
+      : undefined;
+
+    return {
+      blockingIssues,
+      warnings,
+      recommendations,
+      shouldRetry: blockingIssues.length > 0,
+      userMessage: blockingIssues.length
+        ? immutableFieldError || 'A IA respondeu com dados incompatíveis com o briefing. Gere novamente antes de aplicar qualquer sugestão.'
+        : undefined,
+      debug: {
+        consistencyErrors: blockingIssues,
+        expectedBriefingSignals: {
+          expectedSegment: constraints.expectedSegment,
+          expectedObjective: constraints.expectedObjective,
+          expectedBudget: constraints.expectedBudget,
+          expectedBudgetType: constraints.expectedBudgetType,
+          expectedCta: constraints.expectedCta,
+          expectedDestinationType: constraints.expectedDestinationType,
+          expectsRemarketing: constraints.expectsRemarketing,
+        },
+        detectedResponseSignals: {
+          objective: suggestion.campaign.objective,
+          budget: suggestion.campaign.budget.amount,
+          rawModelBudget,
+          budgetType: suggestion.campaign.budget.type,
+          cta: detectedCta,
+          destinationUrl: suggestion.creative.destinationUrl,
+          destinationType: detectedDestinationType,
+          segment: detectedSegment,
+          audience: {
+            gender: suggestion.audience.gender,
+            ageRange: suggestion.audience.ageRange,
+            interests: suggestion.audience.interests,
+            targetingInterests: suggestion.adSet.targeting.interests,
+            city: suggestion.adSet.targeting.city,
+          },
+        },
+        failedRules,
+        immutableFieldsExpected: {
+          objective: constraints.expectedObjective,
+          budgetAmount: constraints.expectedBudget,
+          budgetType: constraints.expectedBudgetType,
+          cta: constraints.expectedCta,
+          destinationType: constraints.expectedDestinationType,
+          segment: constraints.expectedSegment,
+          campaignType: 'AUCTION',
+          storeId: null,
+        },
+        immutableFieldsReceived: {
+          objective: suggestion.campaign.objective,
+          budgetAmount: detectedBudgetAmount,
+          budgetType: detectedBudgetType,
+          cta: detectedCta,
+          destinationType: detectedDestinationType,
+          segment: detectedSegment,
+          campaignType: suggestion.campaign.buyingType,
+          storeId: null,
+        },
+        immutableFieldMismatches,
+      },
+    };
+  }
+
+  private postProcessConsistencyForRemarketing(
+    consistency: {
+      blockingIssues: string[];
+      warnings: string[];
+      recommendations: string[];
+      shouldRetry: boolean;
+      userMessage?: string;
+      debug?: ConsistencyDebugInfo;
+    },
+    constraints: BriefingConstraints,
+    sanitizedColdAudience = false,
+  ): {
+    blockingIssues: string[];
+    warnings: string[];
+    recommendations: string[];
+    shouldRetry: boolean;
+    userMessage?: string;
+    debug?: ConsistencyDebugInfo;
+  } {
+    const failedRules = consistency.debug?.failedRules || [];
+    const remarketingMismatchOnly = constraints.expectsRemarketing
+      && failedRules.length === 1
+      && failedRules[0] === 'audience_mismatch';
+
+    if (!remarketingMismatchOnly) {
+      return consistency;
+    }
+
+    const blockingIssue = 'O briefing pede remarketing, mas ainda falta selecionar ou conectar um público de remarketing/pixel/audiência personalizada.';
+    const blockingIssues = consistency.blockingIssues.length
+      ? consistency.blockingIssues.map((issue) => failedRules.includes('audience_mismatch') ? blockingIssue : issue)
+      : [blockingIssue];
+
+    return {
+      ...consistency,
+      blockingIssues,
+      warnings: this.normalizeStringArrayUnique(
+        [
+          ...consistency.warnings,
+          sanitizedColdAudience
+            ? 'Os interesses sugeridos vieram como público frio, então foram removidos do targeting final até existir uma audiência real de remarketing.'
+            : '',
+        ],
+        8,
+      ),
+      recommendations: this.normalizeStringArrayUnique(
+        [
+          ...consistency.recommendations.filter(
+            (item) => item !== 'Gere novamente a sugestão com a IA para obter uma resposta coerente com o briefing.',
+          ),
+          'Configure uma audiência personalizada, pixel ou sinais reais de engajamento antes de publicar o remarketing.',
+        ],
+        8,
+      ),
+      shouldRetry: false,
+      userMessage: undefined,
+      debug: consistency.debug
+        ? {
+          ...consistency.debug,
+          consistencyErrors: blockingIssues,
+        }
+        : consistency.debug,
+    };
+  }
+
+  private containsRawJsonArtifact(value: string | null | undefined): boolean {
+    const text = this.asString(value);
+    if (!text) return false;
+    return /```|^\s*[{[]|"\w+"\s*:|[}\]]\s*$/.test(text);
+  }
 }
+
+

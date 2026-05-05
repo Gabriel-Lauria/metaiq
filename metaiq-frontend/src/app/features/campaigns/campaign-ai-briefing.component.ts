@@ -23,7 +23,7 @@ import { FormsModule } from '@angular/forms';
       <div class="briefing-header">
         <h2>Descreva sua campanha</h2>
         <p class="subtitle">
-          Digite um briefing em linguagem natural. A IA vai estruturar tudo para você.
+          Digite um briefing em linguagem natural. A IA vai estruturar a campanha para você. A publicação automática atual é apenas para campanhas de website.
         </p>
       </div>
 
@@ -98,7 +98,7 @@ import { FormsModule } from '@angular/forms';
           <li>Descreva seu produto/serviço</li>
           <li>Informe seu orçamento e duração</li>
           <li>Especifique o público-alvo</li>
-          <li>Mencione o destino (site, WhatsApp, leads form)</li>
+          <li>Mencione o destino. Website tem publicação automática; mensagens entram como sugestão estratégica.</li>
           <li>Indique o objetivo principal (vendas, leads, tráfego)</li>
         </ul>
       </div>

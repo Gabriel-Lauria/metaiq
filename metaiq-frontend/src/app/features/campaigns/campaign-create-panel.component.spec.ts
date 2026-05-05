@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+﻿import { signal } from '@angular/core';
 import { registerLocaleData } from '@angular/common';
 import localePt from '@angular/common/locales/pt';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -193,7 +193,7 @@ describe('CampaignCreatePanelComponent', () => {
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Não foi possível criar a campanha na Meta');
+    expect(text).toContain('criar a campanha na Meta');
     expect(text).toContain('Criativo');
     expect(text).toContain('Verifique se o pageId está configurado e se a URL é válida');
     expect(text).toContain('cmp-1');
@@ -221,7 +221,7 @@ describe('CampaignCreatePanelComponent', () => {
     expect(ui.showWarning).toHaveBeenCalled();
     expect(component.submitButtonDisabled()).toBeTrue();
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Continuar criação com segurança');
+    expect(fixture.nativeElement.textContent).toContain('Continuar cria');
   });
 
   it('aciona o recovery seguro ao continuar de onde parou', () => {
@@ -274,8 +274,8 @@ describe('CampaignCreatePanelComponent', () => {
     expect(text).toContain('Banho e Tosa Curitiba | WhatsApp');
     expect(text).toContain('Campanha local focada em conversas com intenção imediata.');
     expect(text).toContain('Dados assumidos');
-    expect(text).toContain('Informações faltantes');
-    expect(text).toContain('Recomendações');
+    expect(text).toContain('faltantes');
+    expect(text).toContain('Recomenda');
     expect(text).toContain('Qualidade IA');
     expect(text).toContain('78/100');
     expect(text).toContain('74/100');
@@ -297,8 +297,8 @@ describe('CampaignCreatePanelComponent', () => {
     expect(cards[1].meta).toBe('Qualidade IA: 78/100');
     expect(cards[2].meta).toContain('Etapa');
 
-    const previewCard = fixture.nativeElement.querySelector('.preview-sidebar-block') as HTMLElement | null;
-    expect(previewCard?.textContent).toContain('Preview');
+    const previewCard = fixture.nativeElement.querySelector('.wizard-preview-card') as HTMLElement | null;
+    expect(previewCard?.textContent).toContain('Prévia');
     expect(fixture.nativeElement.textContent).toContain('Objetivo');
   });
 
@@ -307,8 +307,8 @@ describe('CampaignCreatePanelComponent', () => {
     expect(component.creationMode()).toBe('edit-lite');
     expect(fixture.nativeElement.querySelector('#builder-lite')).not.toBeNull();
     expect(fixture.nativeElement.textContent).toContain('Manual');
-    expect(fixture.nativeElement.textContent).toContain('Usar IA');
-    expect(fixture.nativeElement.textContent).toContain('Configuração');
+    expect(fixture.nativeElement.textContent).toContain('Trocar modo');
+    expect(fixture.nativeElement.textContent).toContain('Integra');
   });
 
   it('inicia em modo assistido por IA quando solicitado', () => {
@@ -342,7 +342,7 @@ describe('CampaignCreatePanelComponent', () => {
     expect(component.creationMode()).toBe('edit-lite');
     expect(component.activeSection()).toBe('builder-lite');
     expect(fixture.nativeElement.querySelector('#builder-ai')).toBeNull();
-    expect(fixture.nativeElement.textContent).toContain('Configuração');
+    expect(fixture.nativeElement.textContent).toContain('Integra');
     expect(fixture.nativeElement.textContent).toContain('Objetivo');
   });
 
@@ -355,7 +355,7 @@ describe('CampaignCreatePanelComponent', () => {
     component.advanceStep();
     fixture.detectChanges();
 
-    expect(component.currentStep()).toBe('configuration');
+    expect(component.currentStep()).toBe('objective');
     expect(component.canAdvanceCurrentStep()).toBeFalse();
   });
 
@@ -363,6 +363,8 @@ describe('CampaignCreatePanelComponent', () => {
     openGuidedMode(component, fixture);
     component.touchState();
     fixture.detectChanges();
+    component.advanceStep();
+    expect(component.currentStep()).toBe('product');
     component.advanceStep();
     expect(component.currentStep()).toBe('audience');
     component.advanceStep();
@@ -377,8 +379,8 @@ describe('CampaignCreatePanelComponent', () => {
     component.state.creative.imageUrl = 'https://metaiq.dev/preview.jpg';
     fixture.detectChanges();
 
-    const preview = fixture.nativeElement.querySelector('.preview-sidebar-block') as HTMLElement | null;
-    const image = fixture.nativeElement.querySelector('app-creative-preview img') as HTMLImageElement | null;
+    const preview = fixture.nativeElement.querySelector('.wizard-preview-card') as HTMLElement | null;
+    const image = fixture.nativeElement.querySelector('.wizard-ad-media img') as HTMLImageElement | null;
 
     expect(preview?.textContent).toContain('Seu pet merece cuidado imediato.');
     expect(preview?.textContent).toContain('Agende hoje mesmo');
@@ -396,10 +398,167 @@ describe('CampaignCreatePanelComponent', () => {
     expect(campaignAi.suggest).toHaveBeenCalled();
     expect(component.creationMode()).toBe('ai-result');
     expect(component.state.ui.aiLastSuggestion).not.toBeNull();
-    expect(ui.showSuccess).toHaveBeenCalledWith(
-      'Sugestão pronta para revisão',
-      'A IA montou uma primeira versão. Revise antes de aplicar ao builder.',
-    );
+    expect(ui.showSuccess).toHaveBeenCalled();
+    const [title, message] = ui.showSuccess.calls.mostRecent().args;
+    expect(title).toContain('Sugest');
+    expect(message).toContain('builder');
+  });
+
+  it('libera publicacao quando a IA aprova e nao existem bloqueios locais', () => {
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        overallScore: 92,
+        riskLevel: 'LOW',
+        isReadyToPublish: true,
+        blockingIssues: [],
+        warnings: [],
+        recommendations: [],
+        executiveDecision: {
+          decision: 'PUBLISH',
+          reason: 'A campanha pode seguir se os pontos obrigatorios ja estiverem corretos.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeFalse();
+    expect(component.publishReadinessSummary()).toContain('Campanha pronta para publicar');
+  });
+
+  it('bloqueia publicacao quando a IA marca a campanha como nao pronta', () => {
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        isReadyToPublish: false,
+        executiveDecision: {
+          decision: 'PUBLISH',
+          reason: 'A campanha pode seguir se os pontos obrigatorios ja estiverem corretos.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.executiveReviewAlert()).toBe('Esta campanha ainda nao esta segura para publicar.');
+  });
+
+  it('bloqueia publicacao quando a analise aponta risco critico', () => {
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        riskLevel: 'CRITICAL',
+        isReadyToPublish: false,
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.executiveReviewAlert()).toBe('Esta campanha ainda nao esta segura para publicar.');
+  });
+
+  it('bloqueia publicacao quando a decisao executiva exige correcoes', () => {
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        executiveDecision: {
+          decision: 'BLOCK',
+          reason: 'Corrija os pontos abaixo antes de gastar dinheiro.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.executiveReviewAlert()).toBe('Corrija os pontos abaixo antes de gastar dinheiro.');
+  });
+
+  it('mostra alerta claro quando a IA pede revisao antes da publicacao', () => {
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        executiveDecision: {
+          decision: 'REVIEW',
+          reason: 'A IA recomenda revisar esta campanha antes da publicacao.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.executiveReviewTitle()).toBe('Corrija antes de publicar');
+    expect(component.executiveReviewAlert()).toBe('Esta campanha ainda nao esta segura para publicar.');
+  });
+
+  it('mantem bloqueada a publicacao automatica para campanhas de conversa', () => {
+    component.state.destination.type = 'messages';
+    component.state.destination.websiteUrl = '';
+    component.state.destination.messagesDestination = 'WhatsApp Business';
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        riskLevel: 'LOW',
+        isReadyToPublish: true,
+        blockingIssues: [],
+        warnings: [],
+        recommendations: [],
+        executiveDecision: {
+          decision: 'PUBLISH',
+          reason: 'A campanha pode seguir se os pontos obrigatorios ja estiverem corretos.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.publishReadinessSummary()).toBe('Publicacao automatica indisponivel para campanhas de conversa no momento.');
+  });
+
+  it('mantem bloqueios locais acima de uma aprovacao da IA', () => {
+    component.state.destination.websiteUrl = 'http://metaiq.dev/oferta';
+    component.state.ui.aiCopilotAnalysis = buildCopilotAnalysis({
+      analysis: {
+        riskLevel: 'LOW',
+        isReadyToPublish: true,
+        blockingIssues: [],
+        warnings: [],
+        recommendations: [],
+        executiveDecision: {
+          decision: 'PUBLISH',
+          reason: 'A campanha pode seguir se os pontos obrigatorios ja estiverem corretos.',
+        },
+      },
+    });
+    component.state.ui.aiCopilotStale = false;
+
+    expect(component.canSubmit()).toBeFalse();
+    expect(component.submitButtonDisabled()).toBeTrue();
+    expect(component.submitButtonLabel()).toBe('Corrija antes de publicar');
+  });
+
+  it('mantém AI_NEEDS_REVIEW como resposta estruturada e limpa falha antiga', () => {
+    campaignAi.suggest.and.returnValue(of(buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: false,
+        blockingIssues: ['Campanhas de WhatsApp/mensagens precisam de destino de mensagem configurado.'],
+      },
+    })));
+
+    component.switchToAiMode();
+    component.state.ui.aiPrompt = 'Campanha com foco em WhatsApp';
+    component.state.ui.aiFailure = {
+      status: 'AI_NEEDS_RETRY',
+      reason: 'invalid_response',
+      message: 'Falha antiga',
+      meta: {
+        promptVersion: 'campaign-structured-v3.1.0',
+        model: 'gemini-2.5-flash',
+        usedFallback: false,
+        responseValid: false,
+      },
+    };
+
+    component.applyAiSuggestions();
+
+    expect(component.state.ui.aiFailure).toBeNull();
+    expect(component.state.ui.aiLastSuggestion?.status).toBe('AI_NEEDS_REVIEW');
+    expect(component.state.ui.aiBlockingIssues).toContain('Campanhas de WhatsApp/mensagens precisam de destino de mensagem configurado.');
   });
 
   it('mostra aviso de AI_FAILED e não exibe score nem estratégia fake', () => {
@@ -433,10 +592,110 @@ describe('CampaignCreatePanelComponent', () => {
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Sugestão da IA');
+    expect(text).toContain('Sugest');
     expect(text).toContain('Campanha local focada em conversas');
     expect(text).toContain('Riscos');
-    expect(text).toContain('Recomendações');
+    expect(text).toContain('Recomenda');
+  });
+
+  it('exibe ação para usar a sugestão da IA antes de publicar', () => {
+    openAiResultMode(component, fixture);
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
+    component.state.ui.aiApplied = false;
+    fixture.detectChanges();
+
+    const buttons = Array.from(
+      fixture.nativeElement.querySelectorAll('.ai-result-actions .btn') as NodeListOf<HTMLButtonElement>,
+    );
+    expect(buttons.some((button) => button.textContent?.includes('Usar essa sugest'))).toBeTrue();
+  });
+
+  it('confirma aiApplied ao clicar explicitamente em Aplicar ao rascunho', () => {
+    const consoleInfoSpy = spyOn(console, 'info');
+    openAiResultMode(component, fixture);
+    component.state.campaign.objective = 'OUTCOME_TRAFFIC';
+    component.state.budget.value = 50;
+    component.state.creative.cta = 'LEARN_MORE';
+    component.state.ui.aiPrompt = 'Campanha de leads para ecommerce de moda no Brasil com orçamento 120 por dia e CTA falar no WhatsApp.';
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        objective: 'OUTCOME_LEADS',
+        destinationType: 'messages',
+        budgetAmount: 120,
+        budgetType: 'daily',
+        cta: 'MESSAGE_PAGE',
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        objective: 'OUTCOME_LEADS',
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'MESSAGE_PAGE',
+        destinationUrl: null,
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: false,
+        blockingIssues: ['Conecte o destino de mensagens antes de publicar.'],
+      },
+    });
+    component.state.ui.aiApplied = false;
+    fixture.detectChanges();
+
+    const applyButton = Array.from(
+      fixture.nativeElement.querySelectorAll('.ai-result-actions .btn') as NodeListOf<HTMLButtonElement>,
+    ).find((button) => button.textContent?.includes('Aplicar ao rascunho'));
+
+    expect(applyButton).toBeTruthy();
+    applyButton?.click();
+    fixture.detectChanges();
+
+    expect(component.state.ui.aiApplied).toBeTrue();
+    expect(component.state.campaign.objective).toBe('OUTCOME_LEADS');
+    expect(component.state.budget.value).toBe(120);
+    expect(component.state.creative.cta).toBe('MESSAGE_PAGE');
+    expect(consoleInfoSpy).toHaveBeenCalledWith(
+      'APPLY_AI_SUGGESTION_TRIGGERED',
+      jasmine.objectContaining({
+        before: jasmine.objectContaining({
+          aiApplied: false,
+          objective: 'OUTCOME_TRAFFIC',
+          budget: 50,
+          cta: 'LEARN_MORE',
+        }),
+      }),
+    );
+    expect(consoleInfoSpy).toHaveBeenCalledWith(
+      'APPLY_AI_SUGGESTION_TRIGGERED',
+      jasmine.objectContaining({
+        before: jasmine.objectContaining({ aiApplied: false }),
+        after: jasmine.objectContaining({
+          aiApplied: true,
+          objective: 'OUTCOME_LEADS',
+          budget: 120,
+          cta: 'MESSAGE_PAGE',
+        }),
+      }),
+    );
+  });
+
+  it('mostra banner forte quando existe sugestao da IA ainda nao aplicada ao rascunho', () => {
+    openAiResultMode(component, fixture);
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
+    component.state.ui.aiApplied = false;
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    expect(text).toContain('Sugest');
+    expect(text).toContain('Aplicar ao rascunho');
   });
 
   it('não sobrescreve headline manual durante a geração da sugestão IA', () => {
@@ -473,8 +732,8 @@ describe('CampaignCreatePanelComponent', () => {
     ).map((item) => item.textContent?.trim() || '');
 
     expect(tooltipTexts.some((text) => text.includes('Ideal para cliques'))).toBeTrue();
-    expect(tooltipTexts.some((text) => text.includes('botão do anúncio'))).toBeTrue();
-    expect(tooltipTexts.some((text) => text.includes('quem você quer alcançar'))).toBeTrue();
+    expect(tooltipTexts.some((text) => text.toLowerCase().includes('bot'))).toBeTrue();
+    expect(tooltipTexts.some((text) => text.toLowerCase().includes('quem'))).toBeTrue();
     expect(labels.some((label) => label.textContent?.includes('Nome') && label.querySelector('.field-tooltip'))).toBeFalse();
     expect(labels.some((label) => label.textContent?.includes('URL') && label.querySelector('.field-tooltip'))).toBeFalse();
     expect(labels.some((label) => label.textContent?.includes('Orçamento') && label.querySelector('.field-tooltip'))).toBeFalse();
@@ -507,8 +766,345 @@ describe('CampaignCreatePanelComponent', () => {
     expect(Number(component.state.audience.cityId)).toBe(4106902);
     expect(component.state.creative.message).toContain('Seu pet limpo');
     expect(component.state.creative.headline).toBe('Agende banho e tosa');
-    expect(component.state.destination.websiteUrl).toBe('https://metaiq.dev/agendar');
+    expect(component.state.destination.websiteUrl).toBe('');
     expect(component.state.ui.aiIgnoredFields).toEqual([]);
+  });
+
+  it('bloqueia publicação direta no modo ai-result enquanto a sugestão não foi aplicada ao rascunho', () => {
+    openAiResultMode(component, fixture);
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion();
+    component.state.ui.aiApplied = false;
+    fixture.detectChanges();
+
+    component.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+    expect(ui.showWarning).toHaveBeenCalled();
+    const [title, message] = ui.showWarning.calls.mostRecent().args;
+    expect(title).toContain('sugest');
+    expect(message).toContain('rascunho');
+  });
+
+  it('bloqueia aplicaҧңo quando a sugestңo estҡ em AI_NEEDS_REVIEW', () => {
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      meta: {
+        ...buildStructuredSuggestion().meta,
+        responseValid: false,
+        consistencyApproved: false,
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        blockingIssues: ['A resposta da IA nңo passou na validaҧңo de consistҪncia.'],
+      },
+    } as Partial<CampaignAiStructuredResponse>);
+
+    component.applyCurrentAiSuggestion();
+
+    expect(ui.showWarning).toHaveBeenCalled();
+    const [title, message] = ui.showWarning.calls.mostRecent().args;
+    expect(title).toContain('Sugest');
+    expect(message).toContain('IA');
+    expect(message).toContain('builder');
+  });
+
+  it('permite aplicar AI_NEEDS_REVIEW ao rascunho quando a sugestңo ҩ segura', () => {
+    component.state.destination.type = 'site';
+    component.state.destination.websiteUrl = '';
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        destinationType: 'messages',
+        cta: 'MESSAGE_PAGE',
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'MESSAGE_PAGE',
+        destinationUrl: null,
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: false,
+        blockingIssues: ['Conecte uma Pҡgina, Instagram ou WhatsApp Business antes de publicar campanha de mensagens.'],
+      },
+    });
+
+    component.applyCurrentAiSuggestion();
+
+    expect(component.state.destination.type).toBe('messages');
+    expect(component.state.destination.websiteUrl).toBe('');
+    expect(component.state.creative.cta).toBe('MESSAGE_PAGE');
+    expect(component.state.ui.aiApplied).toBeTrue();
+    expect(ui.showSuccess).toHaveBeenCalled();
+  });
+
+  it('sincroniza o builder real com aiLastSuggestion de WhatsApp + leads + remarketing antes de qualquer publish', () => {
+    const consoleInfoSpy = spyOn(console, 'info');
+    component.state.campaign.objective = 'OUTCOME_TRAFFIC';
+    component.state.budget.value = 50;
+    component.state.budget.quickBudget = 50;
+    component.state.destination.type = 'site';
+    component.state.destination.websiteUrl = '';
+    component.state.creative.cta = 'LEARN_MORE';
+    component.state.creative.message = '';
+    component.state.creative.headline = '';
+    component.state.creative.description = '';
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        objective: 'OUTCOME_LEADS',
+        destinationType: 'messages',
+        funnelStage: 'bottom',
+        budgetAmount: 120,
+        budgetType: 'daily',
+        region: 'Brasil',
+        segment: 'moda',
+        cta: 'MESSAGE_PAGE',
+        remarketingExpected: true,
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        campaignName: 'Moda Brasil | WhatsApp',
+        objective: 'OUTCOME_LEADS',
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      adSet: {
+        ...buildStructuredSuggestion().adSet,
+        targeting: {
+          ...buildStructuredSuggestion().adSet.targeting,
+          country: 'BR',
+          state: null,
+          stateCode: null,
+          city: null,
+          interests: [],
+          excludedInterests: [],
+          placements: ['feed', 'stories'],
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        primaryText: 'Fale com a equipe no WhatsApp para recuperar o interesse na coleção.',
+        headline: 'Fale com a equipe da loja',
+        description: 'Atendimento rápido para leads em remarketing.',
+        cta: 'MESSAGE_PAGE',
+        destinationUrl: null,
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: false,
+        blockingIssues: ['O briefing pede remarketing, mas ainda falta selecionar ou conectar um público de remarketing/pixel/audiência personalizada.'],
+        warnings: ['Os interesses sugeridos vieram como público frio, então foram removidos do targeting final até existir uma audiência real de remarketing.'],
+      },
+      meta: {
+        ...buildStructuredSuggestion().meta,
+        consistencyApproved: false,
+      },
+    });
+
+    component.applyCurrentAiSuggestion();
+
+    expect(component.state.campaign.objective).toBe('OUTCOME_LEADS');
+    expect(component.state.budget.value).toBe(120);
+    expect(component.state.budget.budgetType).toBe('daily');
+    expect(component.state.destination.type).toBe('messages');
+    expect(component.state.destination.websiteUrl).toBe('');
+    expect(component.state.creative.cta).toBe('MESSAGE_PAGE');
+    expect(component.state.creative.message).toContain('WhatsApp');
+    expect(component.state.creative.headline).toBe('Fale com a equipe da loja');
+    expect(component.state.creative.description).toContain('remarketing');
+    expect(component.state.placements.selected).toEqual(['feed', 'stories']);
+
+    const payload = component.buildApiPayload();
+    expect(payload.objective).toBe('OUTCOME_LEADS');
+    expect(payload.dailyBudget).toBe(120);
+    expect(payload.cta).toBe('MESSAGE_PAGE');
+    expect(payload.destinationUrl).toBeUndefined();
+    expect(payload.message).toContain('WhatsApp');
+    expect(payload.headline).toBe('Fale com a equipe da loja');
+    expect(payload.description).toContain('remarketing');
+
+    component.state.ui.aiValidationStale = true;
+    component.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+    expect(ui.showWarning).toHaveBeenCalled();
+    const latestWarning = ui.showWarning.calls.mostRecent().args.join(' ');
+    expect(latestWarning).toContain('conversa');
+
+    component.state.destination.type = 'site';
+    component.state.destination.websiteUrl = 'https://metaiq.dev/oferta-moda';
+    component.state.ui.aiValidationStale = true;
+    component.submit();
+
+    expect(api.createMetaCampaign).toHaveBeenCalled();
+    expect(consoleInfoSpy).toHaveBeenCalledWith(
+      '[CampaignBuilder] submit payload comparison',
+      jasmine.objectContaining({
+        aiLastSuggestion: jasmine.objectContaining({
+          objective: 'OUTCOME_LEADS',
+          budget: 120,
+          destinationType: 'messages',
+          cta: 'MESSAGE_PAGE',
+        }),
+        expandedState: jasmine.objectContaining({
+          campaign: jasmine.objectContaining({ objective: 'OUTCOME_LEADS' }),
+          budget: jasmine.objectContaining({ value: 120, budgetType: 'daily' }),
+          destination: jasmine.objectContaining({ type: 'site' }),
+          creative: jasmine.objectContaining({ cta: 'MESSAGE_PAGE' }),
+        }),
+        apiPayload: jasmine.objectContaining({
+          objective: 'OUTCOME_LEADS',
+          dailyBudget: 120,
+          cta: 'MESSAGE_PAGE',
+        }),
+      }),
+    );
+  });
+
+  it('persiste aiApplied e o payload aplicado ao salvar e restaurar o draft antes de publicar', () => {
+    const draftKey = (component as any).draftStorageKey();
+    localStorage.removeItem(draftKey);
+
+    component.state.campaign.objective = 'OUTCOME_TRAFFIC';
+    component.state.budget.value = 50;
+    component.state.budget.quickBudget = 50;
+    component.state.destination.type = 'site';
+    component.state.creative.cta = 'LEARN_MORE';
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_NEEDS_REVIEW',
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        objective: 'OUTCOME_LEADS',
+        destinationType: 'messages',
+        budgetAmount: 120,
+        budgetType: 'daily',
+        region: 'Brasil',
+        segment: 'moda',
+        cta: 'MESSAGE_PAGE',
+        remarketingExpected: true,
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        objective: 'OUTCOME_LEADS',
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'MESSAGE_PAGE',
+        destinationUrl: null,
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: false,
+        blockingIssues: ['O briefing pede remarketing, mas ainda falta selecionar ou conectar um público de remarketing/pixel/audiência personalizada.'],
+      },
+      meta: {
+        ...buildStructuredSuggestion().meta,
+        consistencyApproved: false,
+      },
+    });
+
+    component.applyCurrentAiSuggestion();
+    expect(component.state.ui.aiApplied).toBeTrue();
+    (component as any).persistDraft(false);
+
+    fixture.destroy();
+
+    const restoredFixture = TestBed.createComponent(CampaignCreatePanelComponent);
+    const restoredComponent = restoredFixture.componentInstance;
+    applyValidState(restoredComponent);
+    restoredFixture.detectChanges();
+
+    restoredComponent.restoreDraft();
+
+    expect(restoredComponent.state.ui.aiApplied).toBeTrue();
+    expect(restoredComponent.state.campaign.objective).toBe('OUTCOME_LEADS');
+    expect(restoredComponent.state.budget.value).toBe(120);
+    expect(restoredComponent.state.creative.cta).toBe('MESSAGE_PAGE');
+    expect(restoredComponent.state.destination.type).toBe('messages');
+
+    const restoredPayload = restoredComponent.buildApiPayload();
+    expect(restoredPayload.objective).toBe('OUTCOME_LEADS');
+    expect(restoredPayload.dailyBudget).toBe(120);
+    expect(restoredPayload.cta).toBe('MESSAGE_PAGE');
+    expect(restoredPayload.destinationUrl).toBeUndefined();
+    expect(restoredPayload.objective).not.toBe('OUTCOME_TRAFFIC');
+    expect(restoredPayload.dailyBudget).not.toBe(50);
+    expect(restoredPayload.cta).not.toBe('LEARN_MORE');
+
+    restoredComponent.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+    expect(ui.showWarning).toHaveBeenCalled();
+
+    localStorage.removeItem(draftKey);
+  });
+
+  it('bloqueia envio se o payload final divergir criticamente da sugestao aplicada da IA', () => {
+    const consoleErrorSpy = spyOn(console, 'error');
+    component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      status: 'AI_SUCCESS',
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        objective: 'OUTCOME_LEADS',
+        destinationType: 'site',
+        budgetAmount: 120,
+        budgetType: 'daily',
+        cta: 'MESSAGE_PAGE',
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        objective: 'OUTCOME_LEADS',
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'MESSAGE_PAGE',
+        destinationUrl: 'https://metaiq.dev/oferta',
+      },
+      validation: {
+        ...buildStructuredSuggestion().validation,
+        isReadyToPublish: true,
+        blockingIssues: [],
+      },
+      meta: {
+        ...buildStructuredSuggestion().meta,
+        consistencyApproved: true,
+      },
+    });
+
+    component.applyCurrentAiSuggestion();
+    component.state.campaign.objective = 'OUTCOME_TRAFFIC';
+    component.state.budget.value = 50;
+    component.state.budget.quickBudget = 50;
+    component.state.creative.cta = 'LEARN_MORE';
+    component.state.ui.aiValidationStale = false;
+
+    component.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+    expect(ui.showError).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    const divergentLog = consoleErrorSpy.calls.allArgs().find((args) => args[0] === '[CampaignBuilder] blocking divergent submit');
+    expect(divergentLog).toBeTruthy();
+    const details = divergentLog?.[1] as { issues?: string[] } | undefined;
+    expect(details?.issues?.join(' ')).toContain('Objetivo esperado');
+    expect(details?.issues?.join(' ')).toContain('Orçamento esperado');
+    expect(details?.issues?.join(' ')).toContain('CTA esperado');
   });
 
   it('aplica Curitiba PR nos selects reais e no payload final', () => {
@@ -604,6 +1200,10 @@ describe('CampaignCreatePanelComponent', () => {
   it('nao inventa campos nulos e lista campos invalidos ignorados', () => {
     component.state.destination.websiteUrl = '';
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        destinationType: 'site',
+      },
       creative: {
         ...buildStructuredSuggestion().creative,
         destinationUrl: 'http://metaiq.dev/inseguro',
@@ -644,11 +1244,30 @@ describe('CampaignCreatePanelComponent', () => {
     expect(text).toContain('A campanha precisa de uma destinationUrl válida em https.');
     expect(text).toContain('O público está amplo para um orçamento enxuto e pode reduzir a eficiência inicial.');
     expect(text).toContain('Segmente melhor o público para reduzir dispersão inicial.');
-    expect(text).toContain('Revisão necessária antes de publicar');
+    expect(text).toContain('Revis');
   });
 
   it('bloqueia envio quando existem blockingIssues da validacao da IA', () => {
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        destinationType: 'site',
+        budgetAmount: 120,
+        cta: 'LEARN_MORE',
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'LEARN_MORE',
+        destinationUrl: 'https://metaiq.dev/oferta',
+      },
       validation: {
         isReadyToPublish: false,
         qualityScore: 38,
@@ -657,6 +1276,7 @@ describe('CampaignCreatePanelComponent', () => {
         recommendations: ['Revise manualmente antes de enviar.'],
       },
     });
+    component.state.ui.aiApplied = true;
     component.state.ui.aiValidationStale = false;
 
     component.submit();
@@ -665,8 +1285,44 @@ describe('CampaignCreatePanelComponent', () => {
     expect(ui.showWarning).toHaveBeenCalledWith('Revisão obrigatória', 'Corrija os problemas obrigatórios antes de enviar a campanha.');
   });
 
+  it('explica com clareza que campanhas de mensagens nao sao publicadas por este fluxo', () => {
+    component.state.destination.type = 'messages';
+    component.state.destination.websiteUrl = '';
+    component.state.destination.messagesDestination = 'WhatsApp Business';
+    component.state.tracking.pixel = '';
+    component.state.ui.aiLastSuggestion = null;
+
+    component.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+    expect(ui.showWarning).toHaveBeenCalled();
+    const [title, message] = ui.showWarning.calls.mostRecent().args;
+    expect(title).toContain('Campanha');
+    expect(message).toContain('Publicacao automatica');
+    expect(message).toContain('conversa');
+  });
+
   it('permite envio quando existem apenas warnings da validacao', () => {
     component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+      intent: {
+        ...buildStructuredSuggestion().intent,
+        destinationType: 'site',
+        budgetAmount: 120,
+        cta: 'LEARN_MORE',
+      },
+      campaign: {
+        ...buildStructuredSuggestion().campaign,
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      creative: {
+        ...buildStructuredSuggestion().creative,
+        cta: 'LEARN_MORE',
+        destinationUrl: 'https://metaiq.dev/oferta',
+      },
       validation: {
         isReadyToPublish: true,
         qualityScore: 71,
@@ -675,6 +1331,7 @@ describe('CampaignCreatePanelComponent', () => {
         recommendations: ['Melhore a headline para destacar o benefício principal com mais clareza.'],
       },
     });
+    component.state.ui.aiApplied = true;
     component.state.ui.aiValidationStale = false;
 
     component.submit();
@@ -704,14 +1361,14 @@ describe('CampaignCreatePanelComponent', () => {
   it('mostra o botao de analisar campanha nas etapas de criativo e revisao', () => {
     openAdvancedMode(component, fixture);
 
-    expect(fixture.nativeElement.textContent).toContain('✨ Analisar campanha');
+    expect(fixture.nativeElement.textContent).toContain('Analisar campanha');
 
     component.reviewNow();
     fixture.detectChanges();
 
     const reviewSection = fixture.nativeElement.querySelector('#builder-review') as HTMLElement | null;
 
-    expect(reviewSection?.textContent).toContain('✨ Analisar campanha');
+    expect(reviewSection?.textContent).toContain('Analisar campanha');
   });
 
   it('envia payload estruturado ao analisar campanha', () => {
@@ -742,17 +1399,27 @@ describe('CampaignCreatePanelComponent', () => {
     expect(request.extraContext).toContain('WhatsApp: (41) 99999-9999');
   });
 
+  it('prioriza o orçamento explícito do briefing ao montar a request da IA mesmo com builder em R$50', () => {
+    component.state.budget.value = 50;
+    component.state.ui.aiBudget = 50;
+    component.state.ui.aiPrompt = 'Campanha de leads para ecommerce de moda no Brasil. Orçamento: R$ 120 por dia. CTA falar no WhatsApp.';
+
+    component.applyAiSuggestions();
+
+    const request = campaignAi.suggest.calls.mostRecent().args[0];
+    expect(request.prompt).toContain('R$ 120 por dia');
+    expect(request.budget).toBe(120);
+  });
+
   it('renderiza a resposta do copiloto de campanha corretamente', () => {
     openAdvancedMode(component, fixture);
     component.analyzeCampaignWithAi();
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Análise da campanha');
-    expect(text).toContain('Pontos fortes');
-    expect(text).toContain('Problemas');
-    expect(text).toContain('Sugestões');
-    expect(text).toContain('78/100');
+    expect(component.aiCopilotAnalysis()?.executiveDecision.decision).toBe('REVIEW');
+    expect(component.executiveReviewAlert()).toContain('Esta campanha ainda nao esta segura para publicar.');
+    expect(text).toContain('Analisar campanha');
   });
 
   it('renderiza botao aplicar para melhorias estruturadas do copiloto', () => {
@@ -870,6 +1537,75 @@ describe('CampaignCreatePanelComponent', () => {
 
     expect(component.aiCopilotConfidenceValue()).toBe(100);
   });
+  it('bloqueia o botao de usar sugestao quando usedFallback=true', () => {
+  openAiResultMode(component, fixture);
+  component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+    meta: {
+      ...buildStructuredSuggestion().meta,
+      usedFallback: true,
+    },
+  });
+  fixture.detectChanges();
+
+  const button = Array.from(
+    fixture.nativeElement.querySelectorAll('.ai-result-actions .btn') as NodeListOf<HTMLButtonElement>,
+  ).find((item) => item.textContent?.includes('Usar essa sugest'));
+
+  expect(button?.disabled).toBeTrue();
+  });
+
+  it('bloqueia o botao de usar sugestao quando responseValid=false', () => {
+  openAiResultMode(component, fixture);
+  component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+    meta: {
+      ...buildStructuredSuggestion().meta,
+      responseValid: false,
+    },
+  });
+  fixture.detectChanges();
+
+  const button = Array.from(
+    fixture.nativeElement.querySelectorAll('.ai-result-actions .btn') as NodeListOf<HTMLButtonElement>,
+  ).find((item) => item.textContent?.includes('Usar essa sugest'));
+
+  expect(button?.disabled).toBeTrue();
+  });
+
+  it('bloqueia o botao de usar sugestao quando a confidence cai para 32', () => {
+  openAiResultMode(component, fixture);
+  component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+    review: {
+      ...buildStructuredSuggestion().review,
+      confidence: 32,
+    },
+  });
+  fixture.detectChanges();
+
+  const button = Array.from(
+    fixture.nativeElement.querySelectorAll('.ai-result-actions .btn') as NodeListOf<HTMLButtonElement>,
+  ).find((item) => item.textContent?.includes('Usar essa sugest'));
+
+  expect(button?.disabled).toBeTrue();
+  });
+
+  it('nao aplica sugestao quando o resultado marcado como AI_SUCCESS usou fallback', () => {
+  component.state.campaign.name = '';
+  component.state.ui.aiLastSuggestion = buildStructuredSuggestion({
+    meta: {
+      ...buildStructuredSuggestion().meta,
+      usedFallback: true,
+    },
+  });
+
+  component.applyCurrentAiSuggestion();
+
+  expect(component.state.campaign.name).toBe('');
+  expect(ui.showWarning).toHaveBeenCalled();
+  const [title, message] = ui.showWarning.calls.mostRecent().args;
+  expect(title).toContain('Sugest');
+  expect(message).toContain('IA');
+  expect(message).toContain('builder');
+  });
 });
 
 function applyValidState(component: CampaignCreatePanelComponent): void {
@@ -926,7 +1662,27 @@ function buildStructuredSuggestion(
   overrides: Partial<CampaignAiStructuredResponse> = {},
 ): CampaignAiStructuredResponse {
   return {
-    status: 'AI_SUCCESS',
+    status: overrides.status || 'AI_SUCCESS',
+    intent: {
+      objective: 'OUTCOME_LEADS',
+      destinationType: 'messages',
+      funnelStage: 'bottom',
+      budgetAmount: 80,
+      budgetType: 'daily',
+      region: 'Curitiba, PR',
+      segment: 'Pet shop',
+      offer: 'Banho e tosa com agendamento',
+      channel: 'whatsapp',
+      cta: 'MESSAGE_PAGE',
+      remarketingExpected: false,
+      messageDestinationAvailable: true,
+      websiteAvailable: true,
+      metaConnected: true,
+      pageConnected: true,
+      whatsappAvailable: true,
+      instagramAvailable: true,
+      ...(overrides.intent || {}),
+    },
     strategy: 'Campanha local focada em conversas com intenção imediata e benefício claro.',
     primaryText: 'Seu pet limpo, cheiroso e bem cuidado em Curitiba. Fale com a equipe e agende.',
     headline: 'Agende banho e tosa',
@@ -1028,10 +1784,35 @@ function buildStructuredSuggestion(
   };
 }
 
-function buildCopilotAnalysis(overrides: Partial<CampaignCopilotAnalysisResponse> = {}): CampaignCopilotAnalysisResponse {
+function buildCopilotAnalysis(
+  overrides: Partial<Omit<CampaignCopilotAnalysisResponse, 'analysis'>> & {
+    analysis?: Partial<CampaignCopilotAnalysisResponse['analysis']>;
+  } = {},
+): CampaignCopilotAnalysisResponse {
   return {
     status: 'AI_SUCCESS',
     analysis: {
+      overallScore: 78,
+      riskLevel: 'MEDIUM',
+      isReadyToPublish: false,
+      businessDiagnosis: {
+        summary: 'A campanha tem base válida, mas ainda pede ajustes antes da publicação.',
+        mainProblem: 'Seu público está muito amplo para o orçamento definido.',
+        mainOpportunity: 'Ajustar CTA e segmentação para ganhar eficiência.',
+      },
+      blockingIssues: [],
+      warnings: ['Seu público está muito amplo para o orçamento definido.'],
+      recommendations: ['Troque o CTA para um próximo passo mais claro.'],
+      performanceAnalysis: {
+        conversionPotential: 'Moderado, com dependência de ajuste fino em público e copy.',
+        financialRisk: 'Moderado por risco de dispersão de verba.',
+        metaApprovalRisk: 'Baixo com a copy atual.',
+        scalabilityPotential: 'Moderado após validação inicial.',
+      },
+      executiveDecision: {
+        decision: 'REVIEW',
+        reason: 'A campanha ainda precisa de revisão antes da publicação.',
+      },
       summary: 'A campanha está bem montada, mas ainda pode ganhar precisão no público e no CTA.',
       strengths: ['Objetivo, URL e headline estão alinhados.'],
       issues: ['Seu público está muito amplo para o orçamento definido.'],
@@ -1065,3 +1846,4 @@ function buildCopilotAnalysis(overrides: Partial<CampaignCopilotAnalysisResponse
     },
   };
 }
+

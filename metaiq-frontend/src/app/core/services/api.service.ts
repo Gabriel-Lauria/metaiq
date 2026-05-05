@@ -417,7 +417,6 @@ export class ApiService {
   createMetaCampaign(storeId: string, body: CreateMetaCampaignRequest): Observable<CreateMetaCampaignResponse> {
     return this.request(
       this.http.post<CreateMetaCampaignResponse>(`${API}/integrations/meta/stores/${storeId}/campaigns`, body),
-      true,
     );
   }
 
@@ -437,7 +436,6 @@ export class ApiService {
         `${API}/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/retry`,
         body,
       ),
-      true,
     );
   }
 

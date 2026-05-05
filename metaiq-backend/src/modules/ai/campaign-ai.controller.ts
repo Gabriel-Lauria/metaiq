@@ -15,7 +15,7 @@ import { CampaignAnalysisDto, CampaignSuggestionDto } from './dto/campaign-ai.dt
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
 export class CampaignAiController {
   constructor(private readonly campaignAiService: CampaignAiService) {}
 

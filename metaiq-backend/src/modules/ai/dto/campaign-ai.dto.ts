@@ -110,6 +110,7 @@ export type AiFunnelStage = 'top' | 'middle' | 'bottom';
 export type AiGenderOutput = 'all' | 'male' | 'female';
 export type AiBudgetType = 'daily' | 'lifetime';
 export type AiCampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
+export type AiCampaignDestinationType = 'site' | 'messages';
 export type AiPlacement =
   | 'feed'
   | 'stories'
@@ -160,6 +161,26 @@ export interface AiCampaignBudgetOutput {
   type: AiBudgetType | null;
   amount: number | null;
   currency: 'BRL';
+}
+
+export interface CampaignAiIntent {
+  objective: AiCampaignObjective | null;
+  destinationType: AiCampaignDestinationType | null;
+  funnelStage: AiFunnelStage | null;
+  budgetAmount: number | null;
+  budgetType: AiBudgetType | null;
+  region: string | null;
+  segment: string | null;
+  offer: string | null;
+  channel: string | null;
+  cta: string | null;
+  remarketingExpected: boolean;
+  messageDestinationAvailable: boolean;
+  websiteAvailable: boolean;
+  metaConnected: boolean;
+  pageConnected: boolean;
+  whatsappAvailable: boolean;
+  instagramAvailable: boolean;
 }
 
 export interface AiCampaignOutput {
@@ -230,18 +251,33 @@ export interface AiValidationOutput {
 }
 
 export type CampaignAiFailureReason = 'timeout' | 'api_error' | 'invalid_response' | 'missing_api_key';
+export type CampaignAiFailureStatus = 'AI_FAILED' | 'AI_NEEDS_RETRY';
+export type CampaignAiSuggestionStatus = 'AI_SUCCESS' | 'AI_NEEDS_REVIEW';
 
 export interface CampaignAiFailureMeta {
   promptVersion: string;
   model: string;
   usedFallback: boolean;
   responseValid: boolean;
+  consistencyApproved?: boolean;
 }
 
 export interface CampaignAiFailureDebug {
   hasRawText: boolean;
   rawTextPreview: string;
   candidateTextPreview: string;
+  rawTextLength: number;
+  candidateTextLength: number;
+  finishReason: string | null;
+  maxOutputTokens: number | null;
+  candidateTextEndsWithClosingBrace: boolean;
+  consistencyErrors?: string[];
+  expectedBriefingSignals?: Record<string, unknown>;
+  detectedResponseSignals?: Record<string, unknown>;
+  failedRules?: string[];
+  immutableFieldsExpected?: Record<string, unknown>;
+  immutableFieldsReceived?: Record<string, unknown>;
+  immutableFieldMismatches?: string[];
   parsedType: string;
   normalizedKeys: string[];
   validationError: string;
@@ -249,7 +285,7 @@ export interface CampaignAiFailureDebug {
 }
 
 export interface CampaignAiFailureResponse {
-  status: 'AI_FAILED';
+  status: CampaignAiFailureStatus;
   reason: CampaignAiFailureReason;
   message: string;
   meta: CampaignAiFailureMeta;
@@ -257,7 +293,8 @@ export interface CampaignAiFailureResponse {
 }
 
 export interface CampaignAiStructuredResponse {
-  status: 'AI_SUCCESS';
+  status: CampaignAiSuggestionStatus;
+  intent: CampaignAiIntent;
   strategy: string;
   primaryText: string;
   headline: string;
@@ -276,14 +313,50 @@ export interface CampaignAiStructuredResponse {
   review: AiReviewOutput;
   validation: AiValidationOutput;
   meta: CampaignAiFailureMeta;
+  debug?: {
+    consistencyErrors?: string[];
+    expectedBriefingSignals?: Record<string, unknown>;
+    detectedResponseSignals?: Record<string, unknown>;
+    failedRules?: string[];
+  };
+}
+
+export type AiCampaignRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type AiCampaignExecutiveDecisionValue = 'PUBLISH' | 'BLOCK' | 'REVIEW' | 'RESTRUCTURE';
+
+export interface AiCampaignBusinessDiagnosis {
+  summary: string;
+  mainProblem: string;
+  mainOpportunity: string;
+}
+
+export interface AiCampaignPerformanceAnalysis {
+  conversionPotential: string;
+  financialRisk: string;
+  metaApprovalRisk: string;
+  scalabilityPotential: string;
+}
+
+export interface AiCampaignExecutiveDecision {
+  decision: AiCampaignExecutiveDecisionValue;
+  reason: string;
 }
 
 export interface AiCampaignCopilotAnalysis {
-  summary: string;
-  strengths: string[];
-  issues: string[];
-  improvements: AiCampaignCopilotImprovement[];
-  confidence: number;
+  overallScore: number;
+  riskLevel: AiCampaignRiskLevel;
+  isReadyToPublish: boolean;
+  businessDiagnosis: AiCampaignBusinessDiagnosis;
+  blockingIssues: string[];
+  warnings: string[];
+  recommendations: string[];
+  performanceAnalysis: AiCampaignPerformanceAnalysis;
+  executiveDecision: AiCampaignExecutiveDecision;
+  summary?: string;
+  strengths?: string[];
+  issues?: string[];
+  improvements?: AiCampaignCopilotImprovement[];
+  confidence?: number;
 }
 
 export type AiCampaignCopilotImprovementType =

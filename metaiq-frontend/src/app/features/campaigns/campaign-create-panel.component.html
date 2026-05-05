@@ -1,4 +1,4 @@
-<div class="create-panel-backdrop" (click)="requestClosePanel()">
+﻿<div class="create-panel-backdrop" (click)="requestClosePanel()">
   <section class="create-panel" role="dialog" aria-modal="true" aria-labelledby="campaign-builder-title" (click)="$event.stopPropagation()" (scroll)="onMainScroll($event)">
     <header class="builder-header">
       <div class="builder-hero">
@@ -229,7 +229,7 @@
                 </div>
                 <div class="wizard-checklist">
                   <div class="wizard-check-item" *ngFor="let item of wizardReviewChecklist()">
-                    <span>{{ item.done ? '✔' : '•' }}</span>
+                    <span>{{ item.done ? '✓' : '•' }}</span>
                     <strong>{{ item.label }}</strong>
                   </div>
                 </div>
@@ -493,15 +493,24 @@
               <span class="section-kicker">Nome sugerido</span>
               <strong>{{ suggestion.campaign.campaignName }}</strong>
               <p>{{ suggestion.review.summary }}</p>
+              <p *ngIf="suggestion.intent.destinationType === 'messages'">{{ messagesPublishScopeMessage() }}</p>
             </div>
             <div class="ai-result-actions">
               <button class="btn btn-secondary" type="button" (click)="openAdvancedBuilder()">Editar manualmente</button>
               <button class="btn btn-secondary" type="button" (click)="applyAiSuggestions()" [disabled]="aiSuggesting()">
                 {{ aiSuggesting() ? 'Gerando...' : 'Gerar novamente' }}
               </button>
-              <button class="btn btn-primary" type="button" (click)="submit()" [disabled]="submitButtonDisabled()">
-                {{ submitting() ? 'Publicando campanha...' : 'Publicar campanha' }}
+              <button class="btn btn-primary" type="button" (click)="applyCurrentAiSuggestion()" [disabled]="!canApplySuggestionToDraft(suggestion)">
+                {{ suggestion.status === 'AI_NEEDS_REVIEW' ? 'Aplicar ao rascunho' : 'Usar essa sugestão' }}
               </button>
+            </div>
+          </div>
+
+          <div class="context-banner-card is-warning" *ngIf="hasPendingAiDraftApplication()">
+            <div class="banner-icon" aria-hidden="true">!</div>
+            <div>
+              <strong>Sugestão ainda não aplicada ao rascunho</strong>
+              <p>Revise a sugestão e clique em "Aplicar ao rascunho" antes de interpretar o builder ou o resumo final como campanha da IA.</p>
             </div>
           </div>
 
@@ -704,11 +713,11 @@
               <p>{{ qualityScoreDetail() }}</p>
             </div>
             <div class="token-list" *ngIf="validation.blockingIssues.length">
-              <span class="token token-muted">Blocking issues</span>
+              <span class="token token-muted">Problemas bloqueantes</span>
               <span class="token token-muted" *ngFor="let item of validation.blockingIssues">{{ item }}</span>
             </div>
             <div class="token-list" *ngIf="validation.warnings.length">
-              <span class="token token-muted">Warnings</span>
+              <span class="token token-muted">Avisos</span>
               <span class="token" *ngFor="let item of validation.warnings">{{ item }}</span>
             </div>
             <div class="token-list" *ngIf="validation.recommendations.length">
@@ -719,6 +728,9 @@
 
           <p class="compatibility-note" *ngIf="suggestion.planner.assumptions.length || suggestion.planner.missingInputs.length">
             Algumas informações foram assumidas pela IA. Revise antes de enviar.
+          </p>
+          <p class="compatibility-note" *ngIf="state.ui.aiUsedFallback">
+            A resposta foi parcialmente reconstruida com fallback seguro. Revise cada campo antes de aplicar.
           </p>
           <p class="compatibility-note" *ngIf="state.ui.aiValidationStale">
             A validação pode não refletir as alterações recentes.
@@ -1453,7 +1465,7 @@
 
           <div class="copilot-inline-actions">
             <button class="btn btn-secondary" type="button" (click)="analyzeCampaignWithAi()" [disabled]="aiCopilotAnalyzing()">
-              {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : '✨ Analisar campanha' }}
+              {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : 'Analisar campanha' }}
             </button>
             <span>Revisa público, copy, oferta, orçamento e destino sem inventar métricas.</span>
           </div>
@@ -1469,7 +1481,13 @@
             <div class="score-summary-bar" aria-hidden="true">
               <span [style.width.%]="aiCopilotAnalyzing() ? 42 : aiCopilotConfidenceValue()" [style.background]="scoreColor(aiCopilotConfidenceValue())"></span>
             </div>
-            <p>{{ aiCopilotAnalyzing() ? 'Analisando campanha...' : ((aiCopilotAnalysis()?.summary || aiCopilotDetail())) }}</p>
+            <p>{{ aiCopilotAnalyzing() ? 'Analisando campanha...' : ((aiCopilotAnalysis()?.businessDiagnosis?.summary || aiCopilotDetail())) }}</p>
+            <div class="context-banner-card" *ngIf="!aiCopilotAnalyzing() && executiveReviewAlert()" [class.is-error]="executiveReviewTone() === 'danger'" [class.is-warning]="executiveReviewTone() === 'warning'" [class.is-success]="executiveReviewTone() === 'success'">
+              <div>
+                <strong>{{ executiveReviewTitle() }}</strong>
+                <p>{{ executiveReviewAlert() }}</p>
+              </div>
+            </div>
             <div class="copilot-columns" *ngIf="!aiCopilotAnalyzing() && aiCopilotAnalysis()">
               <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.strengths?.length">
                 <span>Pontos fortes</span>
@@ -1502,10 +1520,8 @@
                 </div>
               </div>
             </div>
-            <div class="copilot-feedback" *ngIf="state.ui.aiCopilotLastAppliedMessage || state.ui.aiCopilotApplyError || state.ui.aiCopilotUndoSnapshot">
-              <small class="copilot-feedback-success" *ngIf="state.ui.aiCopilotLastAppliedMessage">✔ {{ state.ui.aiCopilotLastAppliedMessage }}</small>
-              <small class="copilot-feedback-error" *ngIf="state.ui.aiCopilotApplyError">{{ state.ui.aiCopilotApplyError }}</small>
-              <button class="link-btn inline-link" type="button" *ngIf="state.ui.aiCopilotUndoSnapshot" (click)="undoLastCopilotImprovement()">Desfazer</button>
+            <div class="copilot-feedback" *ngIf="!aiCopilotAnalyzing() && executiveDecisionSummary()">
+              <small>{{ executiveDecisionSummary() }}</small>
             </div>
             <small *ngIf="state.ui.aiCopilotStale && !aiCopilotAnalyzing()">Revise novamente a análise após as últimas mudanças no builder.</small>
           </div>
@@ -1593,9 +1609,17 @@
             </div>
             <div class="review-heading-actions">
               <button class="btn btn-secondary" type="button" (click)="analyzeCampaignWithAi()" [disabled]="aiCopilotAnalyzing()">
-                {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : '✨ Analisar campanha' }}
+                {{ aiCopilotAnalyzing() ? 'Analisando campanha...' : 'Analisar campanha' }}
               </button>
-              <app-ui-badge [label]="canSubmit() ? 'Pronta para envio' : 'Revisão pendente'" [tone]="canSubmit() ? 'success' : 'warning'" />
+              <app-ui-badge [label]="publishReadinessLabel()" [tone]="publishReadinessTone()" />
+            </div>
+          </div>
+
+          <div class="context-banner-card is-error" *ngIf="isMessagesAutomaticPublishBlocked()">
+            <div class="banner-icon" aria-hidden="true">!</div>
+            <div>
+              <strong>Publicacao automatica indisponivel</strong>
+              <p>{{ messagesPublishScopeMessage() }}</p>
             </div>
           </div>
 
@@ -1631,7 +1655,13 @@
             <div class="score-summary-bar" aria-hidden="true">
               <span [style.width.%]="aiCopilotConfidenceValue()" [style.background]="scoreColor(aiCopilotConfidenceValue())"></span>
             </div>
-            <p>{{ aiCopilotAnalysis()?.summary }}</p>
+            <p>{{ aiCopilotAnalysis()?.businessDiagnosis?.summary }}</p>
+            <div class="context-banner-card" *ngIf="executiveReviewAlert()" [class.is-error]="executiveReviewTone() === 'danger'" [class.is-warning]="executiveReviewTone() === 'warning'" [class.is-success]="executiveReviewTone() === 'success'">
+              <div>
+                <strong>{{ executiveReviewTitle() }}</strong>
+                <p>{{ executiveReviewAlert() }}</p>
+              </div>
+            </div>
             <div class="copilot-columns">
               <div class="copilot-list" *ngIf="aiCopilotAnalysis()?.strengths?.length">
                 <span>Pontos fortes</span>
@@ -1664,10 +1694,8 @@
                 </div>
               </div>
             </div>
-            <div class="copilot-feedback" *ngIf="state.ui.aiCopilotLastAppliedMessage || state.ui.aiCopilotApplyError || state.ui.aiCopilotUndoSnapshot">
-              <small class="copilot-feedback-success" *ngIf="state.ui.aiCopilotLastAppliedMessage">✔ {{ state.ui.aiCopilotLastAppliedMessage }}</small>
-              <small class="copilot-feedback-error" *ngIf="state.ui.aiCopilotApplyError">{{ state.ui.aiCopilotApplyError }}</small>
-              <button class="link-btn inline-link" type="button" *ngIf="state.ui.aiCopilotUndoSnapshot" (click)="undoLastCopilotImprovement()">Desfazer</button>
+            <div class="copilot-feedback" *ngIf="executiveDecisionSummary()">
+              <small>{{ executiveDecisionSummary() }}</small>
             </div>
             <small *ngIf="state.ui.aiCopilotStale">A análise está desatualizada e pode ser refeita antes de publicar.</small>
           </div>
@@ -1816,7 +1844,7 @@
         <section class="sidebar-block readiness-sidebar-block">
           <div class="sidebar-heading">
             <strong>Resumo do builder</strong>
-            <app-ui-badge [label]="canSubmit() ? 'Pronta para envio' : 'Ajustes pendentes'" [tone]="canSubmit() ? 'success' : 'warning'" />
+            <app-ui-badge [label]="isMessagesAutomaticPublishBlocked() ? 'Sugestão estratégica' : (canSubmit() ? 'Pronta para envio' : 'Ajustes pendentes')" [tone]="isMessagesAutomaticPublishBlocked() ? 'info' : (canSubmit() ? 'success' : 'warning')" />
           </div>
           <div class="score-card-grid">
             <article
@@ -1867,7 +1895,7 @@
     <div class="mobile-submit-bar" *ngIf="!stepFlowEnabled()">
       <div class="mobile-submit-copy">
         <strong>{{ state.campaign.name || 'Campanha em edição' }}</strong>
-        <span>{{ canSubmit() ? 'Pronta para envio' : nextPendingSection().label + ' pendente' }}</span>
+        <span>{{ publishReadinessSummary() }}</span>
       </div>
       <button class="btn btn-secondary" type="button" (click)="reviewNow()">Revisar</button>
       <button class="btn btn-primary" type="button" *ngIf="showCreateButtonInReview(); else mobileReviewAction" (click)="submit()" [disabled]="submitButtonDisabled()">
@@ -1909,3 +1937,4 @@
     </div>
   </div>
 </div>
+

@@ -8,6 +8,14 @@ jest.mock('axios');
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+function pngBuffer(width: number, height: number): Buffer {
+  const buffer = Buffer.alloc(24);
+  Buffer.from('89504e470d0a1a0a', 'hex').copy(buffer, 0);
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
 describe('MetaImageUploadService', () => {
   let service: MetaImageUploadService;
   const retryService = {
@@ -28,7 +36,7 @@ describe('MetaImageUploadService', () => {
 
   it('faz download da imagem, envia para a Meta e retorna image_hash', async () => {
     mockedAxios.get.mockResolvedValueOnce({
-      data: Buffer.from('fake-image'),
+      data: pngBuffer(1200, 628),
       headers: { 'content-type': 'image/png' },
     } as any);
     mockedAxios.post.mockResolvedValueOnce({
@@ -61,7 +69,7 @@ describe('MetaImageUploadService', () => {
       'meta-token',
       'act_123',
       'https://www.google.com/imgres?imgurl=https://cdn.metaiq.dev/banner.png',
-    )).rejects.toThrow('imageUrl deve apontar para uma imagem direta válida');
+    )).rejects.toThrow('imageUrl deve apontar para uma imagem direta valida');
 
     expect(mockedAxios.get).not.toHaveBeenCalled();
     expect(mockedAxios.post).not.toHaveBeenCalled();
@@ -78,6 +86,36 @@ describe('MetaImageUploadService', () => {
       'act_123',
       'https://metaiq.dev/preview',
     )).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('falha com erro claro quando o binario nao corresponde ao mime type', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: Buffer.from('not-a-real-png'),
+      headers: { 'content-type': 'image/png' },
+    } as any);
+
+    await expect(service.uploadImageFromUrl(
+      'meta-token',
+      'act_123',
+      'https://cdn.metaiq.dev/banner.png',
+    )).rejects.toThrow('PNG invalido');
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia imagem abaixo da resolucao minima operacional', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: pngBuffer(300, 200),
+      headers: { 'content-type': 'image/png' },
+    } as any);
+
+    await expect(service.uploadImageFromUrl(
+      'meta-token',
+      'act_123',
+      'https://cdn.metaiq.dev/banner.png',
+    )).rejects.toThrow('600x314');
 
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });

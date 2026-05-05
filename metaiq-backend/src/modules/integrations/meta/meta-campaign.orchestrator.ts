@@ -46,6 +46,14 @@ export class MetaCampaignOrchestrator {
     const normalizedLocation = normalizeCampaignLocation(input.dto);
     const geoLocations = buildMetaGeoLocations(normalizedLocation);
     const campaignPayload = this.buildCampaignPayload(input.dto, input.objective, desiredStatus);
+    this.logLifecycleEvent('campaign_create_started', {
+      executionId: input.executionId,
+      idempotencyKey: input.idempotencyKey,
+      storeId: input.storeId,
+      step: 'campaign',
+      previousStep: null,
+      partialIds: ids,
+    });
 
     this.assertCampaignPayload(campaignPayload);
     this.logStepPayload('META_GRAPH_API_REQUEST', `${accountPath}/campaigns`, 'campaign', campaignPayload, {
@@ -74,6 +82,14 @@ export class MetaCampaignOrchestrator {
     ids.campaignId = this.assertMetaId(campaign, 'campaigns');
     await input.onStepCreated('campaign', ids);
     const adSetPayload = this.buildAdSetPayload(input.dto, ids.campaignId, geoLocations, desiredStatus);
+    this.logLifecycleEvent('adset_create_started', {
+      executionId: input.executionId,
+      idempotencyKey: input.idempotencyKey,
+      storeId: input.storeId,
+      step: 'adset',
+      previousStep: 'campaign',
+      partialIds: ids,
+    });
     this.assertAdSetPayload(adSetPayload);
 
     this.logAdSetPayload('META_GRAPH_API_REQUEST', `${accountPath}/adsets`, adSetPayload, normalizedLocation, {
@@ -117,6 +133,15 @@ export class MetaCampaignOrchestrator {
           adAccountExternalId: accountPath,
         },
       );
+    this.logLifecycleEvent('creative_create_started', {
+      executionId: input.executionId,
+      idempotencyKey: input.idempotencyKey,
+      storeId: input.storeId,
+      step: 'creative',
+      previousStep: 'adset',
+      partialIds: ids,
+      imageHash,
+    });
 
     const creativePayload = buildMetaCreativePayload({
       campaignName: input.dto.name,
@@ -162,6 +187,14 @@ export class MetaCampaignOrchestrator {
       creative: JSON.stringify({ creative_id: ids.creativeId }),
       status: desiredStatus,
     };
+    this.logLifecycleEvent('ad_create_started', {
+      executionId: input.executionId,
+      idempotencyKey: input.idempotencyKey,
+      storeId: input.storeId,
+      step: 'ad',
+      previousStep: 'creative',
+      partialIds: ids,
+    });
     this.assertAdPayload(adPayload);
     this.logStepPayload('META_GRAPH_API_REQUEST', `${accountPath}/ads`, 'ad', adPayload, {
       executionId: input.executionId,
@@ -234,6 +267,15 @@ export class MetaCampaignOrchestrator {
       const normalizedLocation = normalizeCampaignLocation(input.dto);
       const geoLocations = buildMetaGeoLocations(normalizedLocation);
       const adSetPayload = this.buildAdSetPayload(input.dto, ids.campaignId, geoLocations, desiredStatus);
+      this.logLifecycleEvent('adset_create_started', {
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        storeId: input.storeId,
+        step: 'adset',
+        previousStep: 'campaign',
+        partialIds: ids,
+        recovery: true,
+      });
       this.assertAdSetPayload(adSetPayload);
 
       this.logAdSetPayload('META_GRAPH_API_RESUME_REQUEST', `${accountPath}/adsets`, adSetPayload, normalizedLocation, {
@@ -281,6 +323,16 @@ export class MetaCampaignOrchestrator {
             adAccountExternalId: accountPath,
           },
         );
+      this.logLifecycleEvent('creative_create_started', {
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        storeId: input.storeId,
+        step: 'creative',
+        previousStep: 'adset',
+        partialIds: ids,
+        recovery: true,
+        imageHash,
+      });
       const creativePayload = buildMetaCreativePayload({
         campaignName: input.dto.name,
         pageId: input.pageId,
@@ -329,6 +381,15 @@ export class MetaCampaignOrchestrator {
         creative: JSON.stringify({ creative_id: ids.creativeId }),
         status: desiredStatus,
       };
+      this.logLifecycleEvent('ad_create_started', {
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        storeId: input.storeId,
+        step: 'ad',
+        previousStep: 'creative',
+        partialIds: ids,
+        recovery: true,
+      });
       this.assertAdPayload(adPayload);
       this.logStepPayload('META_GRAPH_API_RESUME_REQUEST', `${accountPath}/ads`, 'ad', adPayload, {
         executionId: input.executionId,
@@ -363,6 +424,10 @@ export class MetaCampaignOrchestrator {
 
   private toMetaMoneyAmount(value: number): number {
     return Math.round(Number(value) * 100);
+  }
+
+  private logLifecycleEvent(event: string, payload: Record<string, unknown>): void {
+    this.logger.log(JSON.stringify({ event, ...payload }));
   }
 
   private buildCampaignPayload(
@@ -450,6 +515,10 @@ export class MetaCampaignOrchestrator {
   ): Record<string, unknown> {
     const targeting: Record<string, unknown> = {
       geo_locations: geoLocations,
+      // Meta now requires an explicit Advantage Audience decision on ad set creation.
+      targeting_automation: {
+        advantage_audience: 0,
+      },
     };
 
     if (Number.isFinite(dto.ageMin) && dto.ageMin >= 13) {

@@ -6,7 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "prebuild": "node ../scripts/check-encoding.js src seed.ts backup.sql",
     "build": "nest build",
+    "check:encoding": "node ../scripts/check-encoding.js src seed.ts backup.sql",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

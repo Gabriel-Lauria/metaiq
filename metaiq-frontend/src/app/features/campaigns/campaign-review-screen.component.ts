@@ -148,7 +148,7 @@ interface ReviewItem {
           type="button"
           class="btn btn-primary"
           (click)="onPublish()"
-          [disabled]="risks().length > 0 || isSubmitting()"
+          [disabled]="!canPublish() || isSubmitting()"
         >
           {{ isSubmitting() ? '⏳ Publicando...' : '✓ Publicar Campanha' }}
         </button>
@@ -502,6 +502,8 @@ export class CampaignReviewScreenComponent {
   @Input() risks: () => Array<{ title: string; description: string }> = () => [];
   @Input() improvements: () => Array<{ title: string; description: string }> = () => [];
   @Input() aiExplanation: () => string = () => '';
+  @Input() publishBlockedMessage: () => string | null = () => null;
+  @Input() reviewAlertMessage: () => string | null = () => null;
   @Input() isGenerating = signal(false);
   @Input() isSubmitting = signal(false);
 
@@ -510,7 +512,7 @@ export class CampaignReviewScreenComponent {
   @Output() publish = new EventEmitter<void>();
 
   canPublish(): boolean {
-    return this.risks().length === 0;
+    return this.risks().length === 0 && !this.publishBlockedMessage() && !this.reviewAlertMessage();
   }
 
   getScoreColor(): string {
@@ -531,6 +533,8 @@ export class CampaignReviewScreenComponent {
 
   getScoreDescription(): string {
     const score = this.qualityScore();
+    if (this.publishBlockedMessage()) return this.publishBlockedMessage() || 'Esta campanha ainda nao esta segura para publicar.';
+    if (this.reviewAlertMessage()) return this.reviewAlertMessage() || 'A IA recomenda revisar esta campanha antes da publicacao.';
     if (!score) return 'Não foi possível calcular o score';
     if (score >= 80) return 'Sua campanha está pronta para publicar';
     if (score >= 60) return 'Considere revisar alguns pontos antes de publicar';

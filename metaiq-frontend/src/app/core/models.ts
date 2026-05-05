@@ -259,7 +259,7 @@ export interface CreateMetaCampaignRequest {
   utmCampaign?: string;
   utmContent?: string;
   utmTerm?: string;
-  initialStatus?: 'PAUSED';
+  initialStatus?: 'PAUSED' | 'ACTIVE';
 }
 
 export type MetaCampaignExecutionStep = 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
@@ -318,7 +318,7 @@ export interface CreateMetaCampaignResponse {
   adId: string;
   status: 'CREATED';
   executionStatus?: 'COMPLETED';
-  initialStatus?: 'PAUSED';
+  initialStatus?: 'PAUSED' | 'ACTIVE';
   storeId: string;
   adAccountId: string;
   platform: 'META';
@@ -389,6 +389,7 @@ export type AiFunnelStage = 'top' | 'middle' | 'bottom';
 export type AiGender = 'all' | 'male' | 'female';
 export type AiBudgetType = 'daily' | 'lifetime';
 export type AiCampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
+export type AiCampaignDestinationType = 'site' | 'messages';
 export type AiPlacement = 'feed' | 'stories' | 'reels' | 'explore' | 'messenger' | 'audience_network';
 
 export interface AiPlannerOutput {
@@ -405,6 +406,26 @@ export interface AiCampaignBudgetOutput {
   type: AiBudgetType | null;
   amount: number | null;
   currency: 'BRL';
+}
+
+export interface CampaignAiIntent {
+  objective: AiCampaignObjective | null;
+  destinationType: AiCampaignDestinationType | null;
+  funnelStage: AiFunnelStage | null;
+  budgetAmount: number | null;
+  budgetType: AiBudgetType | null;
+  region: string | null;
+  segment: string | null;
+  offer: string | null;
+  channel: string | null;
+  cta: string | null;
+  remarketingExpected: boolean;
+  messageDestinationAvailable: boolean;
+  websiteAvailable: boolean;
+  metaConnected: boolean;
+  pageConnected: boolean;
+  whatsappAvailable: boolean;
+  instagramAvailable: boolean;
 }
 
 export interface AiCampaignOutput {
@@ -481,17 +502,19 @@ export interface CampaignAiFailureMeta {
   model: string;
   usedFallback: boolean;
   responseValid: boolean;
+  consistencyApproved?: boolean;
 }
 
 export interface CampaignAiFailureResponse {
-  status: 'AI_FAILED';
+  status: 'AI_FAILED' | 'AI_NEEDS_RETRY';
   reason: CampaignAiFailureReason;
   message: string;
   meta: CampaignAiFailureMeta;
 }
 
 export interface CampaignAiStructuredResponse {
-  status: 'AI_SUCCESS';
+  status: 'AI_SUCCESS' | 'AI_NEEDS_REVIEW';
+  intent: CampaignAiIntent;
   strategy: string;
   primaryText: string;
   headline: string;
@@ -510,14 +533,50 @@ export interface CampaignAiStructuredResponse {
   review: AiReviewOutput;
   validation: AiValidationOutput;
   meta: CampaignAiFailureMeta;
+  debug?: {
+    consistencyErrors?: string[];
+    expectedBriefingSignals?: Record<string, unknown>;
+    detectedResponseSignals?: Record<string, unknown>;
+    failedRules?: string[];
+  };
+}
+
+export type AiCampaignRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type AiCampaignExecutiveDecisionValue = 'PUBLISH' | 'BLOCK' | 'REVIEW' | 'RESTRUCTURE';
+
+export interface AiCampaignBusinessDiagnosis {
+  summary: string;
+  mainProblem: string;
+  mainOpportunity: string;
+}
+
+export interface AiCampaignPerformanceAnalysis {
+  conversionPotential: string;
+  financialRisk: string;
+  metaApprovalRisk: string;
+  scalabilityPotential: string;
+}
+
+export interface AiCampaignExecutiveDecision {
+  decision: AiCampaignExecutiveDecisionValue;
+  reason: string;
 }
 
 export interface AiCampaignCopilotAnalysis {
-  summary: string;
-  strengths: string[];
-  issues: string[];
-  improvements: AiCampaignCopilotImprovement[];
-  confidence: number;
+  overallScore: number;
+  riskLevel: AiCampaignRiskLevel;
+  isReadyToPublish: boolean;
+  businessDiagnosis: AiCampaignBusinessDiagnosis;
+  blockingIssues: string[];
+  warnings: string[];
+  recommendations: string[];
+  performanceAnalysis: AiCampaignPerformanceAnalysis;
+  executiveDecision: AiCampaignExecutiveDecision;
+  summary?: string;
+  strengths?: string[];
+  issues?: string[];
+  improvements?: AiCampaignCopilotImprovement[];
+  confidence?: number;
 }
 
 export type AiCampaignCopilotImprovementType =

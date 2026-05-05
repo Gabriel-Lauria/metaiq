@@ -18,6 +18,7 @@ import {
   MetaCampaignCreationStep,
   MetaCampaignExecutionIds,
   MetaCampaignExecutionStepStateMap,
+  MetaCampaignStoredMetaError,
 } from './meta-campaign-creation.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
 import { normalizeCampaignLocation } from './meta-audience-location.util';
@@ -596,6 +597,14 @@ export class MetaIntegrationService {
     }
 
     try {
+      this.logOperationalStage('persist_local_started', {
+        executionId: execution.id,
+        idempotencyKey,
+        storeId,
+        step: 'persist',
+        previousStep: 'ad',
+        partialIds: createdIds,
+      });
       const localCampaign = await this.recordCreatedCampaign(
         storeId,
         requester,
@@ -1570,6 +1579,14 @@ export class MetaIntegrationService {
     step: MetaCampaignCreationStep,
     ids: Partial<Record<'campaignId' | 'adSetId' | 'creativeId' | 'adId', string>>,
   ): Promise<void> {
+    this.logOperationalStage(this.stageSuccessEvent(step), {
+      executionId: execution.id,
+      idempotencyKey: execution.idempotencyKey,
+      storeId: execution.storeId,
+      step,
+      previousStep: this.previousExecutionStep(step),
+      partialIds: ids,
+    });
     if (step === 'campaign') {
       execution.campaignCreated = true;
       execution.metaCampaignId = ids.campaignId ?? execution.metaCampaignId;
@@ -1589,6 +1606,7 @@ export class MetaIntegrationService {
     execution.currentStep = this.nextExecutionStep(step);
     execution.canRetry = false;
     execution.userMessage = null;
+    execution.metaErrorDetails = null;
     execution.stepState = this.completeExecutionStep(execution.stepState, step, ids);
 
     const nextStep = this.normalizeExecutionStep(execution.currentStep);
@@ -1619,11 +1637,21 @@ export class MetaIntegrationService {
     execution.currentStep = null;
     execution.canRetry = false;
     execution.userMessage = null;
+    execution.metaErrorDetails = null;
     execution.stepState = this.completeExecutionStep(
       this.completeExecutionStep(execution.stepState, 'persist', ids),
       'ad',
       ids,
     );
+    this.logOperationalStage('persist_local_success', {
+      executionId: execution.id,
+      idempotencyKey: execution.idempotencyKey,
+      storeId: execution.storeId,
+      step: 'persist',
+      previousStep: 'ad',
+      partialIds: ids,
+      localCampaignId: campaignId,
+    });
     await this.campaignCreationRepository.save(execution);
   }
 
@@ -1635,6 +1663,7 @@ export class MetaIntegrationService {
     options: {
       hint?: string;
       userMessage?: string;
+      metaErrorDetails?: MetaCampaignStoredMetaError | null;
     } = {},
   ): Promise<void> {
     const hasPartialMetaResources = this.hasRecoverablePartialIds(ids);
@@ -1655,6 +1684,7 @@ export class MetaIntegrationService {
     execution.canRetry = hasPartialMetaResources;
     execution.userMessage = options.userMessage
       ?? this.buildExecutionUserMessage(step, execution.status, options.hint);
+    execution.metaErrorDetails = options.metaErrorDetails ?? null;
     execution.stepState = this.failExecutionStep(execution.stepState, step, message, ids);
     await this.campaignCreationRepository.save(execution);
   }
@@ -1811,6 +1841,10 @@ export class MetaIntegrationService {
     this.logger.log(JSON.stringify({ event: 'META_CAMPAIGN_CREATION', message, ...payload }));
   }
 
+  private logOperationalStage(event: string, payload: Record<string, unknown>): void {
+    this.logger.log(JSON.stringify({ event, ...payload }));
+  }
+
   private async handleMetaMutationError(
     storeId: string,
     err: unknown,
@@ -1838,19 +1872,26 @@ export class MetaIntegrationService {
         ?? (typeof execution.requestPayload?.['pageId'] === 'string' ? execution.requestPayload.pageId : null),
     });
     const userMessage = this.buildMetaUserMessage(step, metaError, hint);
-    await this.failCampaignCreationExecution(execution, step, message, createdIds, { hint, userMessage });
+    const storedMetaError = this.toStoredMetaError(step, metaError);
+    await this.failCampaignCreationExecution(execution, step, message, createdIds, {
+      hint,
+      userMessage,
+      metaErrorDetails: storedMetaError,
+    });
     const executionStatus = this.normalizeCampaignCreationStatus(execution.status);
     const sanitizedMetaResponse = this.sanitizeForLog((err as any)?.response?.data);
+    const previousStep = this.previousExecutionStep(step);
 
     this.logger.warn(
       JSON.stringify({
-        event: 'META_CAMPAIGN_CREATION_FAILED',
+        event: 'meta_execution_failed',
         requestId,
         storeId,
         requesterId,
         idempotencyKey,
         executionId: execution.id,
         step,
+        previousStep,
         status: executionStatus,
         metaCode: metaError.code,
         metaSubcode: metaError.subcode,
@@ -1915,7 +1956,7 @@ export class MetaIntegrationService {
       retryCount: execution.retryCount,
       userMessage: execution.userMessage,
       stepState: execution.stepState ?? undefined,
-      metaError,
+      metaError: storedMetaError,
       hint,
     };
 
@@ -2371,6 +2412,34 @@ export class MetaIntegrationService {
     };
   }
 
+  private toStoredMetaError(
+    step: MetaCampaignCreationStep,
+    metaError: ReturnType<MetaIntegrationService['extractMetaErrorDetails']>,
+  ): MetaCampaignStoredMetaError | null {
+    if (
+      !metaError.message
+      && metaError.code == null
+      && metaError.subcode == null
+      && !metaError.type
+      && !metaError.userTitle
+      && !metaError.userMessage
+      && !metaError.fbtraceId
+    ) {
+      return null;
+    }
+
+    return {
+      step,
+      message: metaError.message,
+      code: metaError.code,
+      subcode: metaError.subcode,
+      type: metaError.type,
+      userTitle: metaError.userTitle,
+      userMessage: metaError.userMessage,
+      fbtraceId: metaError.fbtraceId,
+    };
+  }
+
   private buildInitialExecutionStepState(): MetaCampaignExecutionStepStateMap {
     const base = Object.fromEntries(
       META_CAMPAIGN_EXECUTION_STEPS.map((step) => [step, { status: 'PENDING' as const }]),
@@ -2457,6 +2526,26 @@ export class MetaIntegrationService {
   private nextExecutionStep(step: MetaCampaignCreationStep): MetaCampaignCreationStep | null {
     const currentIndex = META_CAMPAIGN_EXECUTION_STEPS.indexOf(step);
     return currentIndex >= 0 ? (META_CAMPAIGN_EXECUTION_STEPS[currentIndex + 1] ?? null) : null;
+  }
+
+  private previousExecutionStep(step: MetaCampaignCreationStep): MetaCampaignCreationStep | null {
+    const currentIndex = META_CAMPAIGN_EXECUTION_STEPS.indexOf(step);
+    return currentIndex > 0 ? META_CAMPAIGN_EXECUTION_STEPS[currentIndex - 1] : null;
+  }
+
+  private stageSuccessEvent(step: MetaCampaignCreationStep): string {
+    switch (step) {
+      case 'campaign':
+        return 'campaign_create_success';
+      case 'adset':
+        return 'adset_create_success';
+      case 'creative':
+        return 'creative_create_success';
+      case 'ad':
+        return 'ad_create_success';
+      default:
+        return 'persist_local_success';
+    }
   }
 
   private hasRecoverablePartialIds(ids: MetaCampaignExecutionIds): boolean {

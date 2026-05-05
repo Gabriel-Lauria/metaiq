@@ -10,6 +10,15 @@
 				"seed"
 			],
 			"problemMatcher": []
+		},
+		{
+			"label": "Run AI service spec",
+			"type": "shell",
+			"command": "npm test -- --runInBand src/modules/ai/campaign-ai.service.spec.ts",
+			"isBackground": false,
+			"problemMatcher": [
+				"$ts-jest"
+			]
 		}
 	]
 }

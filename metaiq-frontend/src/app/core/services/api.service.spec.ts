@@ -11,6 +11,9 @@ describe('ApiService retry policy', () => {
     dailyBudget: 100,
     startTime: '2026-05-01T10:00:00.000Z',
     country: 'BR',
+    ageMin: 21,
+    ageMax: 55,
+    gender: 'ALL',
     adAccountId: 'ad-account-1',
     message: 'Mensagem principal',
     imageUrl: 'https://metaiq.dev/image.jpg',
@@ -62,93 +65,48 @@ describe('ApiService retry policy', () => {
     }));
   }));
 
-  it('faz retry automatico em 5xx e retorna sucesso sem duplicar a intencao da requisicao', fakeAsync(() => {
-    let response: unknown;
+  it('nao repete POST de criacao quando a Meta retorna 5xx', fakeAsync(() => {
+    let capturedError: unknown;
 
     service.createMetaCampaign('store-1', payload).subscribe({
-      next: (value) => {
-        response = value;
+      next: () => fail('nao deveria concluir com sucesso'),
+      error: (error) => {
+        capturedError = error;
       },
-      error: (error) => fail(`nao deveria falhar: ${JSON.stringify(error)}`),
     });
 
-    const first = httpMock.expectOne((req) =>
+    const request = httpMock.expectOne((req) =>
       req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
     );
-    first.flush({ message: 'gateway failure' }, { status: 502, statusText: 'Bad Gateway' });
+    request.flush({ message: 'gateway failure' }, { status: 502, statusText: 'Bad Gateway' });
 
-    tick(1000);
+    tick(5000);
 
-    const second = httpMock.expectOne((req) =>
-      req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
-    );
-    second.flush({ message: 'gateway failure again' }, { status: 503, statusText: 'Service Unavailable' });
-
-    tick(2000);
-
-    const third = httpMock.expectOne((req) =>
-      req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
-    );
-    third.flush({
-      campaignId: 'cmp-1',
-      adSetId: 'adset-1',
-      creativeId: 'creative-1',
-      adId: 'ad-1',
-      status: 'CREATED',
-      executionStatus: 'COMPLETED',
-      storeId: 'store-1',
-      adAccountId: 'ad-account-1',
-      platform: 'META',
-    });
-
-    expect(response).toEqual(jasmine.objectContaining({
-      campaignId: 'cmp-1',
-      executionStatus: 'COMPLETED',
+    expect(capturedError).toEqual(jasmine.objectContaining({
+      status: 502,
     }));
   }));
 
-  it('faz retry automatico em timeout da criacao', fakeAsync(() => {
-    let response: unknown;
+  it('nao reenvia a criacao apos timeout do POST', fakeAsync(() => {
+    let capturedError: unknown;
 
     service.createMetaCampaign('store-1', payload).subscribe({
-      next: (value) => {
-        response = value;
+      next: () => fail('nao deveria concluir com sucesso'),
+      error: (error) => {
+        capturedError = error;
       },
-      error: (error) => fail(`nao deveria falhar: ${JSON.stringify(error)}`),
     });
 
-    const first = httpMock.expectOne((req) =>
+    const request = httpMock.expectOne((req) =>
       req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
     );
     tick(15000);
-    expect(first.cancelled).toBeTrue();
+    expect(request.cancelled).toBeTrue();
 
-    tick(1000);
-    const second = httpMock.expectOne((req) =>
-      req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
-    );
-    tick(15000);
-    expect(second.cancelled).toBeTrue();
+    tick(5000);
 
-    tick(2000);
-    const third = httpMock.expectOne((req) =>
-      req.method === 'POST' && req.url.includes('/integrations/meta/stores/store-1/campaigns'),
-    );
-    third.flush({
-      campaignId: 'cmp-timeout',
-      adSetId: 'adset-timeout',
-      creativeId: 'creative-timeout',
-      adId: 'ad-timeout',
-      status: 'CREATED',
-      executionStatus: 'COMPLETED',
-      storeId: 'store-1',
-      adAccountId: 'ad-account-1',
-      platform: 'META',
-    });
-
-    expect(response).toEqual(jasmine.objectContaining({
-      campaignId: 'cmp-timeout',
-      executionStatus: 'COMPLETED',
+    expect(capturedError).toEqual(jasmine.objectContaining({
+      message: 'Timeout has occurred',
     }));
   }));
 });

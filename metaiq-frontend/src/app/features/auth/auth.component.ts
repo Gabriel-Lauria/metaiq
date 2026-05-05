@@ -138,6 +138,10 @@ export class AuthComponent implements OnInit {
     window.open(this.consultationUrl, '_blank', 'noopener');
   }
 
+  requestBetaAccess(): void {
+    this.requestConsultation();
+  }
+
   getFieldError(form: FormGroup, fieldName: string): string {
     const field = form.get(fieldName);
     if (!field || !field.errors || !field.touched) return '';

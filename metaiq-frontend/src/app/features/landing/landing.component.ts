@@ -27,7 +27,7 @@ export class LandingComponent implements OnInit {
     },
     {
       title: 'Conectar sua conta Meta',
-      description: 'Conecte Facebook e Instagram em poucos passos para começar a publicar suas campanhas.',
+      description: 'Conecte Facebook e Instagram para publicar automaticamente campanhas de website e revisar sugestões estratégicas da IA.',
     },
     {
       title: 'Modo beta',
