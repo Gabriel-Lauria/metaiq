@@ -38,11 +38,12 @@ export class MetaCampaignOrchestrator {
     actorId?: string;
     tenantId?: string | null;
     storeId?: string;
+    onImageHashResolved?: (imageHash: string) => Promise<void>;
     onStepCreated: (step: MetaCampaignOrchestratorStep, ids: MetaCampaignResourceIds) => Promise<void>;
   }): Promise<Required<MetaCampaignResourceIds>> {
     const ids: MetaCampaignResourceIds = {};
     const accountPath = input.adAccountExternalId.trim();
-    const desiredStatus: 'PAUSED' = 'PAUSED';
+    const desiredStatus = 'PAUSED' as const;
     const normalizedLocation = normalizeCampaignLocation(input.dto);
     const geoLocations = buildMetaGeoLocations(normalizedLocation);
     const campaignPayload = this.buildCampaignPayload(input.dto, input.objective, desiredStatus);
@@ -133,6 +134,9 @@ export class MetaCampaignOrchestrator {
           adAccountExternalId: accountPath,
         },
       );
+    if (input.onImageHashResolved) {
+      await input.onImageHashResolved(imageHash);
+    }
     this.logLifecycleEvent('creative_create_started', {
       executionId: input.executionId,
       idempotencyKey: input.idempotencyKey,
@@ -251,11 +255,12 @@ export class MetaCampaignOrchestrator {
     actorId?: string;
     tenantId?: string | null;
     storeId?: string;
+    onImageHashResolved?: (imageHash: string) => Promise<void>;
     onStepCreated: (step: MetaCampaignOrchestratorStep, ids: MetaCampaignResourceIds) => Promise<void>;
   }): Promise<Required<MetaCampaignResourceIds>> {
     const ids: MetaCampaignResourceIds = { ...input.startingIds };
     const accountPath = input.adAccountExternalId.trim();
-    const desiredStatus: 'PAUSED' = 'PAUSED';
+    const desiredStatus = 'PAUSED' as const;
 
     // Se campaign não existe, criar do zero (equivalente a createResources)
     if (!ids.campaignId) {
@@ -323,6 +328,9 @@ export class MetaCampaignOrchestrator {
             adAccountExternalId: accountPath,
           },
         );
+      if (input.onImageHashResolved) {
+        await input.onImageHashResolved(imageHash);
+      }
       this.logLifecycleEvent('creative_create_started', {
         executionId: input.executionId,
         idempotencyKey: input.idempotencyKey,

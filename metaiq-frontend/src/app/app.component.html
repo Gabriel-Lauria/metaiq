@@ -7,9 +7,9 @@
     <div class="sidebar-topbar">
       <div class="logo-section">
         <h1 class="logo">
-          <span>meta</span>IQ
-          <span class="version">v2.0</span>
+          <span>Nex</span>ora
         </h1>
+        <p class="logo-subtitle">Operação, métricas e decisões em um só lugar.</p>
       </div>
 
       <button
@@ -60,6 +60,7 @@
         <div class="header-spacer"></div>
         <div class="user-info" *ngIf="currentUser$ | async as user">
           <span class="user-name">{{ user.name }}</span>
+          <span class="user-role">{{ roleLabel(user.role) }}</span>
         </div>
         <button class="logout-btn" (click)="logout()">
           <span>Sair</span>
@@ -77,7 +78,7 @@
     <!-- Footer -->
     <footer class="app-footer">
       <p>
-        MetaIQ © 2026 · Ambiente de teste ·
+        Nexora © 2026 · Plataforma operacional para campanhas Meta ·
         {{ today | date: 'dd/MM/yyyy' }}
       </p>
     </footer>

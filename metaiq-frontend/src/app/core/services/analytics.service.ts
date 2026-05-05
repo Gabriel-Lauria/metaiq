@@ -1,6 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter } from 'rxjs';
+import { environment } from '../environment';
+import { addBreadcrumb } from '../monitoring/sentry.config';
 
 /**
  * Analytics Service para rastreamento de eventos
@@ -31,7 +33,10 @@ export class AnalyticsService {
    * Rastrear visualização de página
    */
   trackPageView(path: string): void {
-    console.log(`[Analytics] Page view: ${path}`);
+    addBreadcrumb(`page_view:${path}`, 'analytics', 'info');
+    if (!environment.production) {
+      console.log(`[Analytics] Page view: ${path}`);
+    }
     
     // Integração com Google Analytics
     if (typeof gtag !== 'undefined') {
@@ -50,7 +55,10 @@ export class AnalyticsService {
     eventLabel?: string,
     eventValue?: number
   ): void {
-    console.log(`[Analytics] Event: ${eventName}`, { category: eventCategory, label: eventLabel, value: eventValue });
+    addBreadcrumb(`event:${eventName}`, 'analytics', 'info');
+    if (!environment.production) {
+      console.log(`[Analytics] Event: ${eventName}`, { category: eventCategory, label: eventLabel, value: eventValue });
+    }
 
     // Integração com Google Analytics
     if (typeof gtag !== 'undefined') {
@@ -94,7 +102,9 @@ export class AnalyticsService {
    * Definir propriedades do usuário
    */
   setUserProperties(userId: string, properties: Record<string, any>): void {
-    console.log(`[Analytics] Set user properties for ${userId}`, properties);
+    if (!environment.production) {
+      console.log(`[Analytics] Set user properties for ${userId}`, properties);
+    }
 
     // Integração com Google Analytics
     if (typeof gtag !== 'undefined') {
@@ -109,7 +119,9 @@ export class AnalyticsService {
    * Limpar dados de analytics (logout)
    */
   clearUser(): void {
-    console.log('[Analytics] Clearing user data');
+    if (!environment.production) {
+      console.log('[Analytics] Clearing user data');
+    }
     
     if (typeof gtag !== 'undefined') {
       gtag('set', { 'user_id': null });

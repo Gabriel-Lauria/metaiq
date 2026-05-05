@@ -134,6 +134,8 @@ describe('AuthService', () => {
     expect(result.user.accountType).toBe(AccountType.INDIVIDUAL);
     expect(result.user.storeId).toBe('store-1');
     expect(result.user.tenantId).toBe('tenant-1');
+    expect(result.user.firstLogin).toBe(true);
+    expect(result.user.onboardingCompletedAt).toBeNull();
   });
 
   it('creates tenant, internal manager, store, user and user_store for INDIVIDUAL register', async () => {
@@ -184,6 +186,7 @@ describe('AuthService', () => {
     expect(result.user.accountType).toBe(AccountType.INDIVIDUAL);
     expect(result.user.storeId).toBe('store-1');
     expect(result.user.tenantId).toBe('tenant-1');
+    expect(result.user.firstLogin).toBe(true);
   });
 
   it('rolls back registration when bootstrap fails in the middle', async () => {
@@ -258,6 +261,7 @@ describe('AuthService', () => {
     expect(result.user.website).toBe('https://empresabeta.com.br');
     expect(result.user.instagram).toBe('@empresabeta');
     expect(result.user.whatsapp).toBe('(11) 98888-7777');
+    expect(result.user.firstLogin).toBe(true);
   });
 
   it('falls back to invalid credentials when password does not match', async () => {

@@ -50,6 +50,7 @@ describe("Current tenant/store security E2E", () => {
 
   const users: Partial<Record<TestUserKey, User>> = {};
   const tokens: Partial<Record<Role, string>> = {};
+  const userPasswords = new Map<string, string>();
   const managers: Manager[] = [];
   const stores: Store[] = [];
   const adAccounts: AdAccount[] = [];
@@ -232,6 +233,9 @@ describe("Current tenant/store security E2E", () => {
 
   async function seedTenantGraph() {
     const passwordHash = await bcrypt.hash(password, 12);
+    const rememberPassword = (user: User, currentPassword: string) => {
+      userPasswords.set(user.email, currentPassword);
+    };
 
     const managerA = await managerRepo.save(
       managerRepo.create({ name: `${runId} Manager A`, active: true }),
@@ -256,6 +260,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users[Role.ADMIN]!, password);
     users[Role.MANAGER] = await userRepo.save(
       userRepo.create({
         email: `${runId}.manager@test.com`,
@@ -267,6 +272,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users[Role.MANAGER]!, password);
     users.TENANT_ADMIN = await userRepo.save(
       userRepo.create({
         email: `${runId}.tenant-admin@test.com`,
@@ -278,6 +284,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users.TENANT_ADMIN!, password);
     users[Role.OPERATIONAL] = await userRepo.save(
       userRepo.create({
         email: `${runId}.operational@test.com`,
@@ -290,6 +297,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users[Role.OPERATIONAL]!, password);
     users[Role.CLIENT] = await userRepo.save(
       userRepo.create({
         email: `${runId}.client@test.com`,
@@ -302,6 +310,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users[Role.CLIENT]!, password);
     users.OPERATIONAL_UNLINKED = await userRepo.save(
       userRepo.create({
         email: `${runId}.operational-unlinked@test.com`,
@@ -314,6 +323,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users.OPERATIONAL_UNLINKED!, password);
     users.INACTIVE = await userRepo.save(
       userRepo.create({
         email: `${runId}.inactive@test.com`,
@@ -326,6 +336,7 @@ describe("Current tenant/store security E2E", () => {
         active: false,
       }),
     );
+    rememberPassword(users.INACTIVE!, password);
     users.SOFT_DELETED = await userRepo.save(
       userRepo.create({
         email: `${runId}.soft-deleted@test.com`,
@@ -339,6 +350,7 @@ describe("Current tenant/store security E2E", () => {
         deletedAt: new Date(),
       }),
     );
+    rememberPassword(users.SOFT_DELETED!, password);
     users.MANAGER_PEER = await userRepo.save(
       userRepo.create({
         email: `${runId}.manager-peer@test.com`,
@@ -351,6 +363,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users.MANAGER_PEER!, password);
     users.MANAGER_B = await userRepo.save(
       userRepo.create({
         email: `${runId}.managerb@test.com`,
@@ -362,6 +375,7 @@ describe("Current tenant/store security E2E", () => {
         active: true,
       }),
     );
+    rememberPassword(users.MANAGER_B!, password);
 
     const storeA = await storeRepo.save(
       storeRepo.create({
@@ -393,6 +407,18 @@ describe("Current tenant/store security E2E", () => {
     stores.push(storeA, storeB, storePeer);
 
     await userStoreRepo.save([
+      userStoreRepo.create({
+        userId: users[Role.MANAGER]!.id,
+        storeId: storeA.id,
+      }),
+      userStoreRepo.create({
+        userId: users.MANAGER_PEER!.id,
+        storeId: storePeer.id,
+      }),
+      userStoreRepo.create({
+        userId: users.MANAGER_B!.id,
+        storeId: storeB.id,
+      }),
       userStoreRepo.create({
         userId: users[Role.OPERATIONAL]!.id,
         storeId: storeA.id,
@@ -569,9 +595,10 @@ describe("Current tenant/store security E2E", () => {
   }
 
   async function login(email: string) {
+    const currentPassword = userPasswords.get(email) || password;
     const response = await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email, password })
+      .send({ email, password: currentPassword })
       .expect(200);
     return response.body.accessToken as string;
   }
@@ -615,6 +642,10 @@ describe("Current tenant/store security E2E", () => {
   }
 
   describe("auth", () => {
+    afterAll(async () => {
+      await loginAllActiveUsers();
+    });
+
     it("logs in, refreshes tokens, exposes users/me, and blocks invalid or inactive users", async () => {
       await request(app.getHttpServer())
         .post("/api/auth/login")
@@ -806,6 +837,7 @@ describe("Current tenant/store security E2E", () => {
         .send({ email: users[Role.CLIENT]!.email, password: "Reset@1234" })
         .expect(200);
       expect(decodeJwtPayload(relogin.body.accessToken).sessionVersion).toBe(1);
+      userPasswords.set(users[Role.CLIENT]!.email, "Reset@1234");
     });
 
     it("invalidates the current access token on logout even without the refresh cookie", async () => {
@@ -904,7 +936,7 @@ describe("Current tenant/store security E2E", () => {
         .expect(403);
     });
 
-    it("scopes manager reads to resources inside the same tenant", async () => {
+    it("scopes manager reads to directly managed stores and users only", async () => {
       const managerUsers = await request(app.getHttpServer())
         .get("/api/users")
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
@@ -915,24 +947,26 @@ describe("Current tenant/store security E2E", () => {
           users[Role.MANAGER]!.id,
           users[Role.OPERATIONAL]!.id,
           users[Role.CLIENT]!.id,
-          users.MANAGER_PEER!.id,
-          users.TENANT_ADMIN!.id,
+          users.OPERATIONAL_UNLINKED!.id,
+          users.INACTIVE!.id,
         ]),
       );
+      expect(managerUserIds).not.toContain(users.MANAGER_PEER!.id);
+      expect(managerUserIds).not.toContain(users.TENANT_ADMIN!.id);
       expect(managerUserIds).not.toContain(users.MANAGER_B!.id);
 
       const managerStores = await request(app.getHttpServer())
         .get("/api/stores")
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(200);
-      expect(managerStores.body.map((store: Store) => store.id)).toEqual(
-        expect.arrayContaining([stores[0].id, stores[2].id]),
-      );
+      expect(managerStores.body.map((store: Store) => store.id)).toEqual([
+        stores[0].id,
+      ]);
 
       await request(app.getHttpServer())
         .get(`/api/stores/${stores[2].id}`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
-        .expect(200);
+        .expect(403);
 
       const managerCampaigns = await request(app.getHttpServer())
         .get("/api/campaigns?page=1&limit=20")
@@ -942,20 +976,20 @@ describe("Current tenant/store security E2E", () => {
         (campaign: Campaign) => campaign.id,
       );
       expect(managerCampaignIds).toContain(campaigns[0].id);
-      expect(managerCampaignIds).toContain(campaigns[2].id);
+      expect(managerCampaignIds).not.toContain(campaigns[2].id);
       expect(managerCampaignIds).not.toContain(campaigns[1].id);
 
       const managerMetrics = await request(app.getHttpServer())
         .get(`/api/metrics/summary?${range}`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(200);
-      expect(managerMetrics.body.spend).toBe(40);
-      expect(managerMetrics.body.revenue).toBe(200);
+      expect(managerMetrics.body.spend).toBe(10);
+      expect(managerMetrics.body.revenue).toBe(50);
 
       await request(app.getHttpServer())
         .get(`/api/metrics/campaigns/${campaigns[2].id}?${range}`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
-        .expect(200);
+        .expect(403);
 
       const managerAdAccounts = await request(app.getHttpServer())
         .get("/api/ad-accounts")
@@ -968,9 +1002,9 @@ describe("Current tenant/store security E2E", () => {
         expect.arrayContaining([
           adAccounts[0].id,
           adAccounts[2].id,
-          adAccounts[3].id,
         ]),
       );
+      expect(managerAdAccountIds).not.toContain(adAccounts[3].id);
       expect(managerAdAccountIds).not.toContain(adAccounts[1].id);
 
       const managerInsights = await request(app.getHttpServer())
@@ -1033,9 +1067,9 @@ describe("Current tenant/store security E2E", () => {
         .get("/api/stores/accessible")
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(200);
-      expect(managerStores.body.map((store: Store) => store.id)).toEqual(
-        expect.arrayContaining([stores[0].id, stores[2].id]),
-      );
+      expect(managerStores.body.map((store: Store) => store.id)).toEqual([
+        stores[0].id,
+      ]);
 
       const operationalStores = await request(app.getHttpServer())
         .get("/api/stores/accessible")
@@ -1048,6 +1082,11 @@ describe("Current tenant/store security E2E", () => {
       await request(app.getHttpServer())
         .get(`/api/stores/${stores[1].id}`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get("/api/stores/accessible")
+        .set("Authorization", `Bearer ${tokens[Role.CLIENT]}`)
         .expect(403);
     });
 
@@ -1064,6 +1103,7 @@ describe("Current tenant/store security E2E", () => {
         .send({
           name: `${runId} Store Created`,
           managerId: createdManager.body.id,
+          tenantId: createdManager.body.id,
         })
         .expect(201);
 
@@ -1112,9 +1152,51 @@ describe("Current tenant/store security E2E", () => {
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(201);
     });
+
+    it("fails hard when tenantId and managerId drift on user or store writes", async () => {
+      await request(app.getHttpServer())
+        .post("/api/users")
+        .set("Authorization", `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .send({
+          email: `${runId}.invalid-scope@test.com`,
+          password,
+          name: "Invalid Scope User",
+          role: Role.OPERATIONAL,
+          tenantId: managers[0].id,
+          managerId: managers[1].id,
+        })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post("/api/stores")
+        .set("Authorization", `Bearer ${tokens[Role.PLATFORM_ADMIN]}`)
+        .send({
+          name: `${runId} Invalid Scope Store`,
+          tenantId: managers[0].id,
+          managerId: managers[1].id,
+        })
+        .expect(400);
+    });
   });
 
   describe("campaigns, ad accounts, metrics, insights, and dashboards", () => {
+    it("locks CLIENT out of operational campaigns and metrics endpoints", async () => {
+      await request(app.getHttpServer())
+        .get("/api/campaigns?page=1&limit=20")
+        .set("Authorization", `Bearer ${tokens[Role.CLIENT]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/metrics/summary?${range}`)
+        .set("Authorization", `Bearer ${tokens[Role.CLIENT]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/metrics/campaigns/${campaigns[0].id}?${range}`)
+        .set("Authorization", `Bearer ${tokens[Role.CLIENT]}`)
+        .expect(403);
+    });
+
     it("rejects campaign and ad account creation without storeId", async () => {
       await request(app.getHttpServer())
         .post("/api/ad-accounts")
@@ -1550,7 +1632,7 @@ describe("Current tenant/store security E2E", () => {
   });
 
   describe("store Meta integrations", () => {
-    it("allows tenant admin, linked operational, and platform admin to operate Meta by store scope", async () => {
+    it("allows only store-scoped actors to operate Meta and blocks manager access to sibling stores", async () => {
       const initial = await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[0].id}/status`)
         .set("Authorization", `Bearer ${tokens[Role.OPERATIONAL]}`)
@@ -1602,9 +1684,20 @@ describe("Current tenant/store security E2E", () => {
         .expect(200);
       expect(tenantAdminStatus.body.status).toBe(IntegrationStatus.ERROR);
 
+      const managerStarted = await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(200);
+      expect(managerStarted.body.authorizationUrl).toContain("state=");
+
       await request(app.getHttpServer())
         .get(`/api/integrations/meta/stores/${stores[1].id}/oauth/start`)
         .set("Authorization", `Bearer ${tenantAdminToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(`/api/integrations/meta/stores/${stores[2].id}/oauth/start`)
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(403);
 
       const platformStarted = await request(app.getHttpServer())
@@ -1616,13 +1709,24 @@ describe("Current tenant/store security E2E", () => {
       );
       expect(platformStarted.body.authorizationUrl).toContain("state=");
 
-      await request(app.getHttpServer())
+      const managerStatusUpdate = await request(app.getHttpServer())
         .patch(`/api/integrations/meta/stores/${stores[0].id}/status`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .send({
           status: IntegrationStatus.EXPIRED,
           lastSyncStatus: SyncStatus.ERROR,
           lastSyncError: "expired token",
+        })
+        .expect(200);
+      expect(managerStatusUpdate.body.status).toBe(IntegrationStatus.EXPIRED);
+
+      await request(app.getHttpServer())
+        .patch(`/api/integrations/meta/stores/${stores[2].id}/status`)
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
+        .send({
+          status: IntegrationStatus.EXPIRED,
+          lastSyncStatus: SyncStatus.ERROR,
+          lastSyncError: "sibling store update should fail",
         })
         .expect(403);
 
@@ -1633,7 +1737,7 @@ describe("Current tenant/store security E2E", () => {
       expect(disconnected.body.status).toBe(IntegrationStatus.NOT_CONNECTED);
     });
 
-    it("keeps Meta recovery restricted to platform admin, tenant admin, and operational store scope", async () => {
+    it("keeps Meta recovery restricted to the same authorized store scope", async () => {
       await request(app.getHttpServer())
         .get(
           `/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`,
@@ -1675,7 +1779,21 @@ describe("Current tenant/store security E2E", () => {
         .get(
           `/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`,
         )
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/integrations/meta/stores/${stores[0].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`,
+        )
         .set("Authorization", `Bearer ${tokens[Role.CLIENT]}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/integrations/meta/stores/${stores[2].id}/campaigns/recovery/00000000-0000-4000-8000-000000000001`,
+        )
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(403);
 
       await request(app.getHttpServer())
@@ -1686,7 +1804,7 @@ describe("Current tenant/store security E2E", () => {
         .expect(400);
     });
 
-    it("blocks unlinked operational, manager, and client integration execution", async () => {
+    it("blocks unlinked operational, sibling manager, and client integration execution", async () => {
       const unlinkedOperationalToken = await login(
         users.OPERATIONAL_UNLINKED!.email,
       );
@@ -1702,7 +1820,7 @@ describe("Current tenant/store security E2E", () => {
         .expect(403);
 
       await request(app.getHttpServer())
-        .get(`/api/integrations/meta/stores/${stores[0].id}/oauth/start`)
+        .get(`/api/integrations/meta/stores/${stores[2].id}/oauth/start`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .expect(403);
 
@@ -1712,9 +1830,28 @@ describe("Current tenant/store security E2E", () => {
         .expect(403);
 
       await request(app.getHttpServer())
-        .post(`/api/integrations/meta/stores/${stores[0].id}/connect`)
+        .post(`/api/integrations/meta/stores/${stores[2].id}/connect`)
         .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
         .send({ accessToken: "manual-token" })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post(`/api/integrations/meta/stores/${stores[2].id}/campaigns`)
+        .set("Authorization", `Bearer ${tokens[Role.MANAGER]}`)
+        .send({
+          name: "Blocked sibling publish",
+          objective: "OUTCOME_TRAFFIC",
+          dailyBudget: 50,
+          country: "BR",
+          ageMin: 18,
+          ageMax: 45,
+          gender: "ALL",
+          adAccountId: adAccounts[3].id,
+          message: "Blocked publish payload",
+          imageUrl: "https://example.com/image.jpg",
+          destinationUrl: "https://example.com",
+          initialStatus: "PAUSED",
+        })
         .expect(403);
 
       await request(app.getHttpServer())

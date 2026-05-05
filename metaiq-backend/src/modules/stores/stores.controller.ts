@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
@@ -32,12 +34,14 @@ export class StoresController {
   }
 
   @Get('accessible')
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   findAccessible(@Request() req: any): Promise<Store[]> {
     return this.storesService.findAccessibleForUser(req.user);
   }
 
   @Get(':storeId/users')
+  @CheckOwnership('store', 'storeId')
+  @UseGuards(OwnershipGuard)
   listUsers(
     @Param('storeId') storeId: string,
     @Request() req: any,
@@ -46,6 +50,8 @@ export class StoresController {
   }
 
   @Post(':storeId/users/:userId')
+  @CheckOwnership('store', 'storeId')
+  @UseGuards(OwnershipGuard)
   linkUser(
     @Param('storeId') storeId: string,
     @Param('userId') userId: string,
@@ -58,6 +64,8 @@ export class StoresController {
   }
 
   @Delete(':storeId/users/:userId')
+  @CheckOwnership('store', 'storeId')
+  @UseGuards(OwnershipGuard)
   unlinkUser(
     @Param('storeId') storeId: string,
     @Param('userId') userId: string,
@@ -72,11 +80,15 @@ export class StoresController {
   }
 
   @Get(':id')
+  @CheckOwnership('store', 'id')
+  @UseGuards(OwnershipGuard)
   findOne(@Param('id') id: string, @Request() req: any): Promise<Store> {
     return this.storesService.findOneForUser(req.user, id);
   }
 
   @Patch(':id')
+  @CheckOwnership('store', 'id')
+  @UseGuards(OwnershipGuard)
   update(
     @Param('id') id: string,
     @Request() req: any,
@@ -89,6 +101,8 @@ export class StoresController {
   }
 
   @Patch(':id/toggle-active')
+  @CheckOwnership('store', 'id')
+  @UseGuards(OwnershipGuard)
   toggleActive(@Param('id') id: string, @Request() req: any): Promise<Store> {
     return this.storesService.toggleActiveForUser(req.user, id).then((store) => {
       this.audit(req, 'store.toggle_active', id, 'store');
@@ -97,6 +111,8 @@ export class StoresController {
   }
 
   @Delete(':id')
+  @CheckOwnership('store', 'id')
+  @UseGuards(OwnershipGuard)
   remove(@Param('id') id: string, @Request() req: any): Promise<{ message: string }> {
     return this.storesService
       .removeForUser(req.user, id)

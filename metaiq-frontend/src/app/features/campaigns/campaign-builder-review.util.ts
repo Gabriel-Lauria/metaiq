@@ -67,6 +67,18 @@ export function resolveDestinationUrl(state: CampaignBuilderState): string {
   return '';
 }
 
+export function resolveScheduleWindow(state: CampaignBuilderState): { startTime: string | null; endTime: string | null } {
+  const startDate = state.schedule.startDate.trim();
+  const startClock = state.schedule.startTime.trim();
+  const endDate = state.schedule.endDate.trim();
+  const endClock = state.schedule.endTime.trim();
+
+  const startTime = buildIsoDateTime(startDate, startClock);
+  const endTime = buildIsoDateTime(endDate, endClock);
+
+  return { startTime, endTime };
+}
+
 export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaignRequest {
   const destinationUrl = resolveDestinationUrl(state);
   const normalizedCta = normalizeCtaValue(state.creative.cta);
@@ -76,33 +88,30 @@ export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaign
   const cityId = typeof state.audience.cityId === 'number' && state.audience.cityId > 0
     ? state.audience.cityId
     : undefined;
-  const assetId = state.creative.assetId.trim() || undefined;
-  const imageUrl = normalizeCreativeText(state.creative.imageUrl) || undefined;
-  const endTime = buildScheduleDateTime(state.schedule.endDate, state.schedule.endTime);
-  const pixelId = state.tracking.pixel.trim() || undefined;
-  const conversionEvent = state.tracking.mainEvent.trim() || undefined;
+  const schedule = resolveScheduleWindow(state);
+  const specialAdCategories = normalizeSpecialAdCategories(state.campaign.specialCategory);
   const placements = Array.from(new Set(
     state.placements.selected
       .map((item) => item.trim())
       .filter(Boolean),
   ));
-  const specialAdCategories = normalizeSpecialAdCategories(state.campaign.specialCategory);
+  const imageAssetId = state.creative.imageAssetId.trim() || undefined;
 
   return {
     name: state.campaign.name.trim(),
     objective: state.campaign.objective,
     dailyBudget: Number(state.budget.value),
-    startTime: `${state.schedule.startDate}T${state.schedule.startTime}:00`,
-    endTime,
+    startTime: schedule.startTime || '',
+    endTime: schedule.endTime || undefined,
     country: state.audience.country.trim().toUpperCase(),
     ageMin: Number(state.audience.ageMin),
     ageMax: Number(state.audience.ageMax),
     gender: state.audience.gender,
     adAccountId: state.identity.adAccountId,
     message: normalizeCreativeText(state.creative.message),
-    assetId,
-    imageAssetId: assetId,
-    imageUrl,
+    imageAssetId,
+    assetId: imageAssetId,
+    imageUrl: imageAssetId ? undefined : normalizeCreativeText(state.creative.imageUrl),
     state: stateCode || undefined,
     stateName: stateName || undefined,
     city: city || undefined,
@@ -111,26 +120,17 @@ export function buildApiPayload(state: CampaignBuilderState): CreateMetaCampaign
     headline: normalizeCreativeText(state.creative.headline) || undefined,
     description: normalizeCreativeText(state.creative.description) || undefined,
     cta: normalizedCta,
-    pixelId,
-    conversionEvent,
+    pixelId: state.tracking.pixel.trim() || undefined,
+    conversionEvent: state.tracking.mainEvent.trim() || undefined,
     placements: placements.length ? placements : undefined,
     specialAdCategories: specialAdCategories.length ? specialAdCategories : undefined,
     utmSource: state.tracking.utmSource.trim() || undefined,
     utmMedium: state.tracking.utmMedium.trim() || undefined,
     utmCampaign: state.tracking.utmCampaign.trim() || undefined,
-    initialStatus: state.campaign.initialStatus,
+    utmContent: state.tracking.utmContent.trim() || undefined,
+    utmTerm: state.tracking.utmTerm.trim() || undefined,
+    initialStatus: 'PAUSED',
   };
-}
-
-function buildScheduleDateTime(date: string, time: string): string | undefined {
-  const normalizedDate = date.trim();
-  const normalizedTime = time.trim();
-
-  if (!normalizedDate || !normalizedTime) {
-    return undefined;
-  }
-
-  return `${normalizedDate}T${normalizedTime}:00`;
 }
 
 function normalizeSpecialAdCategories(value: string): string[] {
@@ -151,6 +151,7 @@ export function realPayloadComplete(state: CampaignBuilderState): boolean {
   return !!state.campaign.name.trim()
     && !!state.campaign.objective.trim()
     && Number(state.budget.value) > 0
+    && hasValidSchedule(state)
     && isValidCountry(state.audience.country)
     && hasConsistentAudienceLocation(state)
     && !!state.identity.adAccountId
@@ -158,7 +159,9 @@ export function realPayloadComplete(state: CampaignBuilderState): boolean {
     && isSecureHttpUrl(state.destination.websiteUrl)
     && !!state.creative.message.trim()
     && !!state.creative.headline.trim()
-    && isLikelyDirectImageUrl(state.creative.imageUrl);
+    && !!state.creative.imageAssetId.trim()
+    && hasSemanticallySupportedObjective(state)
+    && hasTrackingRequiredForObjective(state);
 }
 
 function executiveAnalysisForPublish(state: CampaignBuilderState) {
@@ -266,7 +269,7 @@ export function budgetSectionComplete(state: CampaignBuilderState): boolean {
 }
 
 export function scheduleSectionComplete(state: CampaignBuilderState): boolean {
-  return !!state.schedule.startDate && !!state.schedule.startTime;
+  return hasValidSchedule(state);
 }
 
 export function placementSectionComplete(state: CampaignBuilderState): boolean {
@@ -283,11 +286,11 @@ export function destinationSectionComplete(state: CampaignBuilderState): boolean
 export function creativeSectionComplete(state: CampaignBuilderState): boolean {
   return !!state.creative.message.trim()
     && !!state.creative.headline.trim()
-    && isLikelyDirectImageUrl(state.creative.imageUrl);
+    && !!state.creative.imageAssetId.trim();
 }
 
 export function trackingSectionComplete(state: CampaignBuilderState): boolean {
-  return !!state.tracking.mainEvent.trim();
+  return !!state.tracking.mainEvent.trim() && hasTrackingRequiredForObjective(state);
 }
 
 export function aiSectionComplete(state: CampaignBuilderState): boolean {
@@ -382,29 +385,6 @@ export function buildSummaryRows(context: CampaignBuilderReviewContext, formatCu
   ];
 }
 
-export function buildSimulatedMetrics(state: CampaignBuilderState): {
-  reach: number;
-  clicks: number;
-  leads: number;
-  cpl: number;
-  ctr: number;
-} {
-  const baseBudget = Math.max(state.budget.value || 0, 1);
-  const objectiveFactor = state.campaign.objective === 'OUTCOME_LEADS' ? 1.2 : state.campaign.objective === 'REACH' ? 2.1 : 1.6;
-  const placementsFactor = Math.max(state.placements.selected.length, 1) / 3;
-  const qualityFactor = state.creative.headline.trim() && state.creative.description.trim() ? 1.15 : 0.94;
-  const reach = Math.round(baseBudget * 92 * objectiveFactor * placementsFactor);
-  const clicks = Math.round(baseBudget * 4.8 * qualityFactor);
-  const leads = Math.round(clicks * (state.campaign.objective === 'OUTCOME_LEADS' ? 0.18 : 0.07));
-  return {
-    reach,
-    clicks,
-    leads,
-    cpl: leads > 0 ? +(baseBudget / leads).toFixed(2) : 0,
-    ctr: reach > 0 ? +((clicks / reach) * 100).toFixed(2) : 0,
-  };
-}
-
 export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] {
   const signals: ReviewSignal[] = [];
   const publishState = executivePublishState(state);
@@ -415,12 +395,12 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
     signals.push({ id: 'required-ok', label: 'Os dados obrigatorios para publicar foram preenchidos.', tone: 'success' });
   }
 
-  if (!isValidImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-url', label: 'A imagem do criativo precisa estar enviada e acessível para a Meta.', tone: 'danger' });
+  if (!state.creative.imageAssetId.trim()) {
+    signals.push({ id: 'image-asset', label: 'Envie uma imagem válida para continuar.', tone: 'danger' });
   }
 
-  if (state.creative.imageUrl.trim() && !isLikelyDirectImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-direct', label: 'A imagem selecionada não parece válida para envio à Meta. Reenvie o arquivo.', tone: 'danger' });
+  if (state.creative.imageUrl.trim() && !state.creative.imageAssetId.trim()) {
+    signals.push({ id: 'image-url-deprecated', label: 'imageUrl manual está depreciado. Use o upload da imagem para gerar image_hash.', tone: 'warning' });
   }
 
   if (!isValidCountry(state.audience.country)) {
@@ -431,8 +411,20 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
     signals.push({ id: 'location', label: 'Estado e cidade precisam estar consistentes. Se houver cidade, selecione uma UF válida antes de enviar.', tone: 'danger' });
   }
 
+  if (!(Number(state.audience.ageMin) >= 13) || !(Number(state.audience.ageMax) >= Number(state.audience.ageMin))) {
+    signals.push({ id: 'age-range', label: 'Faixa etária inválida para publicação real.', tone: 'danger' });
+  }
+
   if (state.budget.value < 20) {
     signals.push({ id: 'budget-low', label: 'Orçamento baixo pode limitar entrega e aprendizado.', tone: 'info' });
+  }
+
+  if (!hasValidSchedule(state)) {
+    signals.push({ id: 'schedule-invalid', label: 'Defina uma data e hora de início válidas. Se houver término, ele deve acontecer depois do início.', tone: 'danger' });
+  }
+
+  if (!hasSemanticallySupportedObjective(state)) {
+    signals.push({ id: 'objective-unsupported', label: `O objetivo ${state.campaign.objective} ainda não está liberado para publicação segura neste fluxo.`, tone: 'danger' });
   }
 
   if (state.destination.type === 'site' && !state.destination.websiteUrl.trim()) {
@@ -467,17 +459,33 @@ export function buildReviewSignals(state: CampaignBuilderState): ReviewSignal[] 
     signals.push({ id: 'message-length', label: 'Texto principal extenso pode reduzir clareza no primeiro olhar.', tone: 'info' });
   }
 
-  if (!state.tracking.pixel.trim()) {
+  if (objectiveRequiresPixel(state) && !state.tracking.pixel.trim()) {
+    signals.push({ id: 'pixel-required', label: 'Este objetivo exige pixel configurado antes da publicação.', tone: 'danger' });
+  } else if (!state.tracking.pixel.trim()) {
     signals.push({ id: 'pixel-missing', label: 'Pixel não configurado. Algumas campanhas podem não otimizar conversões corretamente.', tone: 'warning' });
+  }
+
+  if (!state.placements.selected.length) {
+    signals.push({ id: 'placements-required', label: 'Selecione pelo menos um posicionamento para controlar a entrega real da campanha.', tone: 'danger' });
+  }
+
+  if (state.audience.interests.trim() || state.audience.behaviors.trim() || state.audience.demographics.trim()) {
+    signals.push({
+      id: 'unsupported-audience-fields',
+      label: 'Interesses, behaviors e demographics foram removidos do publish real até existir suporte seguro na Meta.',
+      tone: 'warning',
+    });
+  }
+
+  if (!state.tracking.mainEvent.trim()) {
+    signals.push({ id: 'conversion-event-required', label: 'Defina o evento principal de rastreamento antes de publicar.', tone: 'danger' });
   }
 
   if (state.creative.carousel) {
     signals.push({ id: 'carousel', label: 'Carousel ainda não é enviado no payload real da Meta. O creative será tratado como peça simples.', tone: 'warning' });
   }
 
-  if (isLikelyDirectImageUrl(state.creative.imageUrl)) {
-    signals.push({ id: 'image-hash-flow', label: 'A imagem será preparada no backend e enviada à Meta como asset com image_hash.', tone: 'info' });
-  }
+  signals.push({ id: 'image-hash-flow', label: 'A imagem será publicada via asset com image_hash validado pela Meta.', tone: 'info' });
 
   signals.push({
     id: 'cta-format',
@@ -492,13 +500,20 @@ export function missingRealPayloadFields(state: CampaignBuilderState): string[] 
   return [
     !state.campaign.name.trim() ? 'nome' : '',
     !state.campaign.objective.trim() ? 'objetivo' : '',
+    !hasSemanticallySupportedObjective(state) ? 'objetivo suportado' : '',
     !(Number(state.budget.value) > 0) ? 'orçamento' : '',
+    !hasValidSchedule(state) ? 'datas válidas' : '',
     !isValidCountry(state.audience.country) ? 'país' : '',
+    !(Number(state.audience.ageMin) >= 13) ? 'idade mínima' : '',
+    !(Number(state.audience.ageMax) >= Number(state.audience.ageMin)) ? 'idade máxima' : '',
     !state.identity.adAccountId ? 'conta de anúncio' : '',
     state.destination.type !== 'site' || !isSecureHttpUrl(state.destination.websiteUrl) ? 'URL de destino https' : '',
     !state.creative.message.trim() ? 'mensagem' : '',
     !state.creative.headline.trim() ? 'headline' : '',
-    !isLikelyDirectImageUrl(state.creative.imageUrl) ? 'imagem do criativo' : '',
+    !state.creative.imageAssetId.trim() ? 'imagem enviada' : '',
+    !state.placements.selected.length ? 'posicionamentos' : '',
+    !state.tracking.mainEvent.trim() ? 'evento principal' : '',
+    objectiveRequiresPixel(state) && !state.tracking.pixel.trim() ? 'pixel' : '',
   ].filter(Boolean);
 }
 
@@ -514,14 +529,18 @@ export function fieldInvalid(state: CampaignBuilderState, field: string): boolea
       return !hasConsistentAudienceLocation(state);
     case 'budget.value':
       return !(Number(state.budget.value) > 0);
+    case 'schedule.window':
+      return !hasValidSchedule(state);
     case 'creative.message':
       return !state.creative.message.trim();
     case 'creative.headline':
       return !state.creative.headline.trim();
-    case 'creative.imageUrl':
-      return !isLikelyDirectImageUrl(state.creative.imageUrl);
+    case 'creative.imageAssetId':
+      return !state.creative.imageAssetId.trim();
     case 'destination.websiteUrl':
       return state.destination.type === 'site' && !isSecureHttpUrl(state.destination.websiteUrl);
+    case 'tracking.requirements':
+      return !hasTrackingRequiredForObjective(state) || !state.placements.selected.length || !hasSemanticallySupportedObjective(state);
     default:
       return false;
   }
@@ -531,9 +550,11 @@ export function canSubmit(context: CampaignBuilderReviewContext): boolean {
   return !context.loadingContext
     && !context.submitting
     && buildReadinessItems(context).every((item) => item.done)
+    && !fieldInvalid(context.state, 'schedule.window')
     && !fieldInvalid(context.state, 'creative.headline')
-    && !fieldInvalid(context.state, 'creative.imageUrl')
-    && !fieldInvalid(context.state, 'destination.websiteUrl');
+    && !fieldInvalid(context.state, 'creative.imageAssetId')
+    && !fieldInvalid(context.state, 'destination.websiteUrl')
+    && !fieldInvalid(context.state, 'tracking.requirements');
 }
 
 export function firstBlockingSectionId(context: CampaignBuilderReviewContext): string {
@@ -546,11 +567,13 @@ export function firstBlockingSectionId(context: CampaignBuilderReviewContext): s
   if (fieldInvalid(context.state, 'audience.country')) return 'builder-audience';
   if (fieldInvalid(context.state, 'audience.location')) return 'builder-audience';
   if (fieldInvalid(context.state, 'budget.value')) return 'builder-budget';
+  if (fieldInvalid(context.state, 'schedule.window')) return 'builder-schedule';
   if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'builder-destination';
+  if (fieldInvalid(context.state, 'tracking.requirements')) return 'builder-tracking';
   if (
     fieldInvalid(context.state, 'creative.message')
     || fieldInvalid(context.state, 'creative.headline')
-    || fieldInvalid(context.state, 'creative.imageUrl')
+    || fieldInvalid(context.state, 'creative.imageAssetId')
   ) {
     return 'builder-creative';
   }
@@ -567,12 +590,46 @@ export function blockerMessage(context: CampaignBuilderReviewContext): string {
   if (!hasConfiguredPage(context.integration)) return 'Configure a Página do Facebook da loja antes de criar campanhas.';
   if (!hasSyncedAdAccounts(context.adAccounts)) return 'Sincronize as contas da store em Integrações para liberar a criação de campanhas.';
   if (fieldInvalid(context.state, 'audience.location')) return 'Selecione estado e cidade de forma consistente para evitar combinações geográficas inválidas.';
+  if (fieldInvalid(context.state, 'schedule.window')) return 'Defina datas válidas para a campanha. O término, quando informado, deve acontecer depois do início.';
   if (context.state.destination.type !== 'site') return META_MESSAGES_PUBLISH_SCOPE_MESSAGE;
-  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Use um link seguro com https:// antes de publicar.';
-  if (fieldInvalid(context.state, 'creative.headline')) return 'Preencha o titulo principal antes de publicar.';
+  if (fieldInvalid(context.state, 'destination.websiteUrl')) return 'Use uma URL final segura começando com https://.';
+  if (!hasSemanticallySupportedObjective(context.state)) return 'Este objetivo ainda não está disponível para publicação segura neste fluxo.';
+  if (!context.state.placements.selected.length) return 'Selecione pelo menos um posicionamento para controlar a entrega real na Meta.';
+  if (!context.state.tracking.mainEvent.trim()) return 'Defina o evento principal de rastreamento antes de publicar.';
+  if (objectiveRequiresPixel(context.state) && !context.state.tracking.pixel.trim()) return 'Campanhas de leads exigem pixel configurado antes da publicação.';
+  if (fieldInvalid(context.state, 'creative.headline')) return 'Preencha a headline do criativo antes de enviar para a Meta.';
+  if (fieldInvalid(context.state, 'creative.imageAssetId')) return 'Envie uma imagem válida para continuar.';
   if (!realPayloadComplete(context.state)) return `Complete os campos reais antes do envio: ${missingRealPayloadFields(context.state).join(', ')}.`;
   if (hasExecutivePublishBlock(context.state)) return executivePublishBlockMessage(context.state) || 'Revise a campanha antes de publicar.';
   return 'Tudo pronto para revisar e enviar.';
+}
+
+export function hasValidSchedule(state: CampaignBuilderState): boolean {
+  const { startTime, endTime } = resolveScheduleWindow(state);
+  if (!startTime) {
+    return false;
+  }
+
+  const startTimestamp = Date.parse(startTime);
+  if (!Number.isFinite(startTimestamp)) {
+    return false;
+  }
+
+  if (!endTime) {
+    return true;
+  }
+
+  const endTimestamp = Date.parse(endTime);
+  return Number.isFinite(endTimestamp) && endTimestamp > startTimestamp;
+}
+
+function buildIsoDateTime(date: string, clock: string): string | null {
+  if (!date || !clock) {
+    return null;
+  }
+
+  const candidate = `${date}T${clock}:00`;
+  return Number.isFinite(Date.parse(candidate)) ? candidate : null;
 }
 
 export function hasConsistentAudienceLocation(state: CampaignBuilderState): boolean {
@@ -608,3 +665,22 @@ export function hasConsistentAudienceLocation(state: CampaignBuilderState): bool
   return true;
 }
 
+function objectiveRequiresPixel(state: CampaignBuilderState): boolean {
+  return state.campaign.objective === 'OUTCOME_LEADS';
+}
+
+function hasTrackingRequiredForObjective(state: CampaignBuilderState): boolean {
+  if (!state.tracking.mainEvent.trim()) {
+    return false;
+  }
+
+  if (objectiveRequiresPixel(state)) {
+    return !!state.tracking.pixel.trim();
+  }
+
+  return true;
+}
+
+function hasSemanticallySupportedObjective(state: CampaignBuilderState): boolean {
+  return ['OUTCOME_TRAFFIC', 'OUTCOME_LEADS', 'REACH'].includes(state.campaign.objective);
+}

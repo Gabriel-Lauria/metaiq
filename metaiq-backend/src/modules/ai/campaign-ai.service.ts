@@ -735,8 +735,14 @@ export class CampaignAiService {
     if (value && typeof value === 'object') {
       return Object.fromEntries(
         Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
-          if (!this.isDevelopment && (key === 'contents' || key === 'responseJsonSchema')) {
-            return [key, '[redacted_in_production]'];
+          const normalizedKey = key.toLowerCase();
+          if (
+            normalizedKey === 'contents'
+            || normalizedKey === 'prompt'
+            || normalizedKey === 'context'
+            || normalizedKey === 'responsejsonschema'
+          ) {
+            return [key, '[redacted]'];
           }
 
           return [key, this.sanitizeAiLogPayload(entry)];
@@ -1536,7 +1542,7 @@ ${prompt}
     ].join(' ');
 
     return `
-Você é um assistente de criação de campanhas para o MetaIQ.
+Você é um assistente de criação de campanhas para a Nexora.
 
 Sua função é gerar uma campanha inicial estruturada, útil, específica e segura com base apenas nos dados fornecidos.
 Você NÃO é um analista de performance nesta etapa.
@@ -1754,7 +1760,7 @@ ${prompt}
     storeContext: StoreAiContext,
   ): string {
     return `
-Você é o copiloto de campanha do MetaIQ.
+Você é o copiloto de campanha da Nexora.
 
 Sua função é analisar uma campanha já preenchida antes da publicação.
 Você deve avaliar apenas a estrutura da campanha, coerência de marketing e clareza operacional.
@@ -1847,7 +1853,7 @@ ${JSON.stringify({
     };
 
     return `
-Você é a IA estratégica principal do MetaIQ.
+Você é a IA estratégica principal da Nexora.
 
 Sua função não é apenas preencher campos.
 Sua função é atuar como um copiloto sênior de performance de marketing para impedir campanhas ruins, reduzir desperdício financeiro, aumentar a segurança operacional e decidir se uma campanha deve ou não deve ser publicada.
@@ -2838,8 +2844,8 @@ ${JSON.stringify(campaignPayload, null, 2)}
     const cta = this.inferFallbackCta(prompt, storeContext);
     const destinationUrl = this.normalizeHttpsUrl(storeContext?.website);
     const reviewWarning = reason === 'timeout'
-      ? 'A IA externa excedeu o tempo limite e o MetaIQ montou um rascunho local para não travar o fluxo.'
-      : 'A IA externa ficou indisponível e o MetaIQ montou um rascunho local com base no contexto da store.';
+      ? 'A IA externa excedeu o tempo limite e a Nexora montou um rascunho local para não travar o fluxo.'
+      : 'A IA externa ficou indisponível e a Nexora montou um rascunho local com base no contexto da store.';
 
     return {
       strategy: this.buildFallbackStrategy(segment, storeContext),
@@ -2869,7 +2875,7 @@ ${JSON.stringify(campaignPayload, null, 2)}
         reviewWarning,
       ],
       explanation: {
-        strategy: 'O MetaIQ usou apenas o contexto real da store e do briefing para não deixar o usuário sem ponto de partida.',
+        strategy: 'A Nexora usou apenas o contexto real da store e do briefing para não deixar o usuário sem ponto de partida.',
         audience: 'O público foi montado com base nos sinais disponíveis da operação e precisa de revisão humana antes da publicação.',
         copy: 'A copy foi escrita com foco em especificidade mínima segura, sem inventar dados comerciais críticos.',
         budget: 'O orçamento foi inferido de forma conservadora até a IA externa voltar a responder normalmente.',
@@ -4453,10 +4459,8 @@ ${JSON.stringify(campaignPayload, null, 2)}
   }
 
   private hasRemarketingInfrastructure(storeContext?: StoreAiContext): boolean {
-    return !!(
-      storeContext?.historicalContext.audienceSignals?.length
-      || storeContext?.dataAvailability.hasHistoricalCampaigns
-      || storeContext?.dataAvailability.hasPerformanceMetrics
+    return (storeContext?.historicalContext.audienceSignals || []).some((signal) =>
+      this.hasRemarketingAudienceSignals(signal),
     );
   }
 
@@ -5304,7 +5308,7 @@ ${JSON.stringify(campaignPayload, null, 2)}
 
   private parsePromptCta(prompt: string): string | null {
     const normalized = prompt.toUpperCase();
-    const match = /CTA\s*[:\-]?\s*(CONTACT_US|MESSAGE_PAGE|SHOP_NOW|LEARN_MORE|SIGN_UP|BOOK_NOW|DOWNLOAD)\b/.exec(normalized);
+    const match = /CTA\s*[:-]?\s*(CONTACT_US|MESSAGE_PAGE|SHOP_NOW|LEARN_MORE|SIGN_UP|BOOK_NOW|DOWNLOAD)\b/.exec(normalized);
     return match ? match[1] : null;
   }
 
@@ -5828,15 +5832,6 @@ ${JSON.stringify(campaignPayload, null, 2)}
       ? 'CONTACT_US'
       : base.expectedCta;
 
-    if (prompt.includes('CTA CONTACT_US')) {
-      console.error('DEBUG PROMPT CTA', {
-        promptBriefingCta: promptBriefing.cta,
-        promptDestinationType,
-        promptObjective,
-        promptCta,
-      });
-    }
-
     return {
       expectedSegment: promptSegment !== 'negócio' ? promptSegment : null,
       expectedObjective: promptObjective,
@@ -6140,15 +6135,6 @@ ${JSON.stringify(campaignPayload, null, 2)}
         && constraints.expectedCta === 'MESSAGE_PAGE';
       
       if (!isMessageCampaign) {
-        if (constraints.expectedCta === 'CONTACT_US' && suggestion.campaign.objective === 'OUTCOME_TRAFFIC') {
-          console.error('DEBUG CTA MISMATCH', {
-            expectedCta: constraints.expectedCta,
-            detectedCta,
-            creativeCta: suggestion.creative.cta,
-            rootCta: suggestion.cta,
-            prompt: suggestion.strategy,
-          });
-        }
         blockingIssues.push(`A IA gerou CTA incompatível com o briefing (${constraints.expectedCta}).`);
         failedRules.push('cta_mismatch');
         immutableFieldMismatches.push('cta');
@@ -6158,13 +6144,17 @@ ${JSON.stringify(campaignPayload, null, 2)}
       }
     }
     if (constraints.expectedDestinationType && detectedDestinationType !== constraints.expectedDestinationType) {
-      blockingIssues.push(
-        constraints.expectedDestinationType === 'site'
-          ? 'A IA mudou o destino esperado de site para mensagens/WhatsApp.'
-          : 'A IA mudou o destino esperado de mensagens/WhatsApp para site.',
-      );
-      failedRules.push('destination_mismatch');
-      immutableFieldMismatches.push('destinationType');
+      if (constraints.expectedDestinationType === 'messages' && detectedDestinationType === 'site') {
+        warnings.push('A IA sugeriu URL de site, mas o briefing pede WhatsApp/mensagens. O destino externo será descartado e a campanha seguirá apenas como rascunho em revisão.');
+      } else {
+        blockingIssues.push(
+          constraints.expectedDestinationType === 'site'
+            ? 'A IA mudou o destino esperado de site para mensagens/WhatsApp.'
+            : 'A IA mudou o destino esperado de mensagens/WhatsApp para site.',
+        );
+        failedRules.push('destination_mismatch');
+        immutableFieldMismatches.push('destinationType');
+      }
     }
     if (constraints.expectedDestinationType === 'site' && !this.isHttpsUrl(suggestion.creative.destinationUrl)) {
       blockingIssues.push('A IA não forneceu destinationUrl em HTTPS para a campanha de site.');

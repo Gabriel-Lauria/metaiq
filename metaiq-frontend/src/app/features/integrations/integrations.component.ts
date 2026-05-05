@@ -181,7 +181,7 @@ export class IntegrationsComponent implements OnInit {
         next: (accounts) => {
           this.adAccounts.set(accounts);
           this.loadingAccounts.set(false);
-          this.ui.showSuccess('Contas sincronizadas', `${accounts.length} conta(s) atualizada(s) no MetaIQ.`);
+          this.ui.showSuccess('Contas sincronizadas', `${accounts.length} conta(s) atualizada(s) na Nexora.`);
           this.load();
         },
         error: (err) => {

@@ -276,6 +276,8 @@ export class AuthService {
         website: tenantProfile?.website ?? null,
         instagram: tenantProfile?.instagram ?? null,
         whatsapp: tenantProfile?.whatsapp ?? null,
+        onboardingCompletedAt: user.onboardingCompletedAt ?? null,
+        firstLogin: !user.onboardingCompletedAt,
       },
     };
   }
@@ -370,6 +372,7 @@ export class AuthService {
         role: Role.ADMIN,
         managerId: savedManager.id,
         tenantId: savedTenant.id,
+        onboardingCompletedAt: null,
         active: true,
       });
       const savedUser = await manager.save(User, user);

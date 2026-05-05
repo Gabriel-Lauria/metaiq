@@ -6,6 +6,7 @@ import { ObservabilityController } from '../controllers/observability.controller
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { RolesGuard } from '../guards/roles.guard';
 import { AdAccountsController } from '../../modules/ad-accounts/ad-accounts.controller';
+import { AssetsController, AssetContentController } from '../../modules/assets/assets.controller';
 import { CampaignAiController } from '../../modules/ai/campaign-ai.controller';
 import { AuthController } from '../../modules/auth/auth.controller';
 import { CampaignsController } from '../../modules/campaigns/campaigns.controller';
@@ -26,6 +27,7 @@ import { UsersController } from '../../modules/users/users.controller';
 
 const auditedGuardedControllers = {
   AdAccountsController,
+  AssetsController,
   CampaignAiController,
   CampaignsController,
   DashboardController,
@@ -43,10 +45,13 @@ const auditedGuardedControllers = {
 
 const allowedPublicOrSystemControllers = {
   AppController,
+  AssetContentController,
   AuthController,
   IbgeController,
   MetaOAuthCallbackController,
 };
+
+type NestClass = abstract new (...args: never[]) => unknown;
 
 function readControllerNames(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -73,9 +78,9 @@ function readControllerNames(dir: string): string[] {
   return names;
 }
 
-function expectClassGuards(controllerClass: Function, expectedGuards: Function[]): void {
+function expectClassGuards(controllerClass: NestClass, expectedGuards: NestClass[]): void {
   const guards = Reflect.getMetadata(GUARDS_METADATA, controllerClass) ?? [];
-  const actualNames = guards.map((guard: Function) => guard?.name);
+  const actualNames = guards.map((guard: NestClass) => guard?.name);
 
   expect(actualNames).toEqual(expect.arrayContaining(expectedGuards.map((guard) => guard.name)));
 }
@@ -99,9 +104,12 @@ describe('Security and scope audit', () => {
     },
   );
 
-  it('keeps the sample protected endpoint behind JwtAuthGuard', () => {
-    const guards = Reflect.getMetadata(GUARDS_METADATA, AppController.prototype.protected) ?? [];
-    expect(guards.map((guard: Function) => guard?.name)).toContain(JwtAuthGuard.name);
+  it('exposes only operational health endpoints on AppController', () => {
+    expect(typeof AppController.prototype.health).toBe('function');
+    expect(typeof AppController.prototype.live).toBe('function');
+    expect(typeof AppController.prototype.ready).toBe('function');
+    expect(typeof AppController.prototype.api).toBe('function');
+    expect((AppController.prototype as { protected?: unknown }).protected).toBeUndefined();
   });
 
   it('keeps tenant/store scope enforcement wired into sensitive services', () => {

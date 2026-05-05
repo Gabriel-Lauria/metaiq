@@ -8,11 +8,15 @@
     (drop)="onDrop($event)"
   >
     <input #fileInput type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="onFileInput($event)" />
+    <div class="upload-dropzone-copy">
+      <span class="upload-badge">{{ uploading() ? 'Enviando arquivo' : 'Imagem do anúncio' }}</span>
+      <strong>{{ uploading() ? 'Sua imagem está sendo enviada' : 'Envie a arte principal da campanha' }}</strong>
+      <p>Arraste a imagem para esta área ou escolha um arquivo do computador.</p>
+      <small>Formatos aceitos: JPG, PNG ou WEBP. Tamanho máximo: 4 MB. Recomendado: pelo menos 600x314.</small>
+    </div>
     <button class="upload-trigger" type="button" (click)="fileInput.click()" [disabled]="uploading()">
-      {{ uploading() ? 'Enviando imagem...' : 'Selecionar imagem' }}
+      {{ uploading() ? 'Enviando imagem...' : 'Escolher imagem' }}
     </button>
-    <p>Arraste uma imagem aqui ou clique para escolher.</p>
-    <small>Formatos: JPG, PNG ou WEBP. Tamanho máximo: 4MB. Mínimo: 600x314.</small>
   </div>
 
   <div class="upload-progress" *ngIf="uploading()">
@@ -25,24 +29,78 @@
   <p class="upload-feedback success" *ngIf="successMessage()">{{ successMessage() }}</p>
   <p class="upload-feedback error" *ngIf="error()">{{ error() }}</p>
 
+  <div class="local-preview-card" *ngIf="localPreviewUrl() as previewUrl">
+    <img [src]="previewUrl" alt="Prévia local da imagem" />
+    <div>
+      <strong>{{ localPreviewName() || 'Prévia local' }}</strong>
+      <p>Preview local antes da publicação.</p>
+      <small *ngIf="localPreviewDimensions()">{{ localPreviewDimensions() }}</small>
+    </div>
+  </div>
+
   <div class="library-header">
-    <strong>Biblioteca da store</strong>
+    <strong>Imagens da store</strong>
     <button class="clear-btn" type="button" *ngIf="selectedAssetId" (click)="clearSelection()">Limpar seleção</button>
   </div>
 
-  <p class="library-state" *ngIf="loading()">Carregando imagens da store...</p>
-  <p class="library-state" *ngIf="!loading() && !assets().length">Nenhuma imagem enviada ainda.</p>
+  <p class="library-state" *ngIf="loading()">Carregando imagens disponíveis...</p>
+  <p class="library-state" *ngIf="!loading() && !assets().length">Nenhuma imagem enviada ainda. Faça o upload da primeira arte para usar na campanha.</p>
 
   <div class="asset-grid" *ngIf="assets().length">
-    <button
-      type="button"
-      class="asset-card"
-      *ngFor="let asset of assets(); trackBy: trackByAssetId"
-      [class.selected]="isSelected(asset)"
-      (click)="selectAsset(asset)"
-    >
-      <img [src]="asset.storageUrl" alt="Imagem enviada" />
-      <span>{{ asset.width || 0 }}x{{ asset.height || 0 }}</span>
-    </button>
+    <div class="asset-card-wrapper" *ngFor="let asset of assets(); trackBy: trackByAssetId">
+      <button
+        type="button"
+        class="asset-card"
+        [class.selected]="isSelected(asset)"
+        (click)="selectAsset(asset)"
+      >
+        <img [src]="asset.storageUrl" alt="Imagem enviada" />
+        <span>{{ asset.width || 0 }}x{{ asset.height || 0 }}</span>
+      </button>
+      <button
+        type="button"
+        class="asset-delete-btn"
+        title="Remover imagem"
+        [disabled]="deleting()"
+        (click)="openDeleteConfirm(asset, $event)"
+      >
+        ✕
+      </button>
+    </div>
   </div>
 </div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" *ngIf="deleteConfirmAssetId()" (click)="closeDeleteConfirm()">
+  <div class="modal-dialog" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Remover imagem?</h3>
+      <button type="button" class="modal-close" (click)="closeDeleteConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p>Você tem certeza que deseja remover <strong>{{ deleteConfirmAssetName() }}</strong>?</p>
+      <div class="modal-info">
+        <p class="info-message">
+          Se esta imagem já estiver vinculada a campanhas publicadas, ela será apenas <strong>arquivada</strong> para preservar o histórico.
+        </p>
+        <p class="info-message secondary">
+          Se não estiver vinculada a nenhuma campanha, será permanentemente removida.
+        </p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" (click)="closeDeleteConfirm()" [disabled]="deleting()">
+        Cancelar
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger"
+        [disabled]="deleting()"
+        (click)="deleteAsset(deleteConfirmAssetId() || '')"
+      >
+        {{ deleting() ? 'Removendo...' : 'Remover' }}
+      </button>
+    </div>
+  </div>
+</div>
+

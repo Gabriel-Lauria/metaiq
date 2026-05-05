@@ -55,7 +55,7 @@ export class AccessScopeService {
       return null;
     }
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId) {
         return [];
       }
@@ -71,13 +71,11 @@ export class AccessScopeService {
       return stores.map((store) => store.id);
     }
 
-    const links = await this.userStoreRepository.find({
-      where: { userId: user.id },
-      relations: ["store"],
-    });
-    return links
-      .filter((link) => link.store?.active && !link.store.deletedAt)
-      .map((link) => link.storeId);
+    if (this.isManager(user)) {
+      return this.getManagerStoreIds(user);
+    }
+
+    return this.getDirectlyLinkedStoreIds(user.id);
   }
 
   async canAccessStore(
@@ -157,13 +155,18 @@ export class AccessScopeService {
       return targetUser;
     }
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId || targetUser.tenantId !== user.tenantId) {
         throw new ForbiddenException(
           "Usuário fora do tenant do usuário autenticado",
         );
       }
 
+      return targetUser;
+    }
+
+    if (this.isManager(user)) {
+      await this.assertManagerUserAccess(user, targetUser);
       return targetUser;
     }
 
@@ -423,6 +426,26 @@ export class AccessScopeService {
     return asset;
   }
 
+  async validateAssetOwnershipAccess(
+    user: AuthenticatedUser,
+    assetId?: string | null,
+  ): Promise<Asset> {
+    if (!assetId) {
+      throw new BadRequestException("assetId é obrigatório");
+    }
+
+    const asset = await this.assetRepository.findOne({
+      where: { id: assetId },
+    });
+
+    if (!asset) {
+      throw new NotFoundException("Asset não encontrado");
+    }
+
+    await this.validateStoreAccess(user, asset.storeId);
+    return asset;
+  }
+
   async canAccessResource(
     user: AuthenticatedUser,
     resource: OwnershipResource,
@@ -437,6 +460,12 @@ export class AccessScopeService {
         return this.canAccessAdAccount(user, id);
       case "insight":
         return this.canAccessInsight(user, id);
+      case "store":
+        return this.canAccessStore(user, id);
+      case "user":
+        return this.canAccessUser(user, id);
+      case "asset":
+        return this.canAccessAssetById(user, id);
       default:
         return false;
     }
@@ -458,6 +487,15 @@ export class AccessScopeService {
       case "insight":
         await this.validateInsightAccess(user, id);
         return;
+      case "store":
+        await this.validateStoreAccess(user, id);
+        return;
+      case "user":
+        await this.validateUserAccess(user, id);
+        return;
+      case "asset":
+        await this.validateAssetOwnershipAccess(user, id);
+        return;
       default:
         throw new ForbiddenException(
           "Recurso sem policy de ownership configurada",
@@ -476,7 +514,7 @@ export class AccessScopeService {
 
     query.innerJoin(`${alias}.store`, `${alias}_scopeStore`);
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId) {
         return query.andWhere("1 = 0");
       }
@@ -488,6 +526,17 @@ export class AccessScopeService {
         .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
 
       return query;
+    }
+
+    if (this.isManager(user)) {
+      const storeIds = await this.getManagerStoreIds(user);
+      if (!storeIds.length) {
+        return query.andWhere("1 = 0");
+      }
+
+      return query.andWhere(`${alias}.storeId IN (:...scopeStoreIds)`, {
+        scopeStoreIds: storeIds,
+      });
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
@@ -511,7 +560,7 @@ export class AccessScopeService {
 
     query.innerJoin(`${alias}.store`, `${alias}_scopeStore`);
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId) {
         return query.andWhere("1 = 0");
       }
@@ -523,6 +572,17 @@ export class AccessScopeService {
         .andWhere(`${alias}_scopeStore.deletedAt IS NULL`);
 
       return query;
+    }
+
+    if (this.isManager(user)) {
+      const storeIds = await this.getManagerStoreIds(user);
+      if (!storeIds.length) {
+        return query.andWhere("1 = 0");
+      }
+
+      return query.andWhere(`${alias}.storeId IN (:...scopeStoreIds)`, {
+        scopeStoreIds: storeIds,
+      });
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
@@ -552,7 +612,7 @@ export class AccessScopeService {
       return query;
     }
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId) {
         return query.andWhere("1 = 0");
       }
@@ -570,6 +630,24 @@ export class AccessScopeService {
       }
 
       return query;
+    }
+
+    if (this.isManager(user)) {
+      const storeIds = await this.getManagerStoreIds(user);
+      if (!storeIds.length) {
+        return query.andWhere("1 = 0");
+      }
+
+      query.andWhere(`${alias}.id IN (:...scopeStoreIds)`, {
+        scopeStoreIds: storeIds,
+      });
+      if (activeOnly) {
+        query.andWhere(`${alias}.active = :scopeStoreActive`, {
+          scopeStoreActive: true,
+        });
+      }
+
+      return query.andWhere(`${alias}.deletedAt IS NULL`);
     }
 
     const storeIds = await this.getAllowedStoreIds(user);
@@ -597,7 +675,7 @@ export class AccessScopeService {
       return query.andWhere(`${alias}.deletedAt IS NULL`);
     }
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId) {
         return query.andWhere("1 = 0");
       }
@@ -609,6 +687,19 @@ export class AccessScopeService {
         .andWhere(`${alias}.deletedAt IS NULL`);
 
       return query;
+    }
+
+    if (this.isManager(user)) {
+      const userIds = await this.getManagerAccessibleUserIds(user);
+      if (!userIds.length) {
+        return query.andWhere("1 = 0");
+      }
+
+      return query
+        .andWhere(`${alias}.id IN (:...scopeUserIds)`, {
+          scopeUserIds: userIds,
+        })
+        .andWhere(`${alias}.deletedAt IS NULL`);
     }
 
     return query
@@ -641,9 +732,18 @@ export class AccessScopeService {
       return;
     }
 
-    if (this.isAdmin(user) || this.isManager(user)) {
+    if (this.isAdmin(user)) {
       if (!user.tenantId || tenantId !== user.tenantId) {
         throw new ForbiddenException("Recurso fora do tenant do usuário");
+      }
+
+      return;
+    }
+
+    if (this.isManager(user)) {
+      const allowedStoreIds = await this.getManagerStoreIds(user);
+      if (!allowedStoreIds.includes(storeId)) {
+        throw new ForbiddenException("Recurso fora do escopo do manager");
       }
 
       return;
@@ -656,5 +756,141 @@ export class AccessScopeService {
     if (!link) {
       throw new ForbiddenException("Usuário sem acesso à store do recurso");
     }
+  }
+
+  private async canAccessAssetById(
+    user: AuthenticatedUser,
+    assetId: string,
+  ): Promise<boolean> {
+    try {
+      await this.validateAssetOwnershipAccess(user, assetId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async getDirectlyLinkedStoreIds(userId: string): Promise<string[]> {
+    const links = await this.userStoreRepository.find({
+      where: { userId },
+      relations: ["store"],
+    });
+
+    return links
+      .filter((link) => link.store?.active && !link.store.deletedAt)
+      .map((link) => link.storeId);
+  }
+
+  private async getManagerStoreIds(user: AuthenticatedUser): Promise<string[]> {
+    const linkedStoreIds = await this.getDirectlyLinkedStoreIds(user.id);
+    if (linkedStoreIds.length) {
+      return linkedStoreIds;
+    }
+
+    const createdStores = await this.storeRepository.find({
+      where: {
+        createdByUserId: user.id,
+        deletedAt: IsNull(),
+        active: true,
+      },
+      select: ["id"],
+    });
+
+    return createdStores.map((store) => store.id);
+  }
+
+  private async getManagerAccessibleUserIds(
+    user: AuthenticatedUser,
+  ): Promise<string[]> {
+    const candidateIds = new Set<string>([user.id]);
+    const managerStoreIds = await this.getManagerStoreIds(user);
+
+    if (managerStoreIds.length) {
+      const linkedUsers = await this.userStoreRepository.find({
+        where: managerStoreIds.map((storeId) => ({ storeId })),
+        select: ["userId"],
+      });
+      for (const link of linkedUsers) {
+        candidateIds.add(link.userId);
+      }
+    }
+
+    const createdUsers = await this.userRepository.find({
+      where: {
+        createdByUserId: user.id,
+        tenantId: user.tenantId ?? null,
+        deletedAt: IsNull(),
+      },
+      select: ["id"],
+    });
+
+    for (const createdUser of createdUsers) {
+      candidateIds.add(createdUser.id);
+    }
+
+    const scopedUsers = await this.userRepository.find({
+      where: Array.from(candidateIds).map((id) => ({ id, deletedAt: IsNull() })),
+      select: ["id", "role", "tenantId", "managerId"],
+    });
+
+    return scopedUsers
+      .filter((candidate) => {
+        if (candidate.id === user.id) {
+          return true;
+        }
+
+        if (candidate.tenantId !== user.tenantId) {
+          return false;
+        }
+
+        if (user.managerId && candidate.managerId && candidate.managerId !== user.managerId) {
+          return false;
+        }
+
+        return [Role.OPERATIONAL, Role.CLIENT].includes(candidate.role);
+      })
+      .map((candidate) => candidate.id);
+  }
+
+  private async assertManagerUserAccess(
+    user: AuthenticatedUser,
+    targetUser: User,
+  ): Promise<void> {
+    if (!user.tenantId || targetUser.tenantId !== user.tenantId) {
+      throw new ForbiddenException(
+        "Usuário fora do tenant do usuário autenticado",
+      );
+    }
+
+    if ([Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER].includes(targetUser.role)) {
+      throw new ForbiddenException(
+        "Manager não pode operar usuários administrativos fora da própria conta",
+      );
+    }
+
+    if (user.managerId && targetUser.managerId && targetUser.managerId !== user.managerId) {
+      throw new ForbiddenException(
+        "Usuário fora da hierarquia direta do manager",
+      );
+    }
+
+    const managerStoreIds = await this.getManagerStoreIds(user);
+    const hasSharedStore = managerStoreIds.length
+      ? (await this.userStoreRepository
+          .createQueryBuilder("userStore")
+          .where("userStore.userId = :userId", { userId: targetUser.id })
+          .andWhere("userStore.storeId IN (:...storeIds)", {
+            storeIds: managerStoreIds,
+          })
+          .getCount()) > 0
+      : false;
+
+    if (hasSharedStore || targetUser.createdByUserId === user.id) {
+      return;
+    }
+
+    throw new ForbiddenException(
+      "Usuário fora da hierarquia direta do manager",
+    );
   }
 }

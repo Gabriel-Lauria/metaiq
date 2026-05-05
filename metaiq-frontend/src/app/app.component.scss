@@ -25,7 +25,7 @@
 }
 
 .app-layout.collapsed .logo span:first-child,
-.app-layout.collapsed .version,
+.app-layout.collapsed .logo-subtitle,
 .app-layout.collapsed .nav-label,
 .app-layout.collapsed .profile-meta {
   display: none;
@@ -89,11 +89,11 @@
   color: #bfdbfe;
 }
 
-.version {
-  margin-left: 8px;
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 11px;
-  font-weight: 700;
+.logo-subtitle {
+  margin: 6px 0 0;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .sidebar-control {
@@ -266,8 +266,18 @@
 }
 
 .user-info {
+  display: grid;
+  justify-items: end;
   color: var(--text-muted);
+}
+
+.user-name {
+  color: var(--text);
   font-weight: 700;
+}
+
+.user-role {
+  font-size: 12px;
 }
 
 .app-main {

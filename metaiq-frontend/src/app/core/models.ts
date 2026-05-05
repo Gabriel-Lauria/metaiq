@@ -263,7 +263,7 @@ export interface CreateMetaCampaignRequest {
 }
 
 export type MetaCampaignExecutionStep = 'campaign' | 'adset' | 'creative' | 'ad' | 'persist';
-export type MetaCampaignExecutionStatus = 'PARTIAL' | 'FAILED' | 'IN_PROGRESS' | 'COMPLETED';
+export type MetaCampaignExecutionStatus = 'PARTIAL' | 'PARTIAL_ROLLBACK' | 'FAILED' | 'CLEANUP_FAILED' | 'IN_PROGRESS' | 'COMPLETED';
 
 export interface MetaCampaignPartialIds {
   campaignId?: string;

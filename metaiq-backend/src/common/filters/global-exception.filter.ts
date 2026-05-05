@@ -10,6 +10,7 @@ import {
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { LoggerService } from '../services/logger.service';
+import { IncidentReporterService } from '../services/incident-reporter.service';
 
 @Injectable()
 @Catch()
@@ -20,6 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   constructor(
     private configService: ConfigService,
     private structuredLogger: LoggerService,
+    private incidentReporter: IncidentReporterService,
   ) {
     this.isProduction = this.configService.get<string>('app.nodeEnv') === 'production';
   }
@@ -66,6 +68,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.structuredLogger.error(`HTTP ${status} Error`, exception, errorMetadata);
     } else {
       this.logger.error(`HTTP ${status} Error: ${message}`, errorMetadata);
+    }
+
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      void this.incidentReporter.report({
+        title: 'Erro crítico de aplicação',
+        severity: status >= 502 ? 'critical' : 'high',
+        source: 'http',
+        summary: `${request.method} ${request.url} retornou ${status}`,
+        details: {
+          requestId: request.requestId,
+          error,
+          message,
+          path: request.url,
+          method: request.method,
+        },
+      });
     }
 
     // Don't expose stack traces in production

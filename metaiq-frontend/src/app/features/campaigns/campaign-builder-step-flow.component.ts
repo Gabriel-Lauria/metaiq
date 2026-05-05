@@ -456,7 +456,6 @@ export class CampaignBuilderStepFlowComponent {
       return;
     }
     // Lógica de submissão será delegada ao componente pai
-    console.log('Criar campanha na Meta');
   }
 
   private scrollToTop(): void {

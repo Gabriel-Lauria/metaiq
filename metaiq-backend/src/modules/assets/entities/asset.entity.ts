@@ -29,8 +29,17 @@ export class Asset {
   @Column({ nullable: true })
   uploadedByUserId: string | null;
 
+  @Column({ nullable: true })
+  adAccountId: string | null;
+
   @Column({ type: 'varchar', length: 16 })
   type: AssetType;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  originalName: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  fileName: string | null;
 
   @Column({ type: 'varchar', length: 120 })
   mimeType: string;
@@ -46,15 +55,6 @@ export class Asset {
 
   @Column({ type: 'varchar', length: 1000 })
   storageUrl: string;
-
-  @Column({ nullable: true })
-  adAccountId: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  originalName: string | null;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  fileName: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   metaImageHash: string | null;

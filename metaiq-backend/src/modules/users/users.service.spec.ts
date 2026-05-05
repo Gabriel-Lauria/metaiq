@@ -63,6 +63,74 @@ describe('UsersService my-company', () => {
     expect(accessScope.validateTenantAccess).toHaveBeenCalledWith(individualUser, 'tenant-1');
   });
 
+  it('marks onboarding as completed for the authenticated user', async () => {
+    const userRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'user-1',
+        email: 'owner@test.com',
+        role: Role.ADMIN,
+        tenantId: 'tenant-1',
+        onboardingCompletedAt: null,
+      }),
+      save: jest.fn(async (entity) => entity),
+    } as unknown as Repository<User>;
+
+    service = new UsersService(
+      userRepository,
+      {} as any,
+      tenantRepository as unknown as Repository<Tenant>,
+      {} as any,
+      accessScope as unknown as AccessScopeService,
+    );
+
+    const updated = await service.updateMyOnboardingForUser(individualUser, {});
+
+    expect(updated.onboardingCompletedAt).toBeInstanceOf(Date);
+    expect((userRepository.save as jest.Mock)).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'user-1',
+    }));
+  });
+
+  it('exposes firstLogin as false when onboarding is already completed', async () => {
+    tenantRepository.findOne.mockResolvedValue({
+      id: 'tenant-1',
+      active: true,
+      accountType: AccountType.INDIVIDUAL,
+      businessName: 'Pet Feliz',
+      businessSegment: 'Pet shop',
+      defaultCity: 'Curitiba',
+      defaultState: 'PR',
+      website: 'https://petfeliz.com.br',
+      instagram: '@petfeliz',
+      whatsapp: '(41) 99999-9999',
+    } as Tenant);
+
+    service = new UsersService(
+      {} as Repository<User>,
+      {} as any,
+      tenantRepository as unknown as Repository<Tenant>,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          storeId: 'store-1',
+        }),
+      } as any,
+      accessScope as unknown as AccessScopeService,
+    );
+
+    const view = await service.toUserResponseView({
+      id: 'user-1',
+      email: 'owner@test.com',
+      name: 'Owner',
+      password: 'secret',
+      role: Role.ADMIN,
+      tenantId: 'tenant-1',
+      onboardingCompletedAt: new Date('2026-04-30T12:00:00.000Z'),
+    } as User);
+
+    expect(view.firstLogin).toBe(false);
+    expect(view.onboardingCompletedAt).toEqual(new Date('2026-04-30T12:00:00.000Z'));
+  });
+
   it('updates only the allowed company fields', async () => {
     const tenant = {
       id: 'tenant-1',

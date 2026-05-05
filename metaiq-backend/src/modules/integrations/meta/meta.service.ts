@@ -21,8 +21,8 @@ import {
   MetaCampaignStoredMetaError,
 } from './meta-campaign-creation.entity';
 import { MetaCampaignOrchestrator } from './meta-campaign.orchestrator';
-import { normalizeCampaignLocation } from './meta-audience-location.util';
-import { isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from './meta-creative.validation';
+import { buildMetaGeoLocations, normalizeCampaignLocation } from './meta-audience-location.util';
+import { buildMetaCreativePayload, isLikelyDirectImageUrl, isValidMetaHttpUrl, isValidMetaHttpsUrl } from './meta-creative.validation';
 import { MetaGraphApiClient, MetaGraphApiRetryContext } from './meta-graph-api.client';
 import { normalizeMetaCtaType } from './meta-cta.constants';
 import {
@@ -504,7 +504,10 @@ export class MetaIntegrationService {
       storeId,
       this.normalizeCreateCampaignDto(dto),
     );
-    const requestPayload = this.buildCampaignCreationPayload(storeId, requester.id, normalizedDto);
+    const integration = await this.getConnectedIntegrationWithToken(storeId);
+    this.assertRequiredMetaScopes(integration, ['ads_management']);
+    const validation = await this.validateCampaignCreationPrerequisites(storeId, requester, normalizedDto, integration);
+    const requestPayload = this.buildCampaignCreationPayload(storeId, requester.id, normalizedDto, validation);
     const payloadHash = this.hashPayload(requestPayload);
     const idempotencyKey = this.resolveIdempotencyKey(payloadHash, normalizedDto);
     const existingExecution = await this.findCampaignCreationByIdempotencyKey(storeId, idempotencyKey);
@@ -513,10 +516,6 @@ export class MetaIntegrationService {
       this.assertSameCampaignCreationPayload(existingExecution, payloadHash);
       return this.resolveExistingCampaignCreation(existingExecution);
     }
-
-    const integration = await this.getConnectedIntegrationWithToken(storeId);
-    this.assertRequiredMetaScopes(integration, ['ads_management']);
-    const validation = await this.validateCampaignCreationPrerequisites(storeId, requester, normalizedDto, integration);
     const execution = await this.createCampaignCreationExecution(
       storeId,
       requester,
@@ -535,6 +534,17 @@ export class MetaIntegrationService {
       tenantId: requester.tenantId ?? null,
       storeId,
       endpoint: '/me',
+    });
+    await this.runPublishPreflightChecks({
+      storeId,
+      executionId: execution.id,
+      requestId,
+      idempotencyKey,
+      accessToken: integration.accessToken as string,
+      integration,
+      dto: normalizedDto,
+      validation,
+      requester,
     });
 
     this.logCampaignCreation('campaign creation started', {
@@ -563,6 +573,9 @@ export class MetaIntegrationService {
         actorId: requester.id,
         tenantId: requester.tenantId ?? null,
         storeId,
+        onImageHashResolved: async (imageHash) => {
+          await this.persistResolvedCreativeSnapshot(execution, normalizedDto, validation, imageHash);
+        },
         onStepCreated: async (step, idsFromStep) => {
           Object.assign(createdIds, idsFromStep);
           await this.markCampaignCreationStep(execution, step, createdIds);
@@ -976,6 +989,156 @@ export class MetaIntegrationService {
     };
   }
 
+  private async runPublishPreflightChecks(input: {
+    storeId: string;
+    executionId: string;
+    requestId?: string;
+    idempotencyKey: string;
+    accessToken: string;
+    integration: StoreIntegration;
+    dto: CreateMetaCampaignDto;
+    validation: ValidatedMetaCampaignContext;
+    requester: AuthenticatedUser;
+  }): Promise<void> {
+    const blockingIssues: string[] = [];
+    this.assertKnownAppModeIsLive(input.integration, blockingIssues);
+
+    if (!isValidMetaHttpsUrl(input.validation.destinationUrl)) {
+      blockingIssues.push('destinationUrl final precisa ser https válido.');
+    }
+
+    if (input.dto.imageAssetId?.trim() && !input.dto.imageHash?.trim()) {
+      blockingIssues.push('imageHash do asset não está disponível para publish.');
+    }
+
+    if (!input.dto.imageHash?.trim() && !input.dto.imageUrl?.trim()) {
+      blockingIssues.push('Nenhuma imagem válida está disponível para publish.');
+    }
+
+    if (input.dto.cta && input.validation.objective === 'REACH' && input.dto.cta === 'SIGN_UP') {
+      blockingIssues.push('CTA SIGN_UP é agressivo demais para o fluxo atual de REACH.');
+    }
+
+    if (input.dto.placements?.includes('messenger') && input.validation.objective !== 'OUTCOME_TRAFFIC') {
+      blockingIssues.push('Placement messenger não é aceito fora do objetivo de tráfego neste fluxo.');
+    }
+
+    await this.assertMetaNodeAccessible(
+      input.validation.pageId,
+      input.accessToken,
+      'page',
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.requester.id,
+        tenantId: input.requester.tenantId ?? null,
+        storeId: input.storeId,
+        endpoint: `/${input.validation.pageId}`,
+      },
+      blockingIssues,
+    );
+
+    await this.assertMetaNodeAccessible(
+      input.validation.adAccountExternalId,
+      input.accessToken,
+      'ad_account',
+      {
+        requestId: input.requestId,
+        executionId: input.executionId,
+        idempotencyKey: input.idempotencyKey,
+        actorId: input.requester.id,
+        tenantId: input.requester.tenantId ?? null,
+        storeId: input.storeId,
+        endpoint: `/${input.validation.adAccountExternalId}`,
+      },
+      blockingIssues,
+    );
+
+    if (input.validation.objective === 'OUTCOME_LEADS' && input.dto.pixelId?.trim()) {
+      await this.assertMetaNodeAccessible(
+        input.dto.pixelId.trim(),
+        input.accessToken,
+        'pixel',
+        {
+          requestId: input.requestId,
+          executionId: input.executionId,
+          idempotencyKey: input.idempotencyKey,
+          actorId: input.requester.id,
+          tenantId: input.requester.tenantId ?? null,
+          storeId: input.storeId,
+          endpoint: `/${input.dto.pixelId.trim()}`,
+        },
+        blockingIssues,
+      );
+    }
+
+    if (blockingIssues.length) {
+      throw new BadRequestException({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        executionId: input.executionId,
+        executionStatus: MetaCampaignCreationStatus.FAILED,
+        blockingIssues,
+      });
+    }
+  }
+
+  private assertKnownAppModeIsLive(
+    integration: StoreIntegration,
+    blockingIssues: string[],
+  ): void {
+    const metadata = integration.metadata || {};
+    const rawMode = this.getMetadataString(metadata, [
+      'appMode',
+      'app_mode',
+      'metaAppMode',
+      'meta_app_mode',
+      'appStatus',
+      'app_status',
+    ]);
+    const explicitDevelopmentFlag = [
+      metadata['appLiveMode'],
+      metadata['isLiveMode'],
+      metadata['liveMode'],
+      metadata['appInDevelopment'],
+      metadata['developmentMode'],
+    ].find((value) => typeof value === 'boolean');
+
+    if (typeof explicitDevelopmentFlag === 'boolean' && explicitDevelopmentFlag === false) {
+      blockingIssues.push('Meta App ainda está em development mode. Coloque o app em live mode antes de publicar.');
+      return;
+    }
+
+    if (typeof explicitDevelopmentFlag === 'boolean' && explicitDevelopmentFlag === true) {
+      return;
+    }
+
+    if (rawMode && ['development', 'dev', 'in_development'].includes(rawMode.trim().toLowerCase())) {
+      blockingIssues.push('Meta App ainda está em development mode. Coloque o app em live mode antes de publicar.');
+    }
+  }
+
+  private async assertMetaNodeAccessible(
+    nodeId: string,
+    accessToken: string,
+    label: 'page' | 'ad_account' | 'pixel',
+    context: MetaGraphApiRetryContext,
+    blockingIssues: string[],
+  ): Promise<void> {
+    try {
+      await this.graphApi.get<{ id?: string }>(
+        nodeId,
+        accessToken,
+        { fields: 'id' },
+        15000,
+        context,
+      );
+    } catch (error) {
+      blockingIssues.push(`Preflight falhou ao validar ${label} ${nodeId}.`);
+      this.logger.warn(`Meta preflight failed for ${label} ${nodeId}: ${(error as Error).message}`);
+    }
+  }
+
   private resolveDestinationUrl(dto: CreateMetaCampaignDto, integration: StoreIntegration): string {
     const baseUrl = (
       dto.destinationUrl?.trim()
@@ -1256,12 +1419,55 @@ export class MetaIntegrationService {
     storeId: string,
     requesterId: string,
     dto: CreateMetaCampaignDto,
+    validation: ValidatedMetaCampaignContext,
   ): Record<string, unknown> {
+    const normalizedPlacements = dto.placements?.map((item) => item.trim()).filter(Boolean) || [];
+    const specialAdCategories = this.normalizeSpecialAdCategories(dto.specialAdCategories);
+    const targeting = this.buildPersistedTargetingSnapshot(dto);
+    const promotedObject = this.buildPersistedPromotedObjectSnapshot(dto, validation.objective);
+    const campaignPayload = {
+      name: dto.name.trim(),
+      objective: validation.objective,
+      status: 'PAUSED',
+      special_ad_categories: specialAdCategories,
+      is_adset_budget_sharing_enabled: false,
+    };
+    const adSetPayload = {
+      name: `${dto.name.trim()} - AdSet`,
+      campaign_id: '__PENDING_META_CAMPAIGN_ID__',
+      daily_budget: Math.round(Number(dto.dailyBudget) * 100),
+      billing_event: validation.objective === 'REACH' ? 'IMPRESSIONS' : 'IMPRESSIONS',
+      optimization_goal: this.resolvePersistedOptimizationGoal(validation.objective),
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting,
+      promoted_object: promotedObject,
+      start_time: dto.startTime,
+      end_time: dto.endTime?.trim() || null,
+      status: 'PAUSED',
+    };
+    const creativePayload = buildMetaCreativePayload({
+      campaignName: dto.name,
+      pageId: validation.pageId,
+      destinationUrl: validation.destinationUrl,
+      message: dto.message,
+      headline: dto.headline,
+      description: dto.description,
+      imageUrl: dto.imageUrl,
+      imageHash: dto.imageHash,
+      cta: dto.cta,
+    });
+    const adPayload = {
+      name: `${dto.name.trim()} - Ad`,
+      adset_id: '__PENDING_META_ADSET_ID__',
+      creative: { creative_id: '__PENDING_META_CREATIVE_ID__' },
+      status: 'PAUSED',
+    };
+
     return {
       storeId,
       requesterId,
       name: dto.name.trim(),
-      objective: dto.objective.trim().toUpperCase(),
+      objective: validation.objective,
       dailyBudget: Number(dto.dailyBudget),
       startTime: dto.startTime,
       endTime: dto.endTime?.trim() || null,
@@ -1275,26 +1481,150 @@ export class MetaIntegrationService {
       assetId: dto.assetId?.trim() || null,
       imageHash: dto.imageHash?.trim() || null,
       imageUrl: dto.imageUrl?.trim() || null,
+      pageId: validation.pageId,
       state: dto.state?.trim().toUpperCase() || null,
       stateName: dto.stateName?.trim() || null,
       region: dto.region?.trim() || null,
       city: dto.city?.trim() || null,
       cityId: dto.cityId ? Number(dto.cityId) : null,
-      destinationUrl: dto.destinationUrl?.trim() || null,
+      destinationUrl: validation.destinationUrl,
       headline: dto.headline?.trim() || null,
       description: dto.description?.trim() || null,
       cta: dto.cta ? normalizeMetaCtaType(dto.cta) : null,
       pixelId: dto.pixelId?.trim() || null,
       conversionEvent: dto.conversionEvent?.trim() || null,
-      placements: dto.placements?.map((item) => item.trim()).filter(Boolean) || [],
-      specialAdCategories: this.normalizeSpecialAdCategories(dto.specialAdCategories),
+      placements: normalizedPlacements,
+      specialAdCategories,
       utmSource: dto.utmSource?.trim() || null,
       utmMedium: dto.utmMedium?.trim() || null,
       utmCampaign: dto.utmCampaign?.trim() || null,
       utmContent: dto.utmContent?.trim() || null,
       utmTerm: dto.utmTerm?.trim() || null,
+      adAccountExternalId: validation.adAccountExternalId,
+      promotedObject,
+      targeting,
+      metaPayloadSnapshot: {
+        campaign: campaignPayload,
+        adSet: adSetPayload,
+        creative: creativePayload,
+        ad: adPayload,
+      },
       initialStatus: 'PAUSED',
     };
+  }
+
+  private buildPersistedTargetingSnapshot(dto: CreateMetaCampaignDto): Record<string, unknown> {
+    const location = normalizeCampaignLocation(dto);
+    const geoLocations = buildMetaGeoLocations(location);
+    const targeting: Record<string, unknown> = {
+      geo_locations: geoLocations,
+      targeting_automation: {
+        advantage_audience: 0,
+      },
+    };
+
+    if (Number.isFinite(dto.ageMin) && dto.ageMin >= 13) {
+      targeting['age_min'] = Math.round(dto.ageMin);
+    }
+
+    if (Number.isFinite(dto.ageMax) && dto.ageMax >= dto.ageMin) {
+      targeting['age_max'] = Math.round(dto.ageMax);
+    }
+
+    if (dto.gender === 'MALE') {
+      targeting['genders'] = [1];
+    } else if (dto.gender === 'FEMALE') {
+      targeting['genders'] = [2];
+    }
+
+    return {
+      ...targeting,
+      ...this.buildPersistedPlacementSnapshot(dto.placements || []),
+    };
+  }
+
+  private buildPersistedPlacementSnapshot(placements: string[]): Record<string, unknown> {
+    const normalized = Array.from(new Set(placements.map((item) => item.trim().toLowerCase()).filter(Boolean)));
+    if (!normalized.length) {
+      return {};
+    }
+
+    const publisherPlatforms = new Set<string>();
+    const facebookPositions = new Set<string>();
+    const instagramPositions = new Set<string>();
+    const messengerPositions = new Set<string>();
+    const audienceNetworkPositions = new Set<string>();
+
+    for (const placement of normalized) {
+      switch (placement) {
+        case 'feed':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('feed');
+          instagramPositions.add('stream');
+          break;
+        case 'stories':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('story');
+          instagramPositions.add('story');
+          break;
+        case 'reels':
+          publisherPlatforms.add('facebook');
+          publisherPlatforms.add('instagram');
+          facebookPositions.add('facebook_reels');
+          instagramPositions.add('reels');
+          break;
+        case 'explore':
+          publisherPlatforms.add('instagram');
+          instagramPositions.add('explore');
+          break;
+        case 'messenger':
+          publisherPlatforms.add('messenger');
+          messengerPositions.add('messenger_home');
+          break;
+        case 'audience_network':
+          publisherPlatforms.add('audience_network');
+          audienceNetworkPositions.add('classic');
+          break;
+        default:
+          break;
+      }
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (publisherPlatforms.size) payload['publisher_platforms'] = Array.from(publisherPlatforms);
+    if (facebookPositions.size) payload['facebook_positions'] = Array.from(facebookPositions);
+    if (instagramPositions.size) payload['instagram_positions'] = Array.from(instagramPositions);
+    if (messengerPositions.size) payload['messenger_positions'] = Array.from(messengerPositions);
+    if (audienceNetworkPositions.size) payload['audience_network_positions'] = Array.from(audienceNetworkPositions);
+    return payload;
+  }
+
+  private buildPersistedPromotedObjectSnapshot(
+    dto: CreateMetaCampaignDto,
+    objective: string,
+  ): Record<string, string> | null {
+    if (objective !== 'OUTCOME_LEADS') {
+      return null;
+    }
+
+    return {
+      pixel_id: dto.pixelId?.trim() || '',
+      custom_event_type: this.normalizeConversionEvent(dto.conversionEvent),
+    };
+  }
+
+  private resolvePersistedOptimizationGoal(objective: string): string {
+    if (objective === 'OUTCOME_LEADS') {
+      return 'OFFSITE_CONVERSIONS';
+    }
+
+    if (objective === 'REACH') {
+      return 'REACH';
+    }
+
+    return 'LINK_CLICKS';
   }
 
   private normalizeCreateCampaignDto(dto: CreateMetaCampaignDto): CreateMetaCampaignDto {
@@ -1655,6 +1985,37 @@ export class MetaIntegrationService {
     await this.campaignCreationRepository.save(execution);
   }
 
+  private async persistResolvedCreativeSnapshot(
+    execution: MetaCampaignCreation,
+    dto: CreateMetaCampaignDto,
+    validation: ValidatedMetaCampaignContext,
+    imageHash: string,
+  ): Promise<void> {
+    if (!imageHash?.trim()) {
+      return;
+    }
+
+    const requestPayload = this.asMutableRecord(execution.requestPayload);
+    requestPayload.imageHash = imageHash.trim();
+
+    const snapshot = this.asMutableRecord(requestPayload.metaPayloadSnapshot);
+    snapshot.creative = buildMetaCreativePayload({
+      campaignName: dto.name,
+      pageId: validation.pageId,
+      destinationUrl: validation.destinationUrl,
+      message: dto.message,
+      headline: dto.headline,
+      description: dto.description,
+      imageUrl: dto.imageUrl,
+      imageHash: imageHash.trim(),
+      cta: dto.cta,
+    });
+    requestPayload.metaPayloadSnapshot = snapshot;
+    execution.requestPayload = requestPayload;
+
+    await this.campaignCreationRepository.save(execution);
+  }
+
   private async failCampaignCreationExecution(
     execution: MetaCampaignCreation,
     step: MetaCampaignCreationStep,
@@ -2012,6 +2373,36 @@ export class MetaIntegrationService {
     }
 
     return normalized || 'OUTCOME_TRAFFIC';
+  }
+
+  private asMutableRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    return { ...(value as Record<string, unknown>) };
+  }
+
+  private normalizeConversionEvent(value?: string): string {
+    const normalized = (value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+    if (!normalized) {
+      return 'LEAD';
+    }
+
+    const aliases: Record<string, string> = {
+      PURCHASE: 'PURCHASE',
+      LEAD: 'LEAD',
+      COMPLETE_REGISTRATION: 'COMPLETE_REGISTRATION',
+      CONTACT: 'CONTACT',
+      SUBMIT_APPLICATION: 'SUBMIT_APPLICATION',
+      START_TRIAL: 'START_TRIAL',
+      VIEW_CONTENT: 'VIEW_CONTENT',
+      ADD_TO_CART: 'ADD_TO_CART',
+      INITIATE_CHECKOUT: 'INITIATE_CHECKOUT',
+      SCHEDULE: 'SCHEDULE',
+    };
+
+    return aliases[normalized] || 'LEAD';
   }
 
   private normalizeSpecialAdCategories(values?: string[]): string[] | undefined {

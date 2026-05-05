@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SelectQueryBuilder } from 'typeorm';
 import { Role } from '../enums';
 import { AuthenticatedUser } from '../interfaces';
@@ -46,6 +42,7 @@ describe('AccessScopeService', () => {
     const insightRepository = overrides.insightRepository ?? { findOne: jest.fn() };
     const storeRepository = {
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       manager: {
         getRepository: jest.fn((entity) => {
           if (entity?.name === 'Campaign') return campaignRepository;
@@ -58,11 +55,12 @@ describe('AccessScopeService', () => {
     };
     const userStoreRepository = {
       findOne: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       ...(overrides.userStoreRepository ?? {}),
     };
     const userRepository = {
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       ...(overrides.userRepository ?? {}),
     };
 
@@ -83,52 +81,73 @@ describe('AccessScopeService', () => {
   }
 
   it('filters manager campaigns by tenant-owned stores', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {
+      find: jest.fn().mockResolvedValue([
+        { storeId: 'store-1', store: { active: true, deletedAt: null } },
+      ]),
+    } as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyCampaignScope(query, 'campaign', user);
 
     expect(query.innerJoin).toHaveBeenCalledWith('campaign.store', 'campaign_scopeStore');
     const sql = getWhereSql(query);
-    expect(sql).toContain('campaign_scopeStore.tenantId = :scopeTenantId');
-    expect(sql).toContain('campaign_scopeStore.deletedAt IS NULL');
-    expect(sql).not.toContain('storeId IS NULL');
-    expect(sql).not.toContain('userId = :scopeUserId');
+    expect(sql).toContain('campaign.storeId IN (:...scopeStoreIds)');
   });
 
   it('filters manager ad accounts by tenant-owned stores', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
+    const service = new AccessScopeService({} as any, {
+      find: jest.fn().mockResolvedValue([
+        { storeId: 'store-1', store: { active: true, deletedAt: null } },
+      ]),
+    } as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyAdAccountScope(query, 'adAccount', user);
 
     expect(query.innerJoin).toHaveBeenCalledWith('adAccount.store', 'adAccount_scopeStore');
     const sql = getWhereSql(query);
-    expect(sql).toContain('adAccount_scopeStore.tenantId = :scopeTenantId');
-    expect(sql).toContain('adAccount_scopeStore.deletedAt IS NULL');
-    expect(sql).not.toContain('storeId IS NULL');
-    expect(sql).not.toContain('userId = :scopeUserId');
+    expect(sql).toContain('adAccount.storeId IN (:...scopeStoreIds)');
   });
 
-  it('filters manager stores by tenant', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
+  it('filters manager stores by explicit store links', async () => {
+    const service = new AccessScopeService({} as any, {
+      find: jest.fn().mockResolvedValue([
+        { storeId: 'store-1', store: { active: true, deletedAt: null } },
+      ]),
+    } as any, {} as any, {} as any);
     const query = createQuery();
 
     await service.applyStoreScope(query, 'store', user);
 
     const sql = getWhereSql(query);
-    expect(sql).toContain('store.tenantId = :scopeTenantId');
+    expect(sql).toContain('store.id IN (:...scopeStoreIds)');
     expect(sql).toContain('store.deletedAt IS NULL');
   });
 
-  it('filters manager users by tenant', async () => {
-    const service = new AccessScopeService({} as any, {} as any, {} as any, {} as any);
+  it('filters manager users by direct hierarchy instead of tenant-wide scope', async () => {
+    const service = new AccessScopeService({} as any, {
+      find: jest.fn().mockResolvedValue([
+        { storeId: 'store-1', store: { active: true, deletedAt: null }, userId: 'client-1' },
+      ]),
+    } as any, {
+      find: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'client-1',
+            role: Role.CLIENT,
+            tenantId: 'tenant-1',
+            managerId: 'tenant-1',
+          },
+        ]),
+    } as any, {} as any);
     const query = createQuery();
 
     await service.applyUserScope(query, 'user', user);
 
     const sql = getWhereSql(query);
-    expect(sql).toContain('user.tenantId = :scopeTenantId');
+    expect(sql).toContain('user.id IN (:...scopeUserIds)');
     expect(sql).toContain('user.deletedAt IS NULL');
   });
 
@@ -149,8 +168,13 @@ describe('AccessScopeService', () => {
     expect(sql).not.toContain('userId = :scopeUserId');
   });
 
-  it('allows manager access to a campaign based on tenant store ownership, not createdByUserId', async () => {
+  it('allows manager access to a campaign only when the store is in the manager scope', async () => {
     const { service, campaignRepository } = createServiceWithRepositories({
+      userStoreRepository: {
+        find: jest.fn().mockResolvedValue([
+          { storeId: 'store-1', store: { active: true, deletedAt: null } },
+        ]),
+      },
       campaignRepository: {
         findOne: jest.fn().mockResolvedValue({
           id: 'campaign-1',
@@ -175,6 +199,29 @@ describe('AccessScopeService', () => {
       createdByUserId: 'another-user',
     });
     expect(campaignRepository.findOne).toHaveBeenCalled();
+  });
+
+  it('forbids manager access to a sibling store even inside the same tenant without explicit link', async () => {
+    const { service } = createServiceWithRepositories({
+      storeRepository: {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'store-2',
+          tenantId: 'tenant-1',
+          active: true,
+          deletedAt: null,
+        }),
+      },
+      userStoreRepository: {
+        find: jest.fn().mockResolvedValue([
+          { storeId: 'store-1', store: { active: true, deletedAt: null } },
+        ]),
+        findOne: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    await expect(service.validateStoreAccess(user, 'store-2')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('forbids manager access to a store outside the tenant when the store exists', async () => {
@@ -257,7 +304,7 @@ describe('AccessScopeService', () => {
 
     await expect(
       service.validateAdAccountInStoreAccess(user, 'store-1', 'ad-account-2'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('rejects a campaign whose ad account does not match the requested hierarchy', async () => {
@@ -311,7 +358,7 @@ describe('AccessScopeService', () => {
         'ad-account-1',
         'campaign-1',
       ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('keeps platform admin with unrestricted access to any user in the system', async () => {
@@ -342,6 +389,29 @@ describe('AccessScopeService', () => {
 
     await expect(service.validateCampaignAccess(user, 'missing-campaign')).rejects.toBeInstanceOf(
       NotFoundException,
+    );
+  });
+
+  it('forbids manager access to peer manager users in the same tenant', async () => {
+    const { service } = createServiceWithRepositories({
+      userStoreRepository: {
+        find: jest.fn().mockResolvedValue([
+          { storeId: 'store-1', store: { active: true, deletedAt: null } },
+        ]),
+      },
+      userRepository: {
+        findOne: jest.fn().mockResolvedValue({
+          id: 'manager-peer',
+          role: Role.MANAGER,
+          tenantId: 'tenant-1',
+          managerId: 'tenant-1',
+          deletedAt: null,
+        }),
+      },
+    });
+
+    await expect(service.validateUserAccess(user, 'manager-peer')).rejects.toBeInstanceOf(
+      ForbiddenException,
     );
   });
 });

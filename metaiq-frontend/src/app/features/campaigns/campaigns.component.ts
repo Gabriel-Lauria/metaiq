@@ -408,8 +408,7 @@ export class CampaignsComponent implements OnInit {
   }
 
   creationStatusLabel(notice: CampaignCreationNotice): string {
-    const status = notice.response.initialStatus || notice.response.executionStatus;
-    return status === 'ACTIVE' ? 'ativa' : status === 'COMPLETED' ? 'concluída' : 'pausada';
+    return 'pausada';
   }
 
   setFilter(filterValue: 'ALL' | 'ACTIVE' | 'PAUSED'): void {
@@ -645,8 +644,8 @@ export class CampaignsComponent implements OnInit {
 
   statusActionImpact(action: CampaignStatusAction): string {
     return action.nextStatus === 'ACTIVE'
-      ? 'A campanha voltará para o status ativo no MetaIQ e poderá ser considerada em fluxos operacionais.'
-      : 'A campanha deixará de ser tratada como ativa no MetaIQ até uma nova ativação.';
+      ? 'A campanha voltará para o status ativo na Nexora e poderá ser considerada em fluxos operacionais.'
+      : 'A campanha deixará de ser tratada como ativa na Nexora até uma nova ativação.';
   }
 
   fmt(value: number): string {

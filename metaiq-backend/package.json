@@ -1,7 +1,7 @@
 {
   "name": "metaiq-backend",
   "version": "0.0.1",
-  "description": "MetaIQ Backend API",
+  "description": "Nexora Backend API",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
@@ -20,6 +20,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "test:e2e:security": "jest --config ./test/jest-e2e.json --runInBand --runTestsByPath ./test/campaigns.e2e-spec.ts",
     "seed": "ts-node -r tsconfig-paths/register seed.ts",
     "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts",
     "migration:run": "npm run typeorm -- migration:run",

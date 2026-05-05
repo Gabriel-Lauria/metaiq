@@ -8,7 +8,7 @@ export const environment = {
   enableDemoData: false,
   enableLogging: false,
   enableAnalytics: true,
-  enablePublicRegister: true,
+  enablePublicRegister: false,
   sentryDsn: '',
   enableServiceWorker: true,
   cacheExpiration: 3600000, // 1 hour

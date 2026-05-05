@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -88,7 +88,7 @@ describe('AssetsService', () => {
     rmSync(uploadDir, { recursive: true, force: true });
   });
 
-  it('faz upload valido de imagem e retorna dimensoes e URL publica', async () => {
+  it('faz upload valido de imagem e retorna dimensoes e URL assinada', async () => {
     const result = await service.uploadForUser(user, 'store-1', {
       originalname: 'criativo.png',
       mimetype: 'image/png',
@@ -97,8 +97,7 @@ describe('AssetsService', () => {
     });
 
     expect(result.id).toBe('asset-1');
-    expect(result.storageUrl).toContain('http://localhost:3004/api/assets/asset-1/content');
-    expect(result.storageUrl).toContain('signature=');
+    expect(result.storageUrl).toMatch(/^http:\/\/localhost:3004\/api\/assets\/asset-1\/content\?expires=\d+&signature=[a-f0-9]+$/);
     expect(result.width).toBe(1200);
     expect(result.height).toBe(628);
     expect(result.status).toBe('VALIDATED');
@@ -158,6 +157,20 @@ describe('AssetsService', () => {
       type: 'image',
       status: 'VALIDATED',
     }));
+  });
+
+  it('bloqueia acesso por URL assinada expirada', async () => {
+    repository.findOne.mockResolvedValue({
+      id: 'asset-1',
+      storeId: 'store-1',
+      mimeType: 'image/png',
+      size: 1024,
+      status: 'VALIDATED',
+    });
+
+    await expect(
+      service.getAssetFileStreamFromSignedUrl('asset-1', String(Date.now() - 1000), 'assinatura-invalida'),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('rejeita formato invalido com mensagem especifica', async () => {

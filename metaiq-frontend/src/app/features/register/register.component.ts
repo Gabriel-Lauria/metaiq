@@ -49,8 +49,7 @@ export class RegisterComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.authService.isAuthenticated()) {
-      const user = this.authService.getCurrentUser();
-      queueMicrotask(() => this.router.navigate([user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard']));
+      queueMicrotask(() => this.router.navigateByUrl(this.authService.resolveAuthenticatedRoute()));
       return;
     }
 
@@ -141,16 +140,13 @@ export class RegisterComponent implements OnInit {
       .pipe(
         finalize(() => {
           this.isSubmitting = false;
-          console.log('REGISTER FINALIZE - loading desligado');
         }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
         next: () => {
           this.ui.showSuccess('Conta criada', 'Sua conta já está pronta para estruturar campanhas.');
-          this.router.navigate(['/campaigns'], {
-            queryParams: { action: 'create', createMode: 'manual' },
-          });
+          this.router.navigateByUrl(this.authService.resolveAuthenticatedRoute());
         },
         error: (err: HttpErrorResponse) => {
           console.error('REGISTER ERROR:', err);

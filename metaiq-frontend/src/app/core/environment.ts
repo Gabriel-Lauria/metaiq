@@ -4,7 +4,7 @@ export const environment = {
   enableDemoData: false,
   enableLogging: true,
   enableAnalytics: false,
-  enablePublicRegister: true,
+  enablePublicRegister: false,
   sentryDsn: '',
   enableServiceWorker: false,
   cacheExpiration: 0,

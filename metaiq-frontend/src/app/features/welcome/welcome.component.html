@@ -1,0 +1,105 @@
+<section class="welcome-shell">
+  <div class="welcome-hero">
+    <div class="hero-copy">
+      <p class="eyebrow">Bem-vindo à Nexora</p>
+      <h1>Sua central de operação de campanhas e performance Meta.</h1>
+      <p class="hero-summary">
+        {{ onboardingSummary() }}
+      </p>
+
+      <div class="hero-status">
+        <div class="status-card">
+          <span>Progresso do ambiente</span>
+          <strong>{{ progressPercent() }}%</strong>
+          <p>{{ completedSteps() }} de {{ steps().length }} etapas concluídas.</p>
+        </div>
+        <div class="status-card">
+          <span>Escopo atual</span>
+          <strong>{{ currentStore()?.name || (isIndividual() ? 'Minha operação' : 'Selecione uma store') }}</strong>
+          <p>{{ isIndividual() ? 'Conta individual com operação centralizada.' : 'Store usada para integrar, criar e analisar campanhas.' }}</p>
+        </div>
+        <div class="status-card">
+          <span>Próxima prioridade</span>
+          <strong>{{ nextPriority()?.title || 'Dashboard executivo' }}</strong>
+          <p>{{ nextPriority()?.description || 'Seu onboarding já está completo. Siga para a visão executiva da operação.' }}</p>
+        </div>
+      </div>
+
+      <div class="hero-actions">
+        <button class="btn btn-primary" type="button" (click)="openIntegrations()" *ngIf="canManageIntegrations()">Conectar Meta</button>
+        <button class="btn btn-secondary" type="button" (click)="openCampaignBuilder()">Criar primeira campanha</button>
+        <button class="btn btn-secondary" type="button" (click)="configureAccount()">Configurar conta</button>
+        <button class="btn btn-ghost" type="button" (click)="completeOnboardingAndOpenDashboard()" [disabled]="saving()">
+          {{ saving() ? 'Abrindo dashboard...' : 'Ver dashboard' }}
+        </button>
+      </div>
+    </div>
+
+    <aside class="hero-panel">
+      <span class="panel-label">Pronto para operação real</span>
+      <h2>Entre com contexto antes de publicar.</h2>
+      <p>A Nexora organiza a base da conta, assets, escopo e integração antes do builder, para que publicar pareça etapa final e não tentativa.</p>
+      <ul class="panel-points">
+        <li>Centralização por store, equipe e conta Meta</li>
+        <li>Ativos e integrações preparados antes do creative</li>
+        <li>Dashboard executivo como entrada padrão da operação</li>
+      </ul>
+    </aside>
+  </div>
+
+  <div class="welcome-feedback" *ngIf="error()">{{ error() }}</div>
+
+  <section class="steps-card" *ngIf="!loading(); else loadingState">
+    <div class="steps-header">
+      <div>
+        <p class="eyebrow">Primeiros passos</p>
+        <h3>Checklist de ativação</h3>
+        <p>Cada etapa abaixo representa um pedaço real do preparo operacional antes da criação de campanha.</p>
+      </div>
+      <div class="steps-progress">
+        <strong>{{ progressPercent() }}%</strong>
+        <span>ambiente preparado</span>
+      </div>
+    </div>
+
+    <div class="steps-list">
+      <article class="step-item" *ngFor="let step of steps(); trackBy: trackByStep">
+        <div class="step-main">
+          <span class="step-marker" [class.is-done]="step.done">{{ step.done ? '✓' : '•' }}</span>
+          <div class="step-copy">
+            <div class="step-title-row">
+              <strong>{{ step.title }}</strong>
+              <app-ui-badge [label]="stepStatus(step.done)" [tone]="stepTone(step.done)" />
+            </div>
+            <p>{{ step.description }}</p>
+          </div>
+        </div>
+        <button class="btn btn-inline" type="button" (click)="runStep(step)">{{ step.actionLabel }}</button>
+      </article>
+    </div>
+  </section>
+
+  <section class="confidence-grid">
+    <article class="confidence-card">
+      <span>Integração</span>
+      <strong>{{ integration()?.status === 'CONNECTED' ? 'Meta conectada' : 'Conexão pendente' }}</strong>
+      <p>{{ integration()?.pageName || 'Defina a página principal e prepare a conta certa para publicar sem ruído.' }}</p>
+    </article>
+    <article class="confidence-card">
+      <span>Assets</span>
+      <strong>{{ assets().length }} asset{{ assets().length === 1 ? '' : 's' }} pronto{{ assets().length === 1 ? '' : 's' }}</strong>
+      <p>{{ assets().length ? 'Suas imagens já estão disponíveis para reutilização e publicação mais segura.' : 'Envie suas primeiras imagens antes de abrir o fluxo final de publicação.' }}</p>
+    </article>
+    <article class="confidence-card">
+      <span>Operação</span>
+      <strong>{{ campaignCount() }} campanha{{ campaignCount() === 1 ? '' : 's' }} no escopo</strong>
+      <p>{{ campaignCount() ? 'O histórico já ajuda o dashboard a priorizar o que merece atenção agora.' : 'Depois da primeira campanha, o dashboard passa a refletir alertas, performance e ritmo da operação.' }}</p>
+    </article>
+  </section>
+
+  <ng-template #loadingState>
+    <section class="steps-card is-loading">
+      <p>Carregando status do ambiente...</p>
+    </section>
+  </ng-template>
+</section>

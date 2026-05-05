@@ -22,7 +22,7 @@ async function bootstrap() {
         defaultSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'"],
-        imgSrc: ["'self'", "data:", "https:"]
+        imgSrc: ["'self'", "data:", "https:", "blob:"]
       },
     },
     hsts: {

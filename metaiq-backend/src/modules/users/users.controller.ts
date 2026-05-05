@@ -9,13 +9,16 @@ import {
   UseGuards,
   Request,
 } from '@nestjs/common';
+import { CheckOwnership } from '../../common/decorators/check-ownership.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { OwnershipGuard } from '../../common/guards/ownership.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import {
   UsersService,
   UpdateMeDto,
+  UpdateMyOnboardingDto,
   AdminUpdateUserDto,
   CreateUserDto,
   ResetUserPasswordDto,
@@ -57,6 +60,18 @@ export class UsersController {
     return userWithoutPassword;
   }
 
+  @Patch('me/onboarding')
+  async updateMyOnboarding(
+    @Request() req: any,
+    @Body() dto: UpdateMyOnboardingDto,
+  ): Promise<UserResponseView> {
+    const updated = await this.usersService.updateMyOnboardingForUser(req.user, dto);
+    this.audit(req, 'user.onboarding_update', updated.id, 'user', {
+      completed: dto.completed ?? true,
+    });
+    return this.usersService.toUserResponseView(updated);
+  }
+
   /**
    * DELETE /users/me
    * Desativa a conta do usuário
@@ -73,6 +88,8 @@ export class UsersController {
    * Busca usuário por ID
    */
   @Get(':id')
+  @CheckOwnership('user', 'id')
+  @UseGuards(OwnershipGuard)
   async findOne(
     @Param('id') id: string,
     @Request() req: any,
@@ -84,6 +101,8 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('user', 'id')
+  @UseGuards(OwnershipGuard)
   async updateUser(
     @Param('id') id: string,
     @Request() req: any,
@@ -97,6 +116,8 @@ export class UsersController {
 
   @Patch(':id/password')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('user', 'id')
+  @UseGuards(OwnershipGuard)
   async resetUserPassword(
     @Param('id') id: string,
     @Request() req: any,
@@ -133,6 +154,8 @@ export class UsersController {
 
   @Delete(':id')
   @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER)
+  @CheckOwnership('user', 'id')
+  @UseGuards(OwnershipGuard)
   async deleteUser(
     @Param('id') id: string,
     @Request() req: any,

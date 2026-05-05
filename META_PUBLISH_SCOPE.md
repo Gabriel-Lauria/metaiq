@@ -2,7 +2,7 @@
 
 ## Escopo oficial do Meta Publisher
 
-O publisher Meta atual da MetaIQ suporta publicacao automatica apenas para campanhas de website.
+O publisher Meta atual da Nexora suporta publicacao automatica apenas para campanhas de website.
 
 ## Suportado
 

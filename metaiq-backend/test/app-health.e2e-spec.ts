@@ -9,11 +9,6 @@ describe("Application health E2E", () => {
 
   beforeAll(async () => {
     process.env.NODE_ENV = "test";
-    process.env.DB_TYPE = "sqlite";
-    process.env.DATABASE_TYPE = "sqlite";
-    process.env.SQLITE_PATH = ":memory:";
-    process.env.TYPEORM_SYNCHRONIZE = "true";
-    process.env.TYPEORM_MIGRATIONS_RUN = "false";
     process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
     process.env.JWT_REFRESH_SECRET =
       process.env.JWT_REFRESH_SECRET || "test-refresh-secret";
@@ -53,10 +48,14 @@ describe("Application health E2E", () => {
       .set("x-request-id", "health-test-request")
       .expect(200);
 
-    expect(response.body).toEqual({ status: "ok" });
+    expect(response.body.status).toBe("ok");
+    expect(response.body.checks.database.status).toBe("unknown");
+    expect(response.body.checks.crypto.status).toBe("ok");
+    expect(response.body.checks.meta.status).toBe("ok");
     expect(response.headers["x-request-id"]).toBe("health-test-request");
     expect(JSON.stringify(response.body)).not.toContain("test-jwt-secret");
-    expect(JSON.stringify(response.body)).not.toContain("sqlite");
+    expect(JSON.stringify(response.body)).not.toContain("test-only-jwt-secret");
+    expect(JSON.stringify(response.body)).not.toContain("test-only-meta-secret");
     expect(JSON.stringify(response.body)).not.toContain("test");
   });
 
@@ -65,7 +64,9 @@ describe("Application health E2E", () => {
       .get("/api/ready")
       .expect(200);
 
-    expect(response.body).toEqual({ status: "ready" });
+    expect(response.body.status).toBe("degraded");
+    expect(response.body.checks.database.status).toBe("ok");
+    expect(response.body.checks.metricsSync.status).toBe("degraded");
   });
 
   it("returns liveness without checking dependencies", async () => {
@@ -82,10 +83,10 @@ describe("Application health E2E", () => {
       .expect(200);
 
     expect(response.body).toEqual({
-      name: "MetaIQ Backend API",
+      name: "Nexora Backend API",
       status: "ok",
     });
-    expect(JSON.stringify(response.body)).not.toContain("sqlite");
+    expect(JSON.stringify(response.body)).not.toContain("postgresql://");
     expect(JSON.stringify(response.body)).not.toContain("endpoint");
   });
 });

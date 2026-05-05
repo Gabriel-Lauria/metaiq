@@ -13,9 +13,10 @@ describe('RegisterComponent', () => {
   let router: Router;
 
   beforeEach(async () => {
-    authService = jasmine.createSpyObj<AuthService>('AuthService', ['register', 'isAuthenticated', 'getCurrentUser']);
+    authService = jasmine.createSpyObj<AuthService>('AuthService', ['register', 'isAuthenticated', 'getCurrentUser', 'resolveAuthenticatedRoute']);
     authService.isAuthenticated.and.returnValue(false);
     authService.getCurrentUser.and.returnValue(null);
+    authService.resolveAuthenticatedRoute.and.returnValue('/welcome');
     authService.register.and.returnValue(of({
       accessToken: 'token',
       user: {
@@ -51,6 +52,7 @@ describe('RegisterComponent', () => {
 
     router = TestBed.inject(Router);
     spyOn(router, 'navigate');
+    spyOn(router, 'navigateByUrl');
     fixture = TestBed.createComponent(RegisterComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
@@ -77,7 +79,7 @@ describe('RegisterComponent', () => {
     expect(component.errorMessage).toContain('Senha e confirmação');
   });
 
-  it('envia cadastro com accountType INDIVIDUAL e redireciona para campanhas', () => {
+  it('envia cadastro com accountType INDIVIDUAL e redireciona para o welcome', () => {
     component.form.patchValue({
       name: 'Beta',
       email: 'beta@empresa.com',
@@ -100,8 +102,6 @@ describe('RegisterComponent', () => {
       defaultState: 'PR',
       defaultCity: 'Curitiba',
     }));
-    expect(router.navigate).toHaveBeenCalledWith(['/campaigns'], {
-      queryParams: { action: 'create', createMode: 'manual' },
-    });
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/welcome');
   });
 });

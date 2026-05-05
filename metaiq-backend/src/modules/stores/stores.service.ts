@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { IntegrationStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
@@ -43,9 +43,10 @@ export class StoresService {
   ) {}
 
   async createForUser(requester: AuthenticatedUser, dto: CreateStoreDto): Promise<Store> {
-    const tenantId = await this.resolveTenantIdForWrite(requester, dto.tenantId, dto.managerId);
+    const tenantId = await this.resolveTenantIdForWrite(requester, dto.tenantId);
+    const managerId = await this.resolveManagerIdForWrite(requester, dto.managerId, tenantId);
     await this.ensureTenantExists(tenantId);
-    const managerId = await this.resolveLegacyManagerIdForWrite(requester, dto.managerId, tenantId);
+    await this.ensureManagerBelongsToTenant(managerId, tenantId);
 
     const store = this.storeRepository.create({
       name: dto.name.trim(),
@@ -55,7 +56,24 @@ export class StoresService {
       active: true,
     });
 
-    return this.storeRepository.save(store);
+    const savedStore = await this.storeRepository.save(store);
+
+    if (this.accessScope.isManager(requester)) {
+      const existingLink = await this.userStoreRepository.findOne({
+        where: { userId: requester.id, storeId: savedStore.id },
+      });
+
+      if (!existingLink) {
+        await this.userStoreRepository.save(
+          this.userStoreRepository.create({
+            userId: requester.id,
+            storeId: savedStore.id,
+          }),
+        );
+      }
+    }
+
+    return savedStore;
   }
 
   async findAllForUser(requester: AuthenticatedUser): Promise<Store[]> {
@@ -110,7 +128,6 @@ export class StoresService {
         throw new ForbiddenException('Apenas PLATFORM_ADMIN pode alterar managerId legado da store');
       }
 
-      await this.ensureManagerExists(dto.managerId);
       store.managerId = dto.managerId;
     }
 
@@ -123,6 +140,8 @@ export class StoresService {
       await this.ensureStoreCanMoveTenant(store, dto.tenantId);
       store.tenantId = dto.tenantId;
     }
+
+    await this.ensureManagerBelongsToTenant(store.managerId, store.tenantId);
 
     return this.storeRepository.save(store);
   }
@@ -159,10 +178,20 @@ export class StoresService {
       order: { createdAt: 'DESC' },
     });
 
-    return links.map((link) => {
-      const { password: _password, ...user } = link.user;
-      return user;
-    }).filter((user) => user.active && !user.deletedAt);
+    const visibleUsers: Omit<User, 'password'>[] = [];
+
+    for (const link of links) {
+      if (!link.user?.active || link.user.deletedAt) {
+        continue;
+      }
+
+      if (await this.accessScope.canAccessUser(requester, link.user.id)) {
+        const { password: _password, ...user } = link.user;
+        visibleUsers.push(user);
+      }
+    }
+
+    return visibleUsers;
   }
 
   async linkUserToStoreForUser(
@@ -216,15 +245,13 @@ export class StoresService {
   private async resolveTenantIdForWrite(
     requester: AuthenticatedUser,
     payloadTenantId?: string,
-    legacyManagerId?: string,
   ): Promise<string> {
     if (this.accessScope.isPlatformAdmin(requester)) {
-      const tenantId = payloadTenantId ?? legacyManagerId;
-      if (!tenantId) {
+      if (!payloadTenantId) {
         throw new BadRequestException('tenantId é obrigatório para PLATFORM_ADMIN criar store');
       }
 
-      return tenantId;
+      return payloadTenantId;
     }
 
     if (!(this.accessScope.isAdmin(requester) || this.accessScope.isManager(requester)) || !requester.tenantId) {
@@ -234,39 +261,52 @@ export class StoresService {
     return requester.tenantId;
   }
 
-  private async resolveLegacyManagerIdForWrite(
+  private async resolveManagerIdForWrite(
     requester: AuthenticatedUser,
     payloadManagerId: string | undefined,
-    tenantId: string,
+    _tenantId: string,
   ): Promise<string> {
-    if (payloadManagerId) {
-      await this.ensureManagerExists(payloadManagerId);
+    if (this.accessScope.isPlatformAdmin(requester)) {
+      if (!payloadManagerId) {
+        throw new BadRequestException('managerId é obrigatório para PLATFORM_ADMIN criar store');
+      }
+
       return payloadManagerId;
     }
 
-    if (requester.managerId) {
-      return requester.managerId;
+    if (!requester.managerId) {
+      throw new BadRequestException('managerId do usuário autenticado é obrigatório');
     }
 
-    const manager = await this.managerRepository.findOne({ where: { id: tenantId } });
-    if (manager) {
-      return manager.id;
+    if (payloadManagerId && payloadManagerId !== requester.managerId) {
+      throw new ForbiddenException('MANAGER ou ADMIN não podem criar store com managerId diferente do próprio escopo');
     }
 
-    throw new BadRequestException('managerId legado é obrigatório até a remoção definitiva do campo');
+    return requester.managerId;
   }
 
-  private async ensureManagerExists(managerId: string): Promise<void> {
+  private async ensureManagerExists(managerId: string): Promise<Manager> {
     const manager = await this.managerRepository.findOne({ where: { id: managerId } });
     if (!manager || !manager.active) {
       throw new NotFoundException('Manager não encontrado');
     }
+
+    return manager;
   }
 
   private async ensureTenantExists(tenantId: string): Promise<void> {
     const tenant = await this.tenantRepository.findOne({ where: { id: tenantId } });
     if (!tenant) {
       throw new NotFoundException('Tenant não encontrado');
+    }
+  }
+
+  private async ensureManagerBelongsToTenant(managerId: string, tenantId: string): Promise<void> {
+    const manager = await this.ensureManagerExists(managerId);
+    await this.ensureTenantExists(tenantId);
+
+    if (manager.id !== tenantId) {
+      throw new BadRequestException('managerId deve pertencer ao mesmo tenant da store');
     }
   }
 

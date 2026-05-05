@@ -12,12 +12,12 @@ export const accountTypeGuard: CanActivateFn = (route) => {
   const currentAccountType = auth.getCurrentUser()?.accountType ?? 'AGENCY';
 
   if (allowedAccountTypes?.length && !allowedAccountTypes.includes(currentAccountType)) {
-    router.navigate([redirectTo || '/campaigns']);
+    router.navigate([redirectTo || '/dashboard']);
     return false;
   }
 
   if (disallowedAccountTypes?.length && disallowedAccountTypes.includes(currentAccountType)) {
-    router.navigate([redirectTo || '/campaigns']);
+    router.navigate([redirectTo || '/dashboard']);
     return false;
   }
 

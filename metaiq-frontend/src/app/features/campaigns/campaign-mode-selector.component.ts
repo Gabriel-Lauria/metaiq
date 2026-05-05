@@ -5,6 +5,7 @@ import { CampaignModeSelection } from './campaign-builder.types';
 interface ModeOption {
   mode: CampaignModeSelection;
   icon: string;
+  eyebrow: string;
   title: string;
   description: string;
   isPrimary: boolean;
@@ -27,8 +28,9 @@ interface ModeOption {
   template: `
     <div class="mode-selector-container">
       <header class="selector-header">
-        <h1>Como você quer criar sua campanha?</h1>
-        <p class="subtitle">Escolha o melhor caminho para seu objetivo</p>
+        <span class="selector-kicker">Criação de campanhas</span>
+        <h1>Escolha como você quer montar esta campanha</h1>
+        <p class="subtitle">Use o fluxo mais confortável para sua equipe. Você pode trocar de modo sem perder o que já preencheu.</p>
       </header>
 
       <div class="modes-grid">
@@ -41,8 +43,10 @@ interface ModeOption {
           [attr.aria-pressed]="false"
         >
           <div class="mode-icon">{{ mode.icon }}</div>
+          <span class="mode-eyebrow">{{ mode.eyebrow }}</span>
           <h2 class="mode-title">{{ mode.title }}</h2>
           <p class="mode-description">{{ mode.description }}</p>
+          <span class="mode-cta">{{ mode.isPrimary ? 'Começar por aqui' : 'Abrir modo' }}</span>
           <span *ngIf="mode.isPrimary" class="badge-primary">Recomendado</span>
         </button>
       </div>
@@ -58,92 +62,157 @@ interface ModeOption {
     .mode-selector-container {
       display: flex;
       flex-direction: column;
-      gap: 2rem;
-      padding: 3rem 2rem;
-      max-width: 1000px;
+      gap: 2.25rem;
+      padding: 2.25rem 1.25rem 1.5rem;
+      max-width: 1080px;
       margin: 0 auto;
     }
 
     .selector-header {
       text-align: center;
-      gap: 0.5rem;
+      display: grid;
+      gap: 0.75rem;
+      justify-items: center;
+    }
+
+    .selector-kicker {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 0.9rem;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+      color: #1d4ed8;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
     .selector-header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      color: #1e293b;
-      margin: 0 0 0.5rem 0;
+      max-width: 760px;
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1.08;
+      margin: 0;
     }
 
     .subtitle {
-      font-size: 1.125rem;
+      max-width: 760px;
+      font-size: 1rem;
       color: #64748b;
       margin: 0;
+      line-height: 1.65;
     }
 
     .modes-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 1.5rem;
+      gap: 1rem;
     }
 
     .mode-card {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-      border: 2px solid #e2e8f0;
-      border-radius: 12px;
-      background: white;
+      align-items: flex-start;
+      padding: 1.5rem;
+      border: 1px solid #dbe4ef;
+      border-radius: 22px;
+      background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.05), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
       cursor: pointer;
-      transition: all 0.3s ease;
-      text-align: center;
-      gap: 1rem;
-      min-height: 300px;
+      transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+      text-align: left;
+      gap: 0.9rem;
+      min-height: 280px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+    }
 
-      &:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        transform: translateY(-2px);
-      }
+    .mode-card:hover {
+      border-color: rgba(37, 99, 235, 0.22);
+      box-shadow: 0 26px 54px rgba(15, 23, 42, 0.1);
+      transform: translateY(-3px);
+    }
 
-      &.primary {
-        border-color: #3b82f6;
-        background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    .mode-card.primary {
+      border-color: rgba(37, 99, 235, 0.28);
+      background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 36%),
+        linear-gradient(135deg, rgba(239, 246, 255, 0.98) 0%, rgba(248, 250, 252, 1) 100%);
+      box-shadow: 0 28px 60px rgba(37, 99, 235, 0.14);
+    }
 
-        &:hover {
-          border-color: #2563eb;
-          box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
-          transform: translateY(-4px);
-        }
-      }
+    .mode-card.primary:hover {
+      border-color: #2563eb;
+      box-shadow: 0 34px 70px rgba(37, 99, 235, 0.16);
     }
 
     .mode-icon {
-      font-size: 3rem;
+      display: grid;
+      place-items: center;
+      width: 3.5rem;
+      height: 3.5rem;
+      border-radius: 1.1rem;
+      background: #0f172a;
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
       line-height: 1;
     }
 
+    .mode-card.primary .mode-icon {
+      background: linear-gradient(135deg, #2563eb, #0891b2);
+    }
+
+    .mode-eyebrow {
+      color: #1d4ed8;
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
     .mode-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      color: #1e293b;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #0f172a;
       margin: 0;
+      line-height: 1.2;
     }
 
     .mode-description {
       font-size: 0.95rem;
-      color: #64748b;
+      color: #475569;
       margin: 0;
       flex: 1;
-      line-height: 1.5;
+      line-height: 1.65;
+    }
+
+    .mode-cta {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.5rem;
+      padding: 0 0.95rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.06);
+      color: #0f172a;
+      font-size: 0.88rem;
+      font-weight: 700;
     }
 
     .badge-primary {
-      display: inline-block;
-      padding: 0.375rem 0.75rem;
+      position: absolute;
+      top: 1.35rem;
+      right: 1.35rem;
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.9rem;
+      padding: 0 0.75rem;
       background: #3b82f6;
       color: white;
       border-radius: 999px;
@@ -155,18 +224,19 @@ interface ModeOption {
 
     .selector-footer {
       text-align: center;
-      padding: 1rem 0;
+      padding: 0.25rem 0 0;
     }
 
     .help-text {
       font-size: 0.875rem;
-      color: #94a3b8;
+      color: #64748b;
       margin: 0;
+      line-height: 1.55;
     }
 
     @media (max-width: 768px) {
       .mode-selector-container {
-        padding: 2rem 1rem;
+        padding: 0.5rem 0 0;
         gap: 1.5rem;
       }
 
@@ -179,7 +249,7 @@ interface ModeOption {
       }
 
       .subtitle {
-        font-size: 1rem;
+        font-size: 0.95rem;
       }
 
       .mode-card {
@@ -188,7 +258,13 @@ interface ModeOption {
       }
 
       .mode-icon {
-        font-size: 2.5rem;
+        width: 3rem;
+        height: 3rem;
+      }
+
+      .badge-primary {
+        top: 1rem;
+        right: 1rem;
       }
 
       .mode-title {
@@ -207,23 +283,26 @@ export class CampaignModeSelectorComponent {
   readonly modes: ModeOption[] = [
     {
       mode: 'AI',
-      icon: '🤖',
+      icon: 'IA',
+      eyebrow: 'Mais rápido',
       title: 'Criar com IA',
-      description: 'Descreva sua campanha e a IA monta tudo para você. Rápido, inteligente e eficaz.',
+      description: 'Descreva o objetivo da campanha e receba uma primeira versão com estrutura, copy e direção de público para revisar.',
       isPrimary: true,
     },
     {
       mode: 'GUIDED',
-      icon: '🧭',
+      icon: 'GUIA',
+      eyebrow: 'Passo a passo',
       title: 'Criação orientada',
-      description: 'Passo a passo com ajuda. Ideal para quem prefere ser guiado no processo.',
+      description: 'Preencha etapa por etapa com uma experiência mais simples, pensada para pequenas empresas e times enxutos.',
       isPrimary: false,
     },
     {
       mode: 'ADVANCED',
-      icon: '⚙️',
+      icon: 'PRO',
+      eyebrow: 'Mais controle',
       title: 'Criação avançada',
-      description: 'Controle total das configurações. Para usuários que conhecem cada detalhe.',
+      description: 'Acesse todos os campos do builder para revisar detalhes de segmentação, criativo e mensuração com mais liberdade.',
       isPrimary: false,
     },
   ];

@@ -155,6 +155,20 @@ export class AuthService {
     this.currentUserSubject.next(nextUser);
   }
 
+  resolveAuthenticatedRoute(returnUrl?: string | null): string {
+    const normalizedReturnUrl = returnUrl?.trim();
+    if (normalizedReturnUrl && normalizedReturnUrl.startsWith('/') && !normalizedReturnUrl.startsWith('//')) {
+      return normalizedReturnUrl;
+    }
+
+    const user = this.getCurrentUser();
+    if (user?.firstLogin) {
+      return '/welcome';
+    }
+
+    return '/dashboard';
+  }
+
   private handleAuthResponse(response: AuthResponse): void {
     localStorage.removeItem('accessToken');
     localStorage.setItem(this.sessionHintKey, '1');

@@ -1,14 +1,13 @@
 /**
- * Seed de dados de demonstração para o metaIQ.
- * Cria um usuário, contas, campanhas e 30 dias de métricas.
+ * Seed seguro de dados não produtivos para o MetaIQ.
  *
- * Uso:
- *   npm run seed
+ * Requisitos obrigatórios:
+ * - NODE_ENV diferente de production
+ * - ALLOW_DEMO_SEED=true
+ * - SEED_PROFILE=development ou demo
+ * - DEMO_SEED_PASSWORD com pelo menos 12 caracteres
  *
- * Credenciais demo criadas:
- *   Master: definido por PLATFORM_ADMIN_EMAIL / PLATFORM_ADMIN_PASSWORD
- *   Email:  demo@metaiq.dev
- *   Senha:  Demo@1234
+ * Este arquivo nunca deve ser usado para popular produção.
  */
 
 import { DataSource, Repository } from 'typeorm';
@@ -34,6 +33,28 @@ import AppDataSource from './src/data-source';
 
 // ── Validação de variáveis de ambiente ────────────────────────
 const validateEnv = () => {
+  if ((process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+    console.error('❌ Seed bloqueado: nunca execute dados de demonstração em produção.');
+    process.exit(1);
+  }
+
+  if (process.env.ALLOW_DEMO_SEED !== 'true') {
+    console.error('❌ Seed bloqueado: defina ALLOW_DEMO_SEED=true para executar conscientemente.');
+    process.exit(1);
+  }
+
+  const profile = (process.env.SEED_PROFILE || '').trim().toLowerCase();
+  if (profile !== 'development' && profile !== 'demo') {
+    console.error('❌ Seed bloqueado: defina SEED_PROFILE=development ou SEED_PROFILE=demo.');
+    process.exit(1);
+  }
+
+  const demoPassword = process.env.DEMO_SEED_PASSWORD || '';
+  if (demoPassword.length < 12) {
+    console.error('❌ Seed bloqueado: DEMO_SEED_PASSWORD deve ter pelo menos 12 caracteres.');
+    process.exit(1);
+  }
+
   const required = ['JWT_SECRET', 'CRYPTO_SECRET'];
   const missing = required.filter(v => !process.env[v]);
   
@@ -62,6 +83,8 @@ const DB_PATH = getEnv('SQLITE_PATH', 'DATABASE') ?? './data/metaiq.db';
 const PLATFORM_ADMIN_EMAIL = getEnv('PLATFORM_ADMIN_EMAIL');
 const PLATFORM_ADMIN_PASSWORD = getEnv('PLATFORM_ADMIN_PASSWORD');
 const PLATFORM_ADMIN_NAME = getEnv('PLATFORM_ADMIN_NAME') ?? 'Administrador da Plataforma';
+const SEED_PROFILE = (process.env.SEED_PROFILE || 'development').trim().toLowerCase();
+const DEMO_SEED_PASSWORD = process.env.DEMO_SEED_PASSWORD as string;
 
 // ── Utilitários para cálculos monetários ────────────────────────
 const roundMoney = (n: number): number => Math.round(n * 100) / 100;
@@ -283,6 +306,7 @@ async function seed() {
   const ds: DataSource = AppDataSource;
   await ds.initialize();
   await ds.runMigrations();
+  console.log(`🌱 Seed autorizado em perfil controlado: ${SEED_PROFILE}`);
   console.log(
     DB_TYPE === 'sqlite'
       ? `🗄️  Banco SQLite pronto em: ${DB_PATH}`
@@ -331,7 +355,7 @@ async function seed() {
 
   let user = await userRepo.findOne({ where: { email: 'demo@metaiq.dev' } });
 
-  const password = await bcrypt.hash('Demo@1234', 12);
+  const password = await bcrypt.hash(DEMO_SEED_PASSWORD, 12);
 
   if (!user) {
     user = userRepo.create({
@@ -343,9 +367,8 @@ async function seed() {
       tenantId: tenant.id,
     });
     await userRepo.save(user);
-    console.log('👤 Usuário criado: demo@metaiq.dev / Demo@1234');
+    console.log('👤 Usuário demo criado: demo@metaiq.dev');
   } else {
-    // Sempre atualizar senha e dados do user demo
     user.password = password;
     if (!user.managerId) {
       user.managerId = manager.id;
@@ -354,7 +377,7 @@ async function seed() {
     user.active = true;
     user.role = Role.ADMIN; // Ensure demo user has admin role
     await userRepo.save(user);
-    console.log('👤 Usuário demo atualizado com senha: Demo@1234');
+    console.log('👤 Usuário demo atualizado: demo@metaiq.dev');
   }
 
   const userStoreRepo = ds.getRepository(UserStore);
@@ -372,7 +395,7 @@ async function seed() {
     await storeRepo.save(store);
   }
 
-  const demoPassword = await bcrypt.hash('Demo@1234', 12);
+  const demoPassword = await bcrypt.hash(DEMO_SEED_PASSWORD, 12);
   const ensureDemoUser = async (input: {
     name: string;
     email: string;
@@ -803,12 +826,9 @@ async function seed() {
   console.log('   • Usuários ADMIN, MANAGER, OPERATIONAL e CLIENT para validar permissões');
   console.log('   • Variações realistas de performance');
   console.log('   • Tendências de melhora/piora');
-  console.log('\n🔐 CREDENCIAIS DE ACESSO:');
-  console.log('   Email: demo@metaiq.dev');
-  console.log('   Senha: Demo@1234');
-  console.log('   Manager: manager@metaiq.dev / Demo@1234');
-  console.log('   Operacional: operacional@metaiq.dev / Demo@1234');
-  console.log('   Cliente: cliente@metaiq.dev / Demo@1234');
+  console.log('\n🔐 ACESSO CONFIGURADO VIA AMBIENTE:');
+  console.log('   • Usuários demo foram criados ou atualizados sem exibir credenciais no console');
+  console.log('   • A senha foi definida explicitamente por DEMO_SEED_PASSWORD');
   console.log('\n🎯 O QUE VER:');
   console.log('   1. Dashboard com KPIs agregados');
   console.log('   2. Campanhas com diferentes performances');

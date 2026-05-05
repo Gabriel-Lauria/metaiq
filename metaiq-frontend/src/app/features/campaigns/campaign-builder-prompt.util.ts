@@ -53,7 +53,6 @@ export function detectBudgetTypeFromPrompt(normalized: string): CampaignBudgetTy
 }
 
 export function detectInitialStatusFromPrompt(normalized: string): CampaignInitialStatus {
-  if (/(ativar agora|iniciar ativa|publicar ativa|subir ativa)/i.test(normalized)) return 'ACTIVE';
   return 'PAUSED';
 }
 

@@ -137,7 +137,22 @@ describe('MetaCampaignRecoveryService', () => {
       delete: jest.fn(),
     };
     assetsService = {
-      getAssetForStore: jest.fn(),
+      getAssetForStore: jest.fn(async () => ({
+        id: 'asset-1',
+        storeId: 'store-1',
+        type: 'image',
+        adAccountId: 'ad-account-1',
+        storageUrl: 'https://metaiq.dev/assets/asset-1',
+        metaImageHash: 'meta-image-hash-1',
+      })),
+      findImageAssetByMetaHash: jest.fn(async () => ({
+        id: 'asset-1',
+        storeId: 'store-1',
+        type: 'image',
+        adAccountId: 'ad-account-1',
+        storageUrl: 'https://metaiq.dev/assets/asset-1',
+        metaImageHash: 'meta-image-hash-1',
+      })),
     };
     accessScope = {
       validateStoreAccess: jest.fn(async () => ({ id: 'store-1' })),
@@ -185,6 +200,40 @@ describe('MetaCampaignRecoveryService', () => {
         creativeId: undefined,
         adId: undefined,
       },
+      dto: expect.objectContaining({
+        startTime: '2026-05-01T09:00:00.000Z',
+        endTime: '2026-05-08T22:00:00.000Z',
+        placements: ['feed', 'stories'],
+        ageMin: 25,
+        ageMax: 55,
+        gender: 'ALL',
+        initialStatus: 'PAUSED',
+      }),
+    }));
+  });
+
+  it('ignora overrides manuais e reaproveita o payload original persistido no retry', async () => {
+    const execution = partialExecution();
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    orchestrator.resumeCreation.mockResolvedValue({
+      campaignId: 'meta-campaign-1',
+      adSetId: 'meta-adset-1',
+      creativeId: 'meta-creative-1',
+      adId: 'meta-ad-1',
+    });
+
+    await service.retryPartialCampaignCreationForUser(user as any, 'store-1', execution.id, {
+      name: 'Nome alterado',
+      dailyBudget: 999,
+      country: 'US',
+    } as any);
+
+    expect(orchestrator.resumeCreation).toHaveBeenCalledWith(expect.objectContaining({
+      dto: expect.objectContaining({
+        name: 'Campanha teste',
+        dailyBudget: 50,
+        country: 'BR',
+      }),
     }));
   });
 

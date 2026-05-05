@@ -1,6 +1,6 @@
-# MetaIQ Backend
+# Nexora Backend
 
-NestJS API for MetaIQ with JWT auth, TypeORM, and PostgreSQL as the primary local development database. SQLite remains available only as a legacy/test fallback.
+NestJS API for Nexora with JWT auth, TypeORM, and PostgreSQL as the primary local development database. SQLite remains available only as a legacy/test fallback.
 
 ## Quick Start
 
@@ -9,6 +9,9 @@ npm install
 copy .env.example .env
 docker compose up -d postgres
 npm run migration:run
+set ALLOW_DEMO_SEED=true
+set SEED_PROFILE=development
+set DEMO_SEED_PASSWORD=troque-por-uma-senha-forte
 npm run seed
 npm run start:dev
 ```
@@ -19,12 +22,7 @@ Default API URL:
 http://localhost:3004/api
 ```
 
-Demo user created by `npm run seed`:
-
-```text
-Email: demo@metaiq.dev
-Senha: Demo@1234
-```
+The seed only runs with explicit authorization flags and never prints credentials.
 
 ## Environment
 
@@ -104,7 +102,7 @@ Prefer manual migrations for controlled production deploys.
 npm run start:dev       # development server
 npm run build           # compile TypeScript
 npm run start:prod      # run dist/main.js
-npm run seed            # run migrations and seed demo data
+npm run seed            # run migrations and controlled non-production seed
 npm test -- --runInBand # unit tests
 npm run test:e2e -- --runInBand
 npm run lint

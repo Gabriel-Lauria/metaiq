@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 
+jest.setTimeout(60000);
+
 describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () => {
   let app: INestApplication;
   let campaignCreationId: string;
@@ -22,7 +24,7 @@ describe('Meta Campaign Recovery E2E - requires authenticated Meta fixture', () 
   });
 
   afterAll(async () => {
-    await app.close();
+    await app?.close();
   });
 
   describe('Recovery Flow: PARTIAL -> RETRY -> ACTIVE', () => {

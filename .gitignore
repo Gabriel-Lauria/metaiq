@@ -1,11 +1,18 @@
-node_modules 
+node_modules
+**/node_modules/
 
 dist
+**/dist/
 .env
 .env.*
 !.env.example
 !**/.env.example
 coverage
+**/coverage/
+*.log
+*.sql
+*.dump
+*.bak
 
 .angular/
 **/.angular/
@@ -15,6 +22,12 @@ coverage
 *.db-*
 *.sqlite
 *.sqlite3
+*.pem
+*.key
+.private/
+secrets/
+storage/
+uploads/
 metaiq-backend/data/
 
 # Local test/build outputs
@@ -23,3 +36,15 @@ metaiq-backend/data/
 **/e2e-output.txt
 **/test-output.txt
 **/tmp-*.log
+
+# Operational backups and local maintenance artifacts
+**/backup*.sql
+**/*.dump
+**/*.bak
+metaiq-backend/check-user.js
+metaiq-backend/clean-metrics.js
+metaiq-backend/fix-demo-password.js
+metaiq-backend/fix-password-direct.js
+metaiq-backend/fix-password-v2.js
+metaiq-backend/restore-user.js
+metaiq-backend/test/.runtime/

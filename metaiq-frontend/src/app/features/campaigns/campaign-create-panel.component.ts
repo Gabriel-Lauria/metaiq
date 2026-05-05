@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { finalize, forkJoin } from 'rxjs';
+import { environment } from '../../core/environment';
 import { UiBadgeComponent } from '../../core/components/ui-badge.component';
 import {
   AdAccount,
@@ -55,9 +56,8 @@ import {
   buildApiPayload,
   buildReviewSignals,
   buildSectionProgress,
-  buildSimulatedMetrics,
-  buildSummaryRows,
   buildReadinessItems,
+  buildSummaryRows,
   canSubmit,
   cloneCampaignBuilderState,
   creativeSectionComplete,
@@ -175,7 +175,6 @@ export class CampaignCreatePanelComponent {
   ];
   readonly initialStatusOptions: Array<{ value: CampaignInitialStatus; label: string }> = [
     { value: 'PAUSED', label: 'Pausada' },
-    { value: 'ACTIVE', label: 'Ativa' },
   ];
   readonly placementOptions: Array<{ value: CampaignPlacement; label: string; platform: string }> = [
     { value: 'feed', label: 'Feed', platform: 'Facebook / Instagram' },
@@ -247,6 +246,7 @@ export class CampaignCreatePanelComponent {
   readonly contextError = signal<string | null>(null);
   readonly submitting = signal(false);
   readonly recoverySubmitting = signal(false);
+  readonly cleanupSubmitting = signal(false);
   readonly submitError = signal<string | null>(null);
   readonly submitFailure = signal<MetaCampaignCreationError | null>(null);
   readonly integration = signal<StoreIntegration | null>(null);
@@ -286,16 +286,16 @@ export class CampaignCreatePanelComponent {
     { id: 'sell-more', label: 'Vender mais', hint: 'Mensagem com intenção comercial.' },
     { id: 'promote-offer', label: 'Promover oferta', hint: 'Campanha de alcance e promoção.' },
   ];
+  readonly selectedCreativeAssetMeta = signal<Asset | null>(null);
 
   // FASE 7.1: Step-by-step signals
   readonly stepFlowEnabled = signal(false); // Ativar com flag para não quebrar fluxo existente
-  readonly currentStep = signal<StepId>('objective');
+  readonly currentStep = signal<StepId>('configuration');
   readonly stepValidations = signal<Record<StepId, StepValidation>>({
-    'objective': { errors: [], warnings: [], isComplete: false },
-    'product': { errors: [], warnings: [], isComplete: false },
+    'briefing-ia': { errors: [], warnings: [], isComplete: false },
+    'configuration': { errors: [], warnings: [], isComplete: false },
     'audience': { errors: [], warnings: [], isComplete: false },
     'creative': { errors: [], warnings: [], isComplete: false },
-    'budget': { errors: [], warnings: [], isComplete: false },
     'review': { errors: [], warnings: [], isComplete: false },
   });
   readonly stepperItems = computed(() => {
@@ -317,11 +317,10 @@ export class CampaignCreatePanelComponent {
       }
 
       const labelMap: Record<StepId, string> = {
-        'objective': 'Objetivo',
-        'product': 'Produto',
+        'briefing-ia': 'Briefing IA',
+        'configuration': 'Configuracao',
         'audience': 'Público',
         'creative': 'Criativo',
-        'budget': 'Orçamento',
         'review': 'Revisão',
       };
 
@@ -379,11 +378,6 @@ export class CampaignCreatePanelComponent {
     return buildSummaryRows(this.reviewContext(), (value) => this.formatCurrency(value));
   });
 
-  readonly simulatedMetrics = computed(() => {
-    this.revision();
-    return buildSimulatedMetrics(this.state);
-  });
-
   readonly reviewSignals = computed<ReviewSignal[]>(() => {
     this.revision();
     return buildReviewSignals(this.state);
@@ -439,8 +433,8 @@ export class CampaignCreatePanelComponent {
     this.revision();
     return JSON.stringify(
       {
-        expandedState: this.buildExpandedCampaignState(),
         apiPayload: this.buildApiPayload(),
+        operationalPreview: this.publishPreview(),
       },
       null,
       2,
@@ -658,7 +652,7 @@ export class CampaignCreatePanelComponent {
   enableStepFlow(): void {
     this.stepFlowEnabled.set(true);
     const entryMode = this.creationEntryMode();
-    const startStep: StepId = 'objective';
+    const startStep: StepId = entryMode === 'ai' ? 'briefing-ia' : 'configuration';
     this.currentStep.set(startStep);
     this.updateAllStepValidations();
   }
@@ -705,8 +699,8 @@ export class CampaignCreatePanelComponent {
     this.touchState();
   }
 
-  setInitialStatus(value: CampaignInitialStatus): void {
-    this.state.campaign.initialStatus = value;
+  setInitialStatus(_value: CampaignInitialStatus): void {
+    this.state.campaign.initialStatus = 'PAUSED';
     this.touchState();
   }
 
@@ -863,8 +857,21 @@ export class CampaignCreatePanelComponent {
     this.selectMode('AI');
   }
 
-  stepIsCurrent(stepId: StepId): boolean {
-    return this.currentStep() === stepId;
+  stepIsCurrent(stepId: StepId | 'objective' | 'product' | 'budget'): boolean {
+    const aliasMap: Record<'objective' | 'product' | 'budget', StepId> = {
+      objective: 'configuration',
+      product: 'configuration',
+      budget: 'configuration',
+    };
+    const normalizedStep = stepId in aliasMap
+      ? aliasMap[stepId as keyof typeof aliasMap]
+      : stepId as StepId;
+    return this.currentStep() === normalizedStep;
+  }
+
+  isFirstWizardStep(): boolean {
+    const sequence = getStepSequence(this.creationEntryMode() === 'ai');
+    return this.currentStep() === sequence[0];
   }
 
   selectWizardObjective(objectiveId: WizardObjectiveId): void {
@@ -1032,10 +1039,17 @@ export class CampaignCreatePanelComponent {
           this.creationEntryMode.set('ai');
           this.setCreationMode('ai-result', false);
           this.touchState(false);
-          this.ui.showSuccess(
-            'Sugestão pronta para revisão',
-            'A IA montou uma primeira versão. Revise antes de aplicar ao builder.',
-          );
+          if (result.meta?.usedFallback) {
+            this.ui.showWarning(
+              'Sugestão segura pronta',
+              'IA gerou resposta incompleta. Usando sugestão segura.',
+            );
+          } else {
+            this.ui.showSuccess(
+              'Sugestão pronta para revisão',
+              'A IA montou uma primeira versão. Revise antes de aplicar ao builder.',
+            );
+          }
           this.scrollToSection('builder-ai-result');
         },
         error: (error) => {
@@ -1129,15 +1143,8 @@ export class CampaignCreatePanelComponent {
     this.analyzeCampaignWithAi();
   }
 
-  onCreativeAssetSelected(asset: Asset): void {
-    this.state.creative.assetId = asset.id;
-    this.state.creative.imageUrl = asset.storageUrl || this.state.creative.imageUrl;
-    this.touchState();
-  }
-
   clearCreativeAsset(): void {
-    this.state.creative.assetId = '';
-    this.touchState();
+    this.clearCreativeAssetSelection();
   }
 
   applyCurrentAiSuggestion(): void {
@@ -1157,10 +1164,6 @@ export class CampaignCreatePanelComponent {
     }
 
     const beforeSnapshot = this.buildApplyTriggerSnapshot();
-    console.info('APPLY_AI_SUGGESTION_TRIGGERED', {
-      before: beforeSnapshot,
-    });
-
     this.clearAiGeoPendingNotice();
     const { appliedCount, ignoredFields } = this.applyStructuredAiSuggestion(result);
     this.state.ui.aiCreativeIdeas = result.creative.imageSuggestion ? [result.creative.imageSuggestion] : [];
@@ -1170,12 +1173,6 @@ export class CampaignCreatePanelComponent {
     this.state.ui.aiValidationStale = false;
     this.setCreationMode('edit-lite', false);
     this.touchState(false);
-    console.info('APPLY_AI_SUGGESTION_TRIGGERED', {
-      before: beforeSnapshot,
-      after: this.buildApplyTriggerSnapshot(),
-      appliedCount,
-      ignoredFields,
-    });
     this.logCampaignApplyComparison(appliedCount, ignoredFields);
     this.ui.showSuccess(
       'Sugestão aplicada ao rascunho',
@@ -1344,8 +1341,8 @@ export class CampaignCreatePanelComponent {
       problems.add('Preencha a headline do anúncio.');
     }
 
-    if (!isLikelyDirectImageUrl(this.state.creative.imageUrl)) {
-      problems.add('Adicione uma imagem válida para o criativo.');
+    if (!this.state.creative.imageAssetId.trim()) {
+      problems.add('Envie uma imagem válida para o criativo.');
     }
 
     if (!this.state.placements.selected.length) {
@@ -1459,7 +1456,7 @@ export class CampaignCreatePanelComponent {
   }
 
   submit(): void {
-    if (this.submitting() || this.recoverySubmitting()) {
+    if (this.submitting() || this.recoverySubmitting() || this.cleanupSubmitting()) {
       return;
     }
 
@@ -1589,6 +1586,10 @@ export class CampaignCreatePanelComponent {
           this.ui.showSuccess('Campanha criada', 'A campanha foi criada na Meta com o payload real compatível.');
         },
         error: (err) => {
+          console.error('Meta campaign submit failed', {
+            error: err,
+            responseError: err?.details ?? err?.error ?? err?.originalError?.error ?? null,
+          });
           const failure = this.normalizeCampaignCreationError(err);
           const message = failure.message;
           this.submitFailure.set(failure);
@@ -1615,11 +1616,7 @@ export class CampaignCreatePanelComponent {
     this.recoverySubmitting.set(true);
     this.submitError.set(null);
 
-    const expandedState = this.buildExpandedCampaignState();
-    const apiPayload = buildApiPayload(expandedState);
-    this.logCampaignSubmissionComparison('recovery', expandedState, apiPayload);
-
-    this.api.retryMetaCampaignRecovery(storeId, failure.executionId, apiPayload)
+    this.api.retryMetaCampaignRecovery(storeId, failure.executionId, {})
       .pipe(
         finalize(() => {
           this.recoverySubmitting.set(false);
@@ -1658,6 +1655,39 @@ export class CampaignCreatePanelComponent {
       });
   }
 
+  cleanupPartialCreation(): void {
+    const failure = this.submitFailure();
+    const storeId = this.storeContext.getValidSelectedStoreId();
+
+    if (!failure?.executionId || failure.executionStatus !== 'PARTIAL' || !storeId) {
+      return;
+    }
+
+    this.cleanupSubmitting.set(true);
+    this.submitError.set(null);
+
+    this.api.cleanupMetaCampaignRecovery(storeId, failure.executionId)
+      .pipe(
+        finalize(() => {
+          this.cleanupSubmitting.set(false);
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: (response) => {
+          this.clearSubmissionFailure();
+          this.submitError.set(response.message || 'Execução parcial limpa com segurança.');
+          this.ui.showSuccess('Execução limpa', response.message || 'Recursos parciais removidos com segurança.');
+        },
+        error: (err) => {
+          const nextFailure = this.normalizeCampaignCreationError(err);
+          this.submitFailure.set(nextFailure);
+          this.submitError.set(nextFailure.message);
+          this.ui.showError('Nao foi possivel limpar a execucao parcial', nextFailure.message);
+        },
+      });
+  }
+
   buildExpandedCampaignState(): CampaignBuilderState {
     const clonedState = cloneCampaignBuilderState(this.state);
     clonedState.creative.cta = this.normalizeBuilderCta(clonedState.creative.cta, clonedState.destination.type);
@@ -1674,6 +1704,10 @@ export class CampaignCreatePanelComponent {
   }
 
   private logCampaignApplyComparison(appliedCount: number, ignoredFields: string[]): void {
+    if (!environment.enableLogging) {
+      return;
+    }
+
     const expandedState = this.buildExpandedCampaignState();
     const apiPayload = buildApiPayload(expandedState);
     console.info('[CampaignBuilder] apply suggestion sync', {
@@ -1681,27 +1715,18 @@ export class CampaignCreatePanelComponent {
       appliedCount,
       ignoredFields,
       aiLastSuggestion: this.buildAiSuggestionSnapshot(),
-      expandedState: {
-        campaign: {
-          name: expandedState.campaign.name,
-          objective: expandedState.campaign.objective,
-        },
-        budget: {
-          value: expandedState.budget.value,
-          budgetType: expandedState.budget.budgetType,
-        },
-        destination: {
-          type: expandedState.destination.type,
-          websiteUrl: expandedState.destination.websiteUrl,
-        },
-        creative: {
-          cta: expandedState.creative.cta,
-          message: expandedState.creative.message,
-          headline: expandedState.creative.headline,
-          description: expandedState.creative.description,
-        },
+      summary: {
+        objective: expandedState.campaign.objective,
+        budgetValue: expandedState.budget.value,
+        budgetType: expandedState.budget.budgetType,
+        destinationType: expandedState.destination.type,
+        hasWebsiteUrl: Boolean(expandedState.destination.websiteUrl),
+        cta: expandedState.creative.cta,
+        hasMessage: Boolean(expandedState.creative.message),
+        hasHeadline: Boolean(expandedState.creative.headline),
+        hasDescription: Boolean(expandedState.creative.description),
+        payloadKeys: Object.keys(apiPayload).sort(),
       },
-      apiPayload,
     });
   }
 
@@ -1724,41 +1749,33 @@ export class CampaignCreatePanelComponent {
     expandedState: CampaignBuilderState,
     apiPayload: CreateMetaCampaignRequest,
   ): void {
+    if (!environment.enableLogging) {
+      return;
+    }
+
     console.info('[CampaignBuilder] submit payload comparison', {
       stage,
       aiLastSuggestion: this.buildAiSuggestionSnapshot(),
-      expandedState: {
-        campaign: {
-          name: expandedState.campaign.name,
-          objective: expandedState.campaign.objective,
-          initialStatus: expandedState.campaign.initialStatus,
-        },
-        budget: {
-          value: expandedState.budget.value,
-          budgetType: expandedState.budget.budgetType,
-        },
-        destination: {
-          type: expandedState.destination.type,
-          websiteUrl: expandedState.destination.websiteUrl,
-          messagesDestination: expandedState.destination.messagesDestination,
-        },
-        creative: {
-          cta: expandedState.creative.cta,
-          message: expandedState.creative.message,
-          headline: expandedState.creative.headline,
-          description: expandedState.creative.description,
-        },
-        audience: {
-          country: expandedState.audience.country,
-          state: expandedState.audience.state,
-          stateName: expandedState.audience.stateName,
-          city: expandedState.audience.city,
-          interests: expandedState.audience.interests,
-          excludedInterests: expandedState.audience.excludedInterests,
-        },
-        placements: expandedState.placements.selected,
+      summary: {
+        objective: expandedState.campaign.objective,
+        initialStatus: expandedState.campaign.initialStatus,
+        budgetValue: expandedState.budget.value,
+        budgetType: expandedState.budget.budgetType,
+        destinationType: expandedState.destination.type,
+        hasWebsiteUrl: Boolean(expandedState.destination.websiteUrl),
+        messagesDestination: expandedState.destination.messagesDestination,
+        cta: expandedState.creative.cta,
+        hasMessage: Boolean(expandedState.creative.message),
+        hasHeadline: Boolean(expandedState.creative.headline),
+        hasDescription: Boolean(expandedState.creative.description),
+        audienceCountry: expandedState.audience.country,
+        audienceState: expandedState.audience.state,
+        audienceCity: expandedState.audience.city,
+        interestCount: expandedState.audience.interests.length,
+        excludedInterestCount: expandedState.audience.excludedInterests.length,
+        placementCount: expandedState.placements.selected.length,
+        payloadKeys: Object.keys(apiPayload).sort(),
       },
-      apiPayload,
     });
   }
 
@@ -1838,6 +1855,30 @@ export class CampaignCreatePanelComponent {
     return issues;
   }
 
+  onCreativeAssetSelected(asset: Asset): void {
+    if (asset.adAccountId && asset.adAccountId !== this.state.identity.adAccountId) {
+      this.ui.showWarning(
+        'Asset incompatível',
+        'A imagem selecionada pertence a outra conta de anúncios. Escolha um asset da mesma conta da campanha.',
+      );
+      return;
+    }
+
+    this.state.creative.imageAssetId = asset.id;
+    this.state.creative.imageUrl = asset.storageUrl;
+    this.selectedCreativeAssetMeta.set(asset);
+    this.markFieldTouched('creative.imageAssetId');
+    this.touchState();
+  }
+
+  clearCreativeAssetSelection(): void {
+    this.state.creative.imageAssetId = '';
+    this.state.creative.imageUrl = '';
+    this.selectedCreativeAssetMeta.set(null);
+    this.markFieldTouched('creative.imageAssetId');
+    this.touchState();
+  }
+
   markFieldTouched(field: string): void {
     this.touchedFields.update((current) => ({
       ...current,
@@ -1903,30 +1944,7 @@ export class CampaignCreatePanelComponent {
   }
 
   compatibilityNote(): string {
-    const expandedFields = [
-      this.state.campaign.specialCategory,
-      this.state.campaign.buyingType,
-      this.state.campaign.campaignSpendLimit,
-      this.state.campaign.abTest,
-      this.state.campaign.campaignBudgetOptimization,
-      this.state.audience.city,
-      this.state.audience.interests,
-      this.state.placements.selected.length,
-      this.state.schedule.weekDays.length,
-      this.state.tracking.pixel,
-      this.state.tracking.utmCampaign,
-    ].some(Boolean);
-    const base = this.state.campaign.initialStatus === 'ACTIVE'
-      ? 'Payload real: a campanha será enviada tentando respeitar o status inicial ativo, sujeito às validações da Meta.'
-      : 'Payload real: a campanha será enviada pausada quando o status inicial estiver definido como pausada.';
-
-    if (expandedFields) {
-      return `${base} Campos avançados de público, agenda, posicionamento e rastreamento ficam registrados na revisão expandida, mas ainda não são aplicados pela API Meta atual.`;
-    }
-
-    return this.state.campaign.initialStatus === 'ACTIVE'
-      ? base
-      : base;
+    return 'Publicação real: a primeira criação sempre sai PAUSED. O review operacional abaixo mostra apenas os campos enviados para a Meta e reutilizados no recovery.';
   }
 
   statusLabel(status?: IntegrationStatus): string {
@@ -1956,12 +1974,14 @@ export class CampaignCreatePanelComponent {
       || this.hasAiBlockingIssues()
       || this.hasExecutivePublishBlock()
       || this.recoverySubmitting()
+      || this.cleanupSubmitting()
       || this.normalSubmitBlocked()
       || this.submitting();
   }
 
   submitButtonLabel(): string {
     if (this.recoverySubmitting()) return 'Continuando criacao na Meta...';
+    if (this.cleanupSubmitting()) return 'Limpando execucao parcial...';
     if (this.submitting()) return 'Criando campanha na Meta...';
     if (this.normalSubmitBlocked()) return 'Use o recovery seguro';
     if (this.isMessagesAutomaticPublishBlocked()) return 'Publicacao automatica indisponivel';
@@ -1972,6 +1992,9 @@ export class CampaignCreatePanelComponent {
   metaCreationLoadingLabel(): string {
     if (this.recoverySubmitting()) {
       return 'Continuando criacao parcial com o fluxo seguro da Meta...';
+    }
+    if (this.cleanupSubmitting()) {
+      return 'Limpando recursos parciais para impedir duplicacao na Meta...';
     }
     if (this.submitting()) {
       return 'Criando campanha na Meta...';
@@ -2064,6 +2087,68 @@ export class CampaignCreatePanelComponent {
   shouldShowPartialRecoveryGuidance(): boolean {
     const failure = this.submitFailure();
     return failure?.executionStatus === 'PARTIAL' && !this.canContinuePartialCreation();
+  }
+
+  publishPreview(): Record<string, unknown> {
+    const payload = this.buildApiPayload();
+    const selectedAccount = this.internalAdAccounts().find((account) => account.id === this.state.identity.adAccountId);
+    const selectedAsset = this.selectedCreativeAssetMeta();
+
+    return {
+      publishMode: 'PAUSED_ONLY',
+      campaign: {
+        name: payload.name,
+        objective: payload.objective,
+        initialStatus: 'PAUSED',
+      },
+      adset: {
+        dailyBudget: payload.dailyBudget,
+        startTime: payload.startTime,
+        endTime: payload.endTime || null,
+        placements: payload.placements || [],
+        targeting: {
+          country: payload.country,
+          state: payload.state || null,
+          stateName: payload.stateName || null,
+          city: payload.city || null,
+          cityId: payload.cityId || null,
+          ageMin: payload.ageMin,
+          ageMax: payload.ageMax,
+          gender: payload.gender,
+        },
+        pixelId: payload.pixelId || null,
+        conversionEvent: payload.conversionEvent || null,
+      },
+      creative: {
+        message: payload.message,
+        headline: payload.headline || null,
+        description: payload.description || null,
+        cta: payload.cta || null,
+        destinationUrl: payload.destinationUrl || null,
+        imageAssetId: payload.imageAssetId || null,
+        imageHash: selectedAsset?.metaImageHash || null,
+      },
+      metaContext: {
+        adAccountId: payload.adAccountId,
+        adAccountExternalId: selectedAccount?.externalId || selectedAccount?.metaId || null,
+        pageId: this.integration()?.pageId || null,
+        pageName: this.integration()?.pageName || null,
+      },
+    };
+  }
+
+  publishPreviewTargetingSummary(): string {
+    const preview = this.publishPreview() as {
+      adset?: { targeting?: { country?: string; ageMin?: number; ageMax?: number; gender?: string } };
+    };
+    const targeting = preview.adset?.targeting;
+    if (!targeting) return '--';
+    return `${targeting.country || '--'} · ${targeting.ageMin || '--'}-${targeting.ageMax || '--'} · ${targeting.gender || '--'}`;
+  }
+
+  publishPreviewPlacementsSummary(): string {
+    const preview = this.publishPreview() as { adset?: { placements?: string[] } };
+    return preview.adset?.placements?.join(', ') || 'Nenhum';
   }
 
   private reviewContext() {
@@ -2179,6 +2264,7 @@ export class CampaignCreatePanelComponent {
         message: this.state.creative.message.trim() || null,
         headline: this.state.creative.headline.trim() || null,
         description: this.state.creative.description.trim() || null,
+        imageAssetId: this.state.creative.imageAssetId.trim() || null,
         imageUrl: this.state.creative.imageUrl.trim() || null,
       },
       targeting: {
@@ -2762,7 +2848,7 @@ export class CampaignCreatePanelComponent {
     if (!this.state.destination.websiteUrl.trim() || !isSecureHttpUrl(this.state.destination.websiteUrl)) issues.add('url');
     if (!this.state.creative.message.trim()) issues.add('mensagem');
     if (!this.state.creative.headline.trim()) issues.add('headline');
-    if (!isLikelyDirectImageUrl(this.state.creative.imageUrl)) issues.add('imagem');
+    if (!this.state.creative.imageAssetId.trim()) issues.add('imagem');
     if (this.aiValidation()?.blockingIssues.length) issues.add('revisao IA');
 
     return Array.from(issues);
@@ -3389,6 +3475,7 @@ export class CampaignCreatePanelComponent {
       || this.state.ui.aiPrompt.trim()
       || !!this.state.ui.aiLastSuggestion
       || this.state.creative.message.trim()
+      || this.state.creative.imageAssetId.trim()
       || this.state.creative.imageUrl.trim()
       || this.state.destination.websiteUrl.trim()
       || this.state.audience.city.trim()
@@ -3504,6 +3591,7 @@ export class CampaignCreatePanelComponent {
     const partialIds = this.normalizeMetaPartialIds(err?.partialIds ?? details?.partialIds ?? details?.ids);
     const hint = this.extractString(err?.hint ?? details?.hint);
     const metaError = this.normalizeMetaError(err?.metaError ?? details?.metaError);
+    const blockingIssues = this.normalizeStringArray(err?.blockingIssues ?? details?.blockingIssues);
     const baseMessage = this.extractString(err?.message ?? details?.message)
       || 'Nao foi possivel criar a campanha na Meta.';
 
@@ -3515,6 +3603,7 @@ export class CampaignCreatePanelComponent {
       partialIds,
       hint,
       metaError,
+      blockingIssues,
     };
   }
 
@@ -3525,7 +3614,7 @@ export class CampaignCreatePanelComponent {
   }
 
   private normalizeMetaExecutionStatus(value: unknown): MetaCampaignExecutionStatus | undefined {
-    return ['PARTIAL', 'FAILED', 'IN_PROGRESS', 'COMPLETED'].includes(String(value))
+    return ['PARTIAL', 'PARTIAL_ROLLBACK', 'FAILED', 'CLEANUP_FAILED', 'IN_PROGRESS', 'COMPLETED'].includes(String(value))
       ? value as MetaCampaignExecutionStatus
       : undefined;
   }
@@ -3565,6 +3654,18 @@ export class CampaignCreatePanelComponent {
 
   private extractString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private normalizeStringArray(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+
+    const normalized = value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+
+    return normalized.length ? normalized : undefined;
   }
 
   private currentPayloadSignature(): string {
@@ -3674,8 +3775,8 @@ export class CampaignCreatePanelComponent {
       return 'Preencha a headline do criativo antes de enviar.';
     }
 
-    if (!isLikelyDirectImageUrl(this.state.creative.imageUrl)) {
-      return 'Use uma imagem enviada pela plataforma ou uma URL pública direta.';
+    if (!this.state.creative.imageAssetId.trim()) {
+      return 'Envie uma imagem válida para continuar.';
     }
 
     if (!(Number(this.state.budget.value) > 0)) {

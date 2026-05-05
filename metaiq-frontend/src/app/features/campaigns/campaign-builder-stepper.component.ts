@@ -74,109 +74,118 @@ export interface StepperItem {
     .stepper-container {
       display: flex;
       flex-direction: column;
-      gap: 1.5rem;
-      padding: 1.5rem;
-      background: #f8fafc;
-      border-radius: 12px;
+      gap: 1rem;
+      padding: 1rem 1.25rem 0.25rem;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+      border-radius: 18px;
     }
 
     .stepper-progress {
       display: flex;
       align-items: center;
       gap: 1rem;
+      padding: 0.15rem 0;
     }
 
     .progress-bar-track {
       flex: 1;
-      height: 4px;
-      background: #e2e8f0;
-      border-radius: 2px;
+      height: 8px;
+      background: #dbe7f4;
+      border-radius: 999px;
       overflow: hidden;
     }
 
     .progress-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #3b82f6, #2563eb);
+      border-radius: inherit;
+      background: linear-gradient(90deg, #0891b2, #2563eb);
       transition: width 0.3s ease-out;
     }
 
     .progress-label {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: #475569;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2rem;
+      min-width: 90px;
+      padding: 0 0.8rem;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.08);
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: #1d4ed8;
       white-space: nowrap;
-      min-width: 80px;
-      text-align: right;
+      text-align: center;
     }
 
     .stepper-list {
-      display: flex;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       list-style: none;
       padding: 0;
       margin: 0;
       gap: 0.75rem;
-      flex-wrap: wrap;
     }
 
     .stepper-item {
       display: flex;
-      align-items: center;
+      align-items: stretch;
       gap: 0.75rem;
       position: relative;
-      flex: 1;
-      min-width: 120px;
+      min-width: 0;
     }
 
     .stepper-button {
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
-      background: white;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
+      gap: 0.85rem;
+      padding: 0.95rem 1rem;
+      background: #ffffff;
+      border: 1px solid #dbe4ef;
+      border-radius: 16px;
       font-size: 0.875rem;
-      font-weight: 500;
+      font-weight: 600;
       color: #475569;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
       flex: 1;
+      min-width: 0;
+      text-align: left;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
     }
 
     .stepper-button:hover:not(:disabled) {
-      border-color: #cbd5e1;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      border-color: rgba(37, 99, 235, 0.24);
+      box-shadow: 0 18px 32px rgba(37, 99, 235, 0.1);
+      transform: translateY(-1px);
     }
 
     .stepper-button:disabled {
       cursor: not-allowed;
-      opacity: 0.6;
+      opacity: 0.72;
+      box-shadow: none;
     }
 
-    /* Estado: PENDING */
     .stepper-item.pending .stepper-button {
-      background: #f1f5f9;
+      background: #f8fafc;
     }
 
-    /* Estado: CURRENT */
     .stepper-item.current .stepper-button {
-      background: white;
-      border-color: #3b82f6;
+      background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 1));
+      border-color: #60a5fa;
       color: #1e40af;
       font-weight: 600;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08), 0 16px 34px rgba(37, 99, 235, 0.1);
     }
 
-    /* Estado: COMPLETED */
     .stepper-item.completed .stepper-button {
-      background: #ecfdf5;
+      background: linear-gradient(180deg, rgba(240, 253, 244, 0.95), #ffffff);
       border-color: #10b981;
       color: #059669;
     }
 
-    /* Estado: ERROR */
     .stepper-item.error .stepper-button {
-      background: #fef2f2;
+      background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), #ffffff);
       border-color: #ef4444;
       color: #dc2626;
     }
@@ -185,11 +194,11 @@ export interface StepperItem {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 1.5rem;
-      height: 1.5rem;
-      border-radius: 50%;
+      width: 1.9rem;
+      height: 1.9rem;
+      border-radius: 999px;
       font-size: 0.75rem;
-      font-weight: 600;
+      font-weight: 700;
       flex-shrink: 0;
     }
 
@@ -220,30 +229,22 @@ export interface StepperItem {
     }
 
     .step-connector {
-      position: absolute;
-      top: 50%;
-      left: 100%;
-      width: 0.75rem;
-      height: 2px;
-      background: #e2e8f0;
-      transform: translateY(-50%);
-      margin: 0 -0.75rem;
+      display: none;
     }
 
     .step-connector.completed {
       background: #10b981;
     }
 
-    /* Responsivo: Mobile */
     @media (max-width: 768px) {
       .stepper-container {
-        padding: 1rem;
+        padding: 0.25rem 0 0;
         gap: 1rem;
       }
 
       .stepper-list {
         gap: 0.5rem;
-        flex-direction: column;
+        grid-template-columns: 1fr;
       }
 
       .stepper-item {
@@ -251,27 +252,22 @@ export interface StepperItem {
         min-width: auto;
       }
 
-      .step-connector {
-        display: none;
-      }
-
       .stepper-button {
-        padding: 0.625rem 0.875rem;
+        padding: 0.75rem 0.875rem;
         font-size: 0.8125rem;
+        border-radius: 14px;
       }
 
       .step-indicator {
-        width: 1.25rem;
-        height: 1.25rem;
+        width: 1.55rem;
+        height: 1.55rem;
         font-size: 0.6875rem;
       }
 
-      .step-label {
-        display: none;
-      }
-
-      .stepper-item.current .step-label {
-        display: inline;
+      .progress-label {
+        min-width: 78px;
+        padding: 0 0.65rem;
+        font-size: 0.75rem;
       }
     }
   `],

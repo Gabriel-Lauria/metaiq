@@ -1,36 +1,126 @@
 <section class="landing-shell">
-  <div class="hero-card">
+  <header class="topbar">
+    <div class="brand-lockup">
+      <span class="brand-mark">Nex</span>
+      <strong>ora</strong>
+    </div>
+    <div class="topbar-actions">
+      <a class="nav-link" routerLink="/auth">Entrar</a>
+      <a class="btn btn-secondary" routerLink="/auth">{{ secondaryCtaLabel }}</a>
+      <a class="btn btn-primary" [routerLink]="primaryCtaRoute">{{ primaryCtaLabel }}</a>
+    </div>
+  </header>
+
+  <section class="hero">
     <div class="hero-copy">
-      <p class="eyebrow">MetaIQ Beta</p>
-      <h1>Crie campanhas profissionais para Facebook e Instagram com ajuda da IA</h1>
-      <p class="subtitle">
-        Monte, revise e melhore campanhas mesmo sem experiência em tráfego pago.
+      <p class="eyebrow">Centralize campanhas, métricas e decisões em um só lugar.</p>
+      <h1>Pare de operar a Meta no improviso.</h1>
+      <p class="hero-subtitle">
+        A Nexora transforma criação, publicação e leitura de performance em uma operação previsível, com contexto executivo e menos ruído entre equipe, stores e campanhas.
       </p>
-      <div class="hero-actions">
-        <a
-          class="btn btn-primary"
-          [routerLink]="enablePublicRegister ? '/register' : null"
-          [class.disabled]="!enablePublicRegister"
-        >
-          Criar minha conta
-        </a>
-        <a class="btn btn-secondary" routerLink="/auth">Entrar</a>
+
+      <div class="trust-row">
+        <span class="trust-pill" *ngFor="let pill of trustPills">{{ pill }}</span>
       </div>
-      <p class="beta-note">Você está usando uma versão inicial do MetaIQ.</p>
-      <p class="beta-note subtle" *ngIf="!enablePublicRegister">Cadastro indisponível no momento.</p>
+
+      <div class="hero-actions">
+        <a class="btn btn-primary" [routerLink]="primaryCtaRoute">{{ primaryCtaLabel }}</a>
+        <a class="btn btn-secondary" routerLink="/auth">{{ secondaryCtaLabel }}</a>
+      </div>
+
+      <p class="availability-note" *ngIf="!enablePublicRegister">
+        Novas contas estão sendo liberadas por janela operacional.
+      </p>
     </div>
 
-    <div class="hero-panel">
-      <span class="pill">Campanhas pausadas por padrão no beta</span>
-      <h2>Fluxo pensado para sair do zero e criar sua primeira campanha</h2>
-      <p>No beta, recomendamos criar campanhas pausadas para revisão.</p>
-    </div>
-  </div>
+    <aside class="hero-panel">
+      <span class="panel-kicker">Visão executiva da operação</span>
+      <h2>Autoridade, previsibilidade e controle.</h2>
+      <p>Entre na Nexora para centralizar campanhas, métricas, alertas e decisões sem depender de fluxos quebrados entre briefing, tráfego e análise.</p>
 
-  <div class="features-grid">
-    <article class="feature-card" *ngFor="let feature of featureCards">
-      <h3>{{ feature.title }}</h3>
-      <p>{{ feature.description }}</p>
+      <div class="hero-stats">
+        <article class="stat-card" *ngFor="let stat of heroStats">
+          <strong>{{ stat.value }}</strong>
+          <span>{{ stat.label }}</span>
+        </article>
+      </div>
+    </aside>
+  </section>
+
+  <section class="section-grid">
+    <article class="section-card problem-card">
+      <span class="section-kicker">Problema real</span>
+      <h3>Quando a operação não está centralizada, a verba paga a conta.</h3>
+      <ul>
+        <li *ngFor="let point of painPoints">{{ point }}</li>
+      </ul>
     </article>
-  </div>
+
+    <article class="section-card proof-card">
+      <span class="section-kicker">Prova de confiança</span>
+      <h3>Estrutura pensada para operação profissional.</h3>
+      <div class="proof-list">
+        <p *ngFor="let signal of trustSignals">{{ signal }}</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="solutions-section">
+    <div class="section-heading">
+      <span class="section-kicker">Solução Nexora</span>
+      <h3>Do onboarding ao dashboard, cada etapa prepara a próxima.</h3>
+      <p>O fluxo deixa de jogar o usuário direto no builder e passa a conduzir integração, contexto, operação e publicação na ordem certa.</p>
+    </div>
+
+    <div class="solutions-grid">
+      <article class="solution-card" *ngFor="let feature of solutionCards">
+        <h4>{{ feature.title }}</h4>
+        <p>{{ feature.description }}</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="benefits-section">
+    <div class="section-heading">
+      <span class="section-kicker">Benefícios</span>
+      <h3>Menos ruído operacional. Mais confiança comercial.</h3>
+    </div>
+
+    <div class="benefits-grid">
+      <article class="benefit-card" *ngFor="let benefit of benefits">{{ benefit }}</article>
+    </div>
+  </section>
+
+  <section class="use-cases-section">
+    <div class="section-heading">
+      <span class="section-kicker">Para quem é</span>
+      <h3>Feito para operações que anunciam na Meta e precisam vender confiança logo na entrada.</h3>
+    </div>
+
+    <div class="use-cases-grid">
+      <article class="use-case-card" *ngFor="let useCase of useCases">
+        <h4>{{ useCase.title }}</h4>
+        <p>{{ useCase.description }}</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="cta-band">
+    <div>
+      <span class="section-kicker">Pronto para profissionalizar sua operação?</span>
+      <h3>Comece agora sua operação profissional.</h3>
+      <p>Entre na Nexora e transforme a primeira impressão do seu time em confiança, clareza e execução.</p>
+    </div>
+    <div class="cta-actions">
+      <a class="btn btn-primary" [routerLink]="primaryCtaRoute">{{ primaryCtaLabel }}</a>
+      <a class="btn btn-secondary" routerLink="/auth">Acessar plataforma</a>
+    </div>
+  </section>
+
+  <footer class="landing-footer">
+    <span>Nexora</span>
+    <a routerLink="/auth">Suporte</a>
+    <a routerLink="/auth">Política</a>
+    <a routerLink="/auth">Contato</a>
+  </footer>
 </section>

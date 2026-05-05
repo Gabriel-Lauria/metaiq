@@ -1,7 +1,7 @@
 {
   "name": "metaiq-frontend",
   "version": "1.0.0",
-  "description": "MetaIQ Frontend",
+  "description": "Nexora Frontend",
   "scripts": {
     "start": "ng serve --port 4200",
     "dev": "ng serve --port 4200",
@@ -26,6 +26,7 @@
     "@angular/platform-browser": "^21.2.8",
     "@angular/platform-browser-dynamic": "^21.2.8",
     "@angular/router": "^21.2.8",
+    "@sentry/browser": "^10.51.0",
     "chart.js": "^4.5.1",
     "ng2-charts": "^10.0.0",
     "rxjs": "~7.8.0",

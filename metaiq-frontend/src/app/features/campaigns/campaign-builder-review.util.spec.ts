@@ -9,6 +9,7 @@ describe('buildApiPayload', () => {
     state.identity.adAccountId = 'ad-account-1';
     state.destination.websiteUrl = 'https://metaiq.dev/oferta';
     state.creative.message = 'Mensagem principal';
+    state.creative.imageAssetId = 'asset-1';
     state.creative.imageUrl = 'https://metaiq.dev/image.jpg';
     return state;
   }
@@ -65,6 +66,9 @@ describe('buildApiPayload', () => {
     expect(payload.stateName).toBe('Paraná');
     expect(payload.city).toBe('Curitiba');
     expect(payload.cityId).toBe(4106902);
+    expect(payload.ageMin).toBe(state.audience.ageMin);
+    expect(payload.ageMax).toBe(state.audience.ageMax);
+    expect(payload.gender).toBe(state.audience.gender);
   });
   it('envia schedule, placements, tracking e special category para o backend real', () => {
     const state = buildState();
@@ -98,6 +102,7 @@ describe('buildReviewSignals', () => {
     state.identity.adAccountId = 'ad-account-1';
     state.destination.websiteUrl = 'http://metaiq.dev/oferta';
     state.creative.message = 'Mensagem principal com detalhamento suficiente para revisar.';
+    state.creative.imageAssetId = '';
     state.creative.imageUrl = 'https://www.google.com/imgres?imgurl=https://metaiq.dev/image.jpg';
     return state;
   }
@@ -108,7 +113,7 @@ describe('buildReviewSignals', () => {
 
     const signals = buildReviewSignals(state).map((signal) => signal.id);
 
-    expect(signals).toContain('image-direct');
+    expect(signals).toContain('image-url-deprecated');
     expect(signals).toContain('destination-https');
     expect(signals).toContain('carousel');
     expect(signals).toContain('cta-format');
@@ -118,8 +123,8 @@ describe('buildReviewSignals', () => {
     const state = buildState();
     state.creative.imageUrl = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:demo';
 
-    expect(fieldInvalid(state, 'creative.imageUrl')).toBeTrue();
-    expect(buildReviewSignals(state).map((signal) => signal.id)).toContain('image-direct');
+    expect(fieldInvalid(state, 'creative.imageUrl')).toBeFalse();
+    expect(buildReviewSignals(state).map((signal) => signal.id)).toContain('image-url-deprecated');
   });
 
   it('passa a exigir https e headline para envio real', () => {
@@ -159,6 +164,7 @@ describe('canSubmit', () => {
     state.destination.websiteUrl = 'http://metaiq.dev/oferta';
     state.creative.message = 'Mensagem principal';
     state.creative.headline = '';
+    state.creative.imageAssetId = 'asset-1';
     state.creative.imageUrl = 'https://metaiq.dev/image.jpg';
 
     const context = {

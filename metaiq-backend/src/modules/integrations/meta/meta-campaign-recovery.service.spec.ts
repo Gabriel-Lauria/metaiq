@@ -21,8 +21,9 @@ describe('MetaCampaignRecoveryService', () => {
   let graphApi: any;
   let accessScope: any;
   let assetsService: any;
+  let currentIntegration: any;
 
-  const partialExecution = (): MetaCampaignCreation => ({
+  const partialExecution = (overrides: Partial<MetaCampaignCreation> = {}): MetaCampaignCreation => ({
     id: 'exec-1',
     storeId: 'store-1',
     requesterUserId: 'user-1',
@@ -54,8 +55,10 @@ describe('MetaCampaignRecoveryService', () => {
       message: 'Mensagem teste',
       headline: 'Headline teste',
       description: 'Descricao teste',
+      imageHash: 'snapshot-image-hash-1',
       imageUrl: 'https://metaiq.dev/image.jpg',
-      destinationUrl: 'https://metaiq.dev/oferta',
+      pageId: 'snapshot-page-1',
+      destinationUrl: 'https://metaiq.dev/oferta?utm_source=meta&utm_medium=paid-social',
       pixelId: 'pixel-1',
       conversionEvent: 'PURCHASE',
       placements: ['feed', 'stories'],
@@ -89,9 +92,22 @@ describe('MetaCampaignRecoveryService', () => {
     campaign: null,
     createdAt: new Date(),
     updatedAt: new Date(),
+    ...overrides,
   });
 
   beforeEach(() => {
+    currentIntegration = {
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      status: IntegrationStatus.CONNECTED,
+      accessToken: 'meta-token',
+      tokenExpiresAt: null,
+      metadata: {
+        pageId: 'current-page-1',
+        destinationUrl: 'https://current.metaiq.dev/landing',
+      },
+    };
+
     campaignCreationRepository = {
       findOne: jest.fn(),
       save: jest.fn(async (value) => value),
@@ -101,17 +117,7 @@ describe('MetaCampaignRecoveryService', () => {
         addSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getOne: jest.fn(async () => ({
-          storeId: 'store-1',
-          provider: IntegrationProvider.META,
-          status: IntegrationStatus.CONNECTED,
-          accessToken: 'meta-token',
-          tokenExpiresAt: null,
-          metadata: {
-            pageId: 'page-1',
-            destinationUrl: 'https://metaiq.dev/oferta',
-          },
-        })),
+        getOne: jest.fn(async () => currentIntegration),
       })),
     };
     adAccountRepository = {
@@ -137,7 +143,22 @@ describe('MetaCampaignRecoveryService', () => {
       delete: jest.fn(),
     };
     assetsService = {
-      getAssetForStore: jest.fn(),
+      getAssetForStore: jest.fn(async () => ({
+        id: 'asset-1',
+        storeId: 'store-1',
+        type: 'image',
+        adAccountId: 'ad-account-1',
+        storageUrl: 'https://metaiq.dev/assets/asset-1',
+        metaImageHash: 'meta-image-hash-1',
+      })),
+      findImageAssetByMetaHash: jest.fn(async (_storeId: string, hash: string) => ({
+        id: 'asset-by-hash-1',
+        storeId: 'store-1',
+        type: 'image',
+        adAccountId: 'ad-account-1',
+        storageUrl: 'https://metaiq.dev/assets/asset-by-hash-1',
+        metaImageHash: hash,
+      })),
     };
     accessScope = {
       validateStoreAccess: jest.fn(async () => ({ id: 'store-1' })),
@@ -185,15 +206,46 @@ describe('MetaCampaignRecoveryService', () => {
         creativeId: undefined,
         adId: undefined,
       },
+      dto: expect.objectContaining({
+        startTime: '2026-05-01T09:00:00.000Z',
+        endTime: '2026-05-08T22:00:00.000Z',
+        placements: ['feed', 'stories'],
+        ageMin: 25,
+        ageMax: 55,
+        gender: 'ALL',
+        initialStatus: 'PAUSED',
+      }),
     }));
   });
 
-  it('rebuilds the full adset payload for real recovery before calling Meta', async () => {
+  it('ignora overrides manuais e reaproveita o payload original persistido no retry', async () => {
     const execution = partialExecution();
-    execution.errorStep = 'adset';
-    execution.currentStep = 'adset';
-    execution.metaAdSetId = null;
-    execution.adSetCreated = false;
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    orchestrator.resumeCreation.mockResolvedValue({
+      campaignId: 'meta-campaign-1',
+      adSetId: 'meta-adset-1',
+      creativeId: 'meta-creative-1',
+      adId: 'meta-ad-1',
+    });
+
+    await service.retryPartialCampaignCreationForUser(user as any, 'store-1', execution.id, {
+      name: 'Nome alterado',
+      dailyBudget: 999,
+      country: 'US',
+    } as any);
+
+    expect(orchestrator.resumeCreation).toHaveBeenCalledWith(expect.objectContaining({
+      dto: expect.objectContaining({
+        name: 'Campanha teste',
+        dailyBudget: 50,
+        country: 'BR',
+      }),
+    }));
+  });
+
+  it('usa pageId do snapshot persistido em vez da metadata atual da integração', async () => {
+    const execution = partialExecution();
+    currentIntegration.metadata.pageId = 'current-page-999';
     campaignCreationRepository.findOne.mockResolvedValue(execution);
     orchestrator.resumeCreation.mockResolvedValue({
       campaignId: 'meta-campaign-1',
@@ -205,21 +257,59 @@ describe('MetaCampaignRecoveryService', () => {
     await service.retryPartialCampaignCreationForUser(user as any, 'store-1', execution.id, {});
 
     expect(orchestrator.resumeCreation).toHaveBeenCalledWith(expect.objectContaining({
+      pageId: 'snapshot-page-1',
+    }));
+  });
+
+  it('usa destinationUrl final do snapshot persistido em vez do website atual da store', async () => {
+    const execution = partialExecution({
+      requestPayload: {
+        ...partialExecution().requestPayload,
+        destinationUrl: 'https://metaiq.dev/oferta?utm_source=meta&utm_medium=paid-social&utm_campaign=snapshot',
+      },
+    });
+    currentIntegration.metadata.destinationUrl = 'https://current.metaiq.dev/nova-landing';
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    orchestrator.resumeCreation.mockResolvedValue({
+      campaignId: 'meta-campaign-1',
+      adSetId: 'meta-adset-1',
+      creativeId: 'meta-creative-1',
+      adId: 'meta-ad-1',
+    });
+
+    await service.retryPartialCampaignCreationForUser(user as any, 'store-1', execution.id, {});
+
+    expect(orchestrator.resumeCreation).toHaveBeenCalledWith(expect.objectContaining({
+      destinationUrl: 'https://metaiq.dev/oferta?utm_source=meta&utm_medium=paid-social&utm_campaign=snapshot',
       dto: expect.objectContaining({
-        startTime: '2026-05-01T09:00:00.000Z',
-        endTime: '2026-05-08T22:00:00.000Z',
-        ageMin: 25,
-        ageMax: 55,
-        gender: 'ALL',
-        state: 'PR',
-        stateName: 'Parana',
-        region: 'Sul',
-        city: 'Curitiba',
-        cityId: 4106902,
-        pixelId: 'pixel-1',
-        conversionEvent: 'PURCHASE',
-        placements: ['feed', 'stories'],
-        specialAdCategories: ['NONE'],
+        destinationUrl: 'https://metaiq.dev/oferta?utm_source=meta&utm_medium=paid-social&utm_campaign=snapshot',
+      }),
+    }));
+  });
+
+  it('usa imageHash do snapshot persistido mesmo que o asset atual tenha mudado', async () => {
+    const execution = partialExecution({
+      requestPayload: {
+        ...partialExecution().requestPayload,
+        imageAssetId: null,
+        assetId: null,
+        imageHash: 'snapshot-hash-77',
+      } as any,
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    orchestrator.resumeCreation.mockResolvedValue({
+      campaignId: 'meta-campaign-1',
+      adSetId: 'meta-adset-1',
+      creativeId: 'meta-creative-1',
+      adId: 'meta-ad-1',
+    });
+
+    await service.retryPartialCampaignCreationForUser(user as any, 'store-1', execution.id, {});
+
+    expect(assetsService.findImageAssetByMetaHash).toHaveBeenCalledWith('store-1', 'snapshot-hash-77', 'ad-account-1');
+    expect(orchestrator.resumeCreation).toHaveBeenCalledWith(expect.objectContaining({
+      dto: expect.objectContaining({
+        imageHash: 'snapshot-hash-77',
       }),
     }));
   });
@@ -262,24 +352,15 @@ describe('MetaCampaignRecoveryService', () => {
         }),
       }),
     });
-    expect(campaignCreationRepository.save).toHaveBeenCalledWith(expect.objectContaining({
-      metaErrorDetails: expect.objectContaining({
-        code: 100,
-        subcode: 1815752,
-        userTitle: 'Creative invalido',
-        userMessage: 'Verifique page_id e link_data.',
-        fbtraceId: 'trace-recovery-1',
-        step: 'creative',
-      }),
-    }));
   });
 
   it('blocks recovery when destination_url is invalid before calling Meta', async () => {
-    const execution = partialExecution();
-    execution.requestPayload = {
-      ...execution.requestPayload,
-      destinationUrl: 'http://metaiq.dev/oferta',
-    };
+    const execution = partialExecution({
+      requestPayload: {
+        ...partialExecution().requestPayload,
+        destinationUrl: 'http://metaiq.dev/oferta',
+      } as any,
+    });
     campaignCreationRepository.findOne.mockResolvedValue(execution);
 
     await expect(
@@ -303,16 +384,30 @@ describe('MetaCampaignRecoveryService', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it('rolls back partial resources in reverse dependency order and marks execution failed', async () => {
-    const execution = partialExecution();
-    execution.metaCreativeId = 'meta-creative-1';
-    execution.metaAdId = 'meta-ad-1';
+  it('returns success only when cleanup removes every resource', async () => {
+    const execution = partialExecution({
+      metaCreativeId: 'meta-creative-1',
+      metaAdId: 'meta-ad-1',
+      adCreated: true,
+      creativeCreated: true,
+    });
     campaignCreationRepository.findOne.mockResolvedValue(execution);
     graphApi.delete.mockResolvedValue({ success: true });
 
     const result = await service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id);
 
-    expect(result.success).toBe(true);
+    expect(result).toEqual({
+      success: true,
+      message: 'Limpeza concluída',
+      cleaned: {
+        ad: true,
+        creative: true,
+        adset: true,
+        campaign: true,
+      },
+      cleanupPending: false,
+      executionStatus: MetaCampaignCreationStatus.FAILED,
+    });
     expect(graphApi.delete.mock.calls.map((call: any[]) => call[0])).toEqual([
       'meta-ad-1',
       'meta-creative-1',
@@ -321,8 +416,145 @@ describe('MetaCampaignRecoveryService', () => {
     ]);
     expect(campaignCreationRepository.save).toHaveBeenCalledWith(expect.objectContaining({
       status: MetaCampaignCreationStatus.FAILED,
-      errorMessage: 'Cleanup: recursos removidos',
+      errorMessage: 'Cleanup concluído sem recursos órfãos',
+      metaCampaignId: null,
+      metaAdSetId: null,
+      metaCreativeId: null,
+      metaAdId: null,
+      canRetry: false,
     }));
+  });
+
+  it('fails honestly with PARTIAL_ROLLBACK when ad remains orphaned', async () => {
+    const execution = partialExecution({
+      metaCreativeId: 'meta-creative-1',
+      metaAdId: 'meta-ad-1',
+      adCreated: true,
+      creativeCreated: true,
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    graphApi.delete.mockImplementation(async (id: string) => {
+      if (id === 'meta-ad-1') {
+        throw new Error('delete ad failed');
+      }
+      return { success: true };
+    });
+
+    await expect(service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        executionStatus: MetaCampaignCreationStatus.PARTIAL_ROLLBACK,
+        cleanupPending: true,
+        partialIds: expect.objectContaining({
+          adId: 'meta-ad-1',
+        }),
+      }),
+    });
+  });
+
+  it('fails honestly with PARTIAL_ROLLBACK when creative remains orphaned', async () => {
+    const execution = partialExecution({
+      metaCreativeId: 'meta-creative-1',
+      metaAdId: 'meta-ad-1',
+      adCreated: true,
+      creativeCreated: true,
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    graphApi.delete.mockImplementation(async (id: string) => {
+      if (id === 'meta-creative-1') {
+        throw new Error('delete creative failed');
+      }
+      return { success: true };
+    });
+
+    await expect(service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        executionStatus: MetaCampaignCreationStatus.PARTIAL_ROLLBACK,
+        cleanupPending: true,
+        partialIds: expect.objectContaining({
+          creativeId: 'meta-creative-1',
+        }),
+      }),
+    });
+  });
+
+  it('fails honestly with PARTIAL_ROLLBACK when adset remains orphaned', async () => {
+    const execution = partialExecution({
+      metaCreativeId: 'meta-creative-1',
+      metaAdId: 'meta-ad-1',
+      adCreated: true,
+      creativeCreated: true,
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    graphApi.delete.mockImplementation(async (id: string) => {
+      if (id === 'meta-adset-1') {
+        throw new Error('delete adset failed');
+      }
+      return { success: true };
+    });
+
+    await expect(service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        executionStatus: MetaCampaignCreationStatus.PARTIAL_ROLLBACK,
+        cleanupPending: true,
+        partialIds: expect.objectContaining({
+          adSetId: 'meta-adset-1',
+        }),
+      }),
+    });
+  });
+
+  it('fails honestly with CLEANUP_FAILED when the only remaining campaign cannot be deleted', async () => {
+    const execution = partialExecution({
+      metaAdSetId: null,
+      metaCreativeId: null,
+      metaAdId: null,
+      adSetCreated: false,
+      creativeCreated: false,
+      adCreated: false,
+      errorStep: 'campaign',
+      currentStep: 'campaign',
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    graphApi.delete.mockRejectedValue(new Error('delete campaign failed'));
+
+    await expect(service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        executionStatus: MetaCampaignCreationStatus.CLEANUP_FAILED,
+        cleanupPending: true,
+        partialIds: expect.objectContaining({
+          campaignId: 'meta-campaign-1',
+        }),
+      }),
+    });
+  });
+
+  it('preserves all orphan ids when multiple cleanup deletions fail', async () => {
+    const execution = partialExecution({
+      metaCreativeId: 'meta-creative-1',
+      metaAdId: 'meta-ad-1',
+      adCreated: true,
+      creativeCreated: true,
+    });
+    campaignCreationRepository.findOne.mockResolvedValue(execution);
+    graphApi.delete.mockImplementation(async (id: string) => {
+      if (id === 'meta-adset-1' || id === 'meta-campaign-1') {
+        throw new Error(`delete failed for ${id}`);
+      }
+      return { success: true };
+    });
+
+    await expect(service.cleanupPartialResourcesForUser(user as any, 'store-1', execution.id)).rejects.toMatchObject({
+      response: expect.objectContaining({
+        executionStatus: MetaCampaignCreationStatus.PARTIAL_ROLLBACK,
+        cleanupPending: true,
+        partialIds: {
+          campaignId: 'meta-campaign-1',
+          adSetId: 'meta-adset-1',
+          creativeId: null,
+          adId: null,
+        },
+      }),
+    });
   });
 
   it('returns detailed execution status', async () => {

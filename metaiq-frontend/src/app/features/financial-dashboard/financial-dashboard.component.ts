@@ -197,12 +197,10 @@ export class FinancialDashboardComponent implements OnInit {
 
   onKanbanItemMoved(event: {item: BillingItem, newStatus: string}) {
     // In a real app, this would update the backend
-    console.log('Item moved:', event.item.id, 'to status:', event.newStatus);
   }
 
   onKanbanCardClicked(item: BillingItem) {
     // In a real app, this would open a detail modal
-    console.log('Card clicked:', item);
   }
 
   // Utility methods

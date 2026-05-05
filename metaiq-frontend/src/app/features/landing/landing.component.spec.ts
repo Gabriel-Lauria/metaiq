@@ -20,6 +20,7 @@ describe('LandingComponent', () => {
             isAuthenticated: () => false,
             currentUser$: of(null),
             getCurrentUser: () => null,
+            resolveAuthenticatedRoute: () => '/dashboard',
           },
         },
       ],
@@ -30,16 +31,18 @@ describe('LandingComponent', () => {
     fixture.detectChanges();
   });
 
-  it('renderiza CTA para criar conta', () => {
-    expect(fixture.nativeElement.textContent).toContain('Começar operação');
+  it('renderiza CTA honesto quando o cadastro público está desativado', () => {
+    expect(fixture.nativeElement.textContent).toContain('Acessar plataforma');
+    expect(fixture.nativeElement.textContent).toContain('Ir para login');
+    expect(fixture.nativeElement.textContent).not.toContain('Ver demonstração');
   });
 
-  it('aponta o CTA principal para /register', () => {
-    const registerLink = fixture.debugElement
+  it('aponta o CTA principal para /auth quando não existe fluxo público', () => {
+    const loginLink = fixture.debugElement
       .queryAll(By.directive(RouterLink))
-      .find((item) => item.nativeElement.textContent.includes('Começar operação'))
+      .find((item) => item.nativeElement.textContent.includes('Acessar plataforma'))
       ?.nativeElement as HTMLAnchorElement | undefined;
 
-    expect(registerLink?.getAttribute('href')).toContain('/register');
+    expect(loginLink?.getAttribute('href')).toContain('/auth');
   });
 });

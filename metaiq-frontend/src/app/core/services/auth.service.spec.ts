@@ -16,7 +16,7 @@ describe('AuthService token storage', () => {
       role: Role.ADMIN,
       accountType: 'AGENCY',
       storeId: null,
-      businessName: 'MetaIQ',
+      businessName: 'Nexora',
       businessSegment: 'Marketing',
       defaultCity: 'Curitiba',
       defaultState: 'PR',
@@ -59,7 +59,7 @@ describe('AuthService token storage', () => {
     expect(localStorage.getItem('user')).toContain('admin@test.com');
     expect(service.getCurrentUser()?.accountType).toBe('AGENCY');
     expect(service.getCurrentUser()?.storeId).toBeNull();
-    expect(service.getCurrentUser()?.businessName).toBe('MetaIQ');
+    expect(service.getCurrentUser()?.businessName).toBe('Nexora');
   });
 
   it('restores authentication after reload using the refresh cookie', (done) => {

@@ -1,29 +1,34 @@
 <div class="auth-shell">
   <section class="auth-panel">
     <div class="brand-block">
-      <p class="eyebrow">MetaIQ</p>
-      <h1>Clareza para decidir onde investir.</h1>
+      <p class="eyebrow">Nexora</p>
+      <h1>Acesse sua central de operação de marketing.</h1>
       <p class="brand-copy">
-        Acompanhe campanhas, métricas e alertas sem garimpar planilhas.
+        Entre para acompanhar campanhas, investimento, métricas e alertas em uma plataforma feita para estruturar a operação antes da publicação.
       </p>
     </div>
 
-    <div class="status-list">
-      <span>Multi-tenant isolado</span>
-      <span>Tokens protegidos</span>
-      <span>Métricas auditáveis</span>
+    <div class="value-column">
+      <article>
+        <strong>Dashboard executivo</strong>
+        <p>Veja o que precisa de atenção hoje sem abrir uma sequência de relatórios dispersos.</p>
+      </article>
+      <article>
+        <strong>Fluxo operacional claro</strong>
+        <p>Conecte Meta, organize ativos e chegue ao builder com contexto e previsibilidade.</p>
+      </article>
+      <article>
+        <strong>Ambiente profissional</strong>
+        <p>Escopo por store, rastreabilidade e leitura pronta para decisão comercial.</p>
+      </article>
     </div>
   </section>
 
   <section class="auth-card">
     <div class="auth-header">
-      <p class="kicker">Acesso beta</p>
-      <h2>Entrar no MetaIQ</h2>
-      <p>Acesse com suas credenciais liberadas para o beta controlado.</p>
-    </div>
-
-    <div class="mode-switch single-mode" role="tablist" aria-label="Modo de autenticação">
-      <button type="button" class="active">Entrar</button>
+      <p class="kicker">Acesso seguro</p>
+      <h2>Entrar na Nexora</h2>
+      <p>Abra seu ambiente operacional para tomar decisões mais rápidas e publicar com mais controle.</p>
     </div>
 
     <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="auth-form" novalidate>
@@ -33,14 +38,17 @@
           type="email"
           formControlName="email"
           [class.error]="isInvalid(loginForm, 'email')"
-          placeholder="voce@exemplo.com"
+          placeholder="voce@empresa.com"
           autocomplete="email"
         />
         <small *ngIf="getFieldError(loginForm, 'email')">{{ getFieldError(loginForm, 'email') }}</small>
       </label>
 
       <label class="form-field">
-        <span>Senha</span>
+        <div class="field-row">
+          <span>Senha</span>
+          <button type="button" class="forgot-link" (click)="requestConsultation()">Recuperar acesso</button>
+        </div>
         <input
           type="password"
           formControlName="password"
@@ -56,14 +64,14 @@
       </div>
 
       <button type="submit" class="primary-action" [disabled]="loading || loginForm.invalid">
-        <span *ngIf="!loading">Entrar</span>
+        <span *ngIf="!loading">Entrar na plataforma</span>
         <span *ngIf="loading" class="spinner"></span>
       </button>
     </form>
 
-    <div class="beta-actions">
-      <button type="button" class="secondary-action" (click)="requestBetaAccess()">Solicitar acesso beta</button>
-      <p class="beta-note">Sistema em fase beta. Algumas funcionalidades podem apresentar instabilidade.</p>
+    <div class="support-actions">
+      <button type="button" class="secondary-action" (click)="requestConsultation()">Falar com especialista</button>
+      <p class="support-note">Se sua equipe precisa estruturar onboarding, operação ou governança de campanhas, o time pode orientar a implantação.</p>
     </div>
   </section>
 </div>

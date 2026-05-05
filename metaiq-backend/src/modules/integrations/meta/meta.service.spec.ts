@@ -777,6 +777,8 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -835,6 +837,23 @@ describe('MetaIntegrationService OAuth', () => {
         storeId: 'store-1',
         requesterId: 'user-1',
         adAccountId: 'ad-account-1',
+        pageId: 'page-1',
+        destinationUrl: expect.stringContaining('utm_source=meta'),
+        imageHash: null,
+        metaPayloadSnapshot: expect.objectContaining({
+          campaign: expect.any(Object),
+          adSet: expect.any(Object),
+          creative: expect.any(Object),
+          ad: expect.any(Object),
+        }),
+      }),
+    }));
+    expect(campaignCreationRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      requestPayload: expect.objectContaining({
+        imageHash: 'meta-image-hash-1',
+        metaPayloadSnapshot: expect.objectContaining({
+          creative: expect.any(Object),
+        }),
       }),
     }));
     expect(result).toEqual({
@@ -933,6 +952,9 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
+      .mockResolvedValueOnce({ data: { id: 'pixel-123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -945,7 +967,7 @@ describe('MetaIntegrationService OAuth', () => {
       objective: 'OUTCOME_LEADS',
       pixelId: 'pixel-123',
       conversionEvent: 'Lead',
-      placements: ['feed', 'reels', 'messenger'],
+      placements: ['feed', 'reels'],
       specialAdCategories: ['HOUSING'],
       destinationUrl: 'https://metaiq.dev/oferta',
       utmCampaign: 'leads-q2',
@@ -967,10 +989,10 @@ describe('MetaIntegrationService OAuth', () => {
     expect(promotedObject).toEqual({ pixel_id: 'pixel-123', custom_event_type: 'LEAD' });
     expect(targeting.age_min).toBe(25);
     expect(targeting.age_max).toBe(55);
-    expect(targeting.publisher_platforms).toEqual(expect.arrayContaining(['facebook', 'instagram', 'messenger']));
+    expect(targeting.publisher_platforms).toEqual(expect.arrayContaining(['facebook', 'instagram']));
     expect(targeting.facebook_positions).toEqual(expect.arrayContaining(['feed', 'facebook_reels']));
     expect(targeting.instagram_positions).toEqual(expect.arrayContaining(['stream', 'reels']));
-    expect(targeting.messenger_positions).toEqual(expect.arrayContaining(['messenger_home']));
+    expect(targeting.messenger_positions).toBeUndefined();
     expect(objectStorySpec.link_data.link).toContain('utm_source=meta');
     expect(objectStorySpec.link_data.link).toContain('utm_medium=paid-social');
     expect(objectStorySpec.link_data.link).toContain('utm_campaign=leads-q2');
@@ -997,6 +1019,8 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1048,6 +1072,213 @@ describe('MetaIntegrationService OAuth', () => {
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
+  it('bloqueia publish no preflight quando o app Meta ainda está em development mode', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration({
+        metadata: {
+          pageId: 'page-1',
+          destinationUrl: 'https://metaiq.dev/oferta',
+          appMode: 'development',
+        },
+      })),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+    mockedAxios.get.mockResolvedValueOnce({ data: { id: 'provider-user-1' } });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        blockingIssues: expect.arrayContaining([
+          'Meta App ainda está em development mode. Coloque o app em live mode antes de publicar.',
+        ]),
+      }),
+    });
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia publish antes do POST quando a integração não tem ads_management', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration({
+        grantedScopes: 'ads_read,business_management',
+      })),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toThrow(
+      'Integração Meta sem permissão obrigatória (ads_management). Reconecte a store com as permissões atualizadas.',
+    );
+    expect(mockedAxios.get).not.toHaveBeenCalled();
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia publish no preflight quando a page não está acessível no contexto atual', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockRejectedValueOnce({ response: { status: 400, data: { error: { message: 'page not found' } } } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload())).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        blockingIssues: expect.arrayContaining([
+          'Preflight falhou ao validar page page-1.',
+        ]),
+      }),
+    });
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia publish no preflight quando o pixel não está acessível para a campanha de leads', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
+      .mockRejectedValueOnce({ response: { status: 400, data: { error: { message: 'pixel not available' } } } });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      objective: 'OUTCOME_LEADS',
+      pixelId: 'pixel-123',
+      conversionEvent: 'Lead',
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        blockingIssues: expect.arrayContaining([
+          'Preflight falhou ao validar pixel pixel-123.',
+        ]),
+      }),
+    });
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia incompatibilidade de placement e objetivo antes do POST real', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      objective: 'OUTCOME_LEADS',
+      pixelId: 'pixel-123',
+      conversionEvent: 'Lead',
+      placements: ['messenger'],
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        blockingIssues: expect.arrayContaining([
+          'Placement messenger não é aceito fora do objetivo de tráfego neste fluxo.',
+        ]),
+      }),
+    });
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia incompatibilidade de CTA e objetivo antes do POST real', async () => {
+    integrationRepo.createQueryBuilder.mockReturnValue({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    });
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
+    mockedAxios.get
+      .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } });
+
+    await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
+      objective: 'REACH',
+      cta: 'SIGN_UP',
+    }))).rejects.toMatchObject({
+      response: expect.objectContaining({
+        message: 'Preflight operacional bloqueou a publicação Meta.',
+        blockingIssues: expect.arrayContaining([
+          'CTA SIGN_UP é agressivo demais para o fluxo atual de REACH.',
+        ]),
+      }),
+    });
+
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
+
   it('normaliza CTA amigavel da UI antes de enviar o creative para a Meta', async () => {
     integrationRepo.createQueryBuilder = jest.fn(() => ({
       where: jest.fn().mockReturnThis(),
@@ -1067,6 +1298,8 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1114,6 +1347,8 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.findOne.mockResolvedValue(null);
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: '1043259782209836' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1270,6 +1505,8 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1340,6 +1577,8 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockRejectedValueOnce({
@@ -1383,6 +1622,8 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1423,6 +1664,8 @@ describe('MetaIntegrationService OAuth', () => {
     });
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1472,6 +1715,8 @@ describe('MetaIntegrationService OAuth', () => {
     campaignRepo.save.mockRejectedValueOnce(new Error('database unavailable'));
     mockedAxios.get
       .mockResolvedValueOnce({ data: { id: 'provider-user-1' } })
+      .mockResolvedValueOnce({ data: { id: 'page-1' } })
+      .mockResolvedValueOnce({ data: { id: 'act_123' } })
       .mockResolvedValueOnce(downloadedImageResponse() as any);
     mockedAxios.post
       .mockResolvedValueOnce({ data: { id: 'campaign-meta-1' } })
@@ -1604,6 +1849,21 @@ describe('MetaIntegrationService OAuth', () => {
       metaCreativeId: 'creative-meta-1',
       metaAdId: 'ad-meta-1',
     });
+    integrationRepo.createQueryBuilder = jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    }));
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
+    });
 
     await expect(service.createCampaignForUser(user, 'store-1', createCampaignPayload({
       name: 'Campanha diferente',
@@ -1618,7 +1878,6 @@ describe('MetaIntegrationService OAuth', () => {
         idempotencyKey: 'same-key',
       }),
     });
-    expect(integrationRepo.createQueryBuilder).not.toHaveBeenCalled();
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
@@ -1675,6 +1934,21 @@ describe('MetaIntegrationService OAuth', () => {
       },
       metaCampaignId: 'campaign-meta-1',
       metaAdSetId: 'adset-meta-1',
+    });
+    integrationRepo.createQueryBuilder = jest.fn(() => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      getOne: jest.fn(async () => connectedCampaignIntegration()),
+    }));
+    adAccountRepo.findOne.mockResolvedValue({
+      id: 'ad-account-1',
+      storeId: 'store-1',
+      provider: IntegrationProvider.META,
+      externalId: 'act_123',
+      metaId: 'act_123',
+      syncStatus: SyncStatus.SUCCESS,
+      active: true,
     });
     const hashSpy = jest.spyOn<any, any>(service as any, 'hashPayload').mockReturnValue('expected-hash');
 

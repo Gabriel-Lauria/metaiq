@@ -34,6 +34,7 @@ import {
   IbgeCity,
   IbgeState,
   CompanyProfilePayload,
+  DeleteMetaImageAssetResponse,
   Asset,
   AssetType,
 } from '../models';
@@ -71,6 +72,7 @@ type ApiErrorShape = {
   executionStatus?: string;
   partialIds?: Record<string, unknown>;
   metaError?: Record<string, unknown>;
+  blockingIssues?: string[];
   hint?: string;
   details?: unknown;
   originalError?: unknown;
@@ -115,7 +117,11 @@ export class ApiService {
       return null;
     }
 
-    const candidate = error as ApiErrorShape;
+    const httpError = error as HttpErrorResponse & { error?: unknown };
+    const nestedCandidate = httpError.error && typeof httpError.error === 'object'
+      ? httpError.error as ApiErrorShape
+      : null;
+    const candidate = nestedCandidate || error as ApiErrorShape;
     if (
       typeof candidate.message === 'string'
       || typeof candidate.step === 'string'
@@ -324,6 +330,10 @@ export class ApiService {
     return this.get<User[]>('/users');
   }
 
+  updateMyOnboarding(completed = true): Observable<User> {
+    return this.patch<User>('/users/me/onboarding', { completed });
+  }
+
   getMyCompany(): Observable<CompanyProfilePayload> {
     return this.get<CompanyProfilePayload>('/me/company');
   }
@@ -395,15 +405,21 @@ export class ApiService {
     return this.get<Asset[]>('/assets', params);
   }
 
-  uploadAsset(file: File, storeId: string): Observable<HttpEvent<Asset>> {
+  uploadMetaImageAsset(file: File, storeId: string, adAccountId: string): Observable<HttpEvent<Asset>> {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('storeId', storeId);
+    formData.append('adAccountId', adAccountId);
 
-    return this.http.post<Asset>(`${API}/assets/upload?storeId=${encodeURIComponent(storeId)}`, formData, {
+    return this.http.post<Asset>(`${API}/integrations/meta/stores/${encodeURIComponent(storeId)}/assets/images`, formData, {
       observe: 'events',
       reportProgress: true,
     }).pipe(catchError((err) => this.handleError(err)));
+  }
+
+  deleteMetaImageAsset(storeId: string, assetId: string): Observable<DeleteMetaImageAssetResponse> {
+    return this.delete<DeleteMetaImageAssetResponse>(
+      `/integrations/meta/stores/${encodeURIComponent(storeId)}/assets/images/${encodeURIComponent(assetId)}`,
+    );
   }
 
   updateMetaPage(storeId: string, body: UpdateMetaPageRequest): Observable<StoreIntegration> {
@@ -436,6 +452,19 @@ export class ApiService {
         `${API}/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/retry`,
         body,
       ),
+    );
+  }
+
+  cleanupMetaCampaignRecovery(
+    storeId: string,
+    executionId: string,
+  ): Observable<{ success: boolean; message: string; cleaned: Record<string, boolean> }> {
+    return this.request(
+      this.http.post<{ success: boolean; message: string; cleaned: Record<string, boolean> }>(
+        `${API}/integrations/meta/stores/${storeId}/campaigns/recovery/${executionId}/cleanup`,
+        {},
+      ),
+      true,
     );
   }
 

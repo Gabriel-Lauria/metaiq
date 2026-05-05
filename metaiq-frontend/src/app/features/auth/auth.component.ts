@@ -207,12 +207,8 @@ export class AuthComponent implements OnInit {
   }
 
   private resolvePostLoginUrl(): string {
-    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl')?.trim();
-    if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
-      return returnUrl;
-    }
-
-    const user = this.authService.getCurrentUser();
-    return user?.accountType === 'INDIVIDUAL' ? '/campaigns' : '/dashboard';
+    return this.authService.resolveAuthenticatedRoute(
+      this.route.snapshot.queryParamMap.get('returnUrl'),
+    );
   }
 }

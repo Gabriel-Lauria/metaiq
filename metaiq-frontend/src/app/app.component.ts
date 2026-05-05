@@ -159,10 +159,11 @@ export class AppComponent {
   }
 
   private resolvePageTitle(url: string): string {
-    const normalizedUrl = url.split('?')[0]?.split('#')[0] || url;
+    const normalizedUrl = this.normalizeUrlPath(url);
     const role = this.authService.getCurrentRole();
     const isIndividual = this.accountContext.isIndividualAccount();
     const titles: { [key: string]: string } = {
+      '/welcome': 'Primeiros passos',
       '/dashboard': isIndividual
         ? 'Dashboard'
         : role === Role.CLIENT
@@ -209,7 +210,7 @@ export class AppComponent {
   }
 
   isActive(route: string): boolean {
-    return this.router.url === route;
+    return this.normalizeUrlPath(this.router.url) === this.normalizeUrlPath(route);
   }
 
   getMenu(): MenuItem[] {
@@ -252,5 +253,9 @@ export class AppComponent {
       .map((part) => part.charAt(0).toUpperCase())
       .join('')
       .slice(0, 2) || 'U';
+  }
+
+  private normalizeUrlPath(url: string): string {
+    return url.split('?')[0]?.split('#')[0] || url;
   }
 }

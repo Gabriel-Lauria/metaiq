@@ -11,7 +11,9 @@ import { MetricDaily } from '../../modules/metrics/metric-daily.entity';
 import { Store } from '../../modules/stores/store.entity';
 import { UserStore } from '../../modules/user-stores/user-store.entity';
 
-function findColumn(target: Function, propertyName: string) {
+type EntityClass = abstract new (...args: never[]) => unknown;
+
+function findColumn(target: EntityClass, propertyName: string) {
   const column = getMetadataArgsStorage().columns.find(
     (entry) => entry.target === target && entry.propertyName === propertyName,
   );
@@ -20,19 +22,19 @@ function findColumn(target: Function, propertyName: string) {
   return column!;
 }
 
-function expectNotNullable(target: Function, propertyNames: string[]): void {
+function expectNotNullable(target: EntityClass, propertyNames: string[]): void {
   for (const propertyName of propertyNames) {
     expect(findColumn(target, propertyName).options.nullable).not.toBe(true);
   }
 }
 
-function expectNullable(target: Function, propertyNames: string[]): void {
+function expectNullable(target: EntityClass, propertyNames: string[]): void {
   for (const propertyName of propertyNames) {
     expect(findColumn(target, propertyName).options.nullable).toBe(true);
   }
 }
 
-function findRelation(target: Function, propertyName: string) {
+function findRelation(target: EntityClass, propertyName: string) {
   const relation = getMetadataArgsStorage().relations.find(
     (entry) => entry.target === target && entry.propertyName === propertyName,
   );

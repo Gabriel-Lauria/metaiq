@@ -6,7 +6,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { validate } from 'class-validator';
 import { CampaignAiController } from './campaign-ai.controller';
-import { CampaignAnalysisDto, CampaignSuggestionDto } from './dto/campaign-ai.dto';
+import {
+  CampaignAiStructuredResponse,
+  CampaignAnalysisDto,
+  CampaignSuggestionDto,
+} from './dto/campaign-ai.dto';
 import { CampaignAiService } from './campaign-ai.service';
 
 describe('CampaignAiService', () => {
@@ -228,17 +232,17 @@ describe('CampaignAiService', () => {
     };
     (service as any).resolveStoreAiContext = jest.fn().mockResolvedValue({
       storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
-      storeName: 'MetaIQ Pets',
-      companyName: 'MetaIQ Pets',
+      storeName: 'Nexora Pets',
+      companyName: 'Nexora Pets',
       segment: 'pet shop',
       description: 'Pet shop local com foco em banho e tosa agendado.',
       targetAudience: 'Tutores de pets em Curitiba e regiao.',
       businessType: 'servico local',
       managerName: 'Ana',
-      tenantName: 'MetaIQ',
+      tenantName: 'Nexora',
       contextSources: ['briefing', 'store_profile'],
       storeProfile: {
-        name: 'MetaIQ Pets',
+        name: 'Nexora Pets',
         segment: 'pet shop',
         businessType: 'servico local',
         city: 'Curitiba',
@@ -509,6 +513,170 @@ describe('CampaignAiService', () => {
     });
 
     expect(result.status).toBe('AI_NEEDS_REVIEW');
+  });
+
+  it('keeps WhatsApp plus remarketing as AI_NEEDS_REVIEW when the model is operationally blocked but still coherent', async () => {
+    const service = createService();
+    const payload = validStructuredResponse({
+      planner: {
+        ...validStructuredResponse().planner,
+        goal: 'Gerar leads no WhatsApp para recuperar interesse da coleção',
+        funnelStage: 'remarketing',
+        audienceIntent: 'Pessoas que demonstraram interesse recente na coleção.',
+      },
+      campaign: {
+        ...validStructuredResponse().campaign,
+        campaignName: 'Moda Brasil | WhatsApp',
+        budget: {
+          type: 'daily',
+          amount: 120,
+          currency: 'BRL',
+        },
+      },
+      adSet: {
+        ...validStructuredResponse().adSet,
+        targeting: {
+          ...validStructuredResponse().adSet.targeting,
+          country: 'BR',
+          state: null,
+          stateCode: null,
+          city: null,
+          interests: ['moda feminina', 'compras online'],
+          excludedInterests: [],
+        },
+      },
+      creative: {
+        ...validStructuredResponse().creative,
+        primaryText: 'Fale com a equipe no WhatsApp para retomar seu interesse na coleção.',
+        headline: 'Atendimento no WhatsApp para a coleção',
+        description: 'Recupere leads com atendimento rápido.',
+        cta: 'LEARN_MORE',
+        destinationUrl: 'https://moda.example/colecao',
+      },
+      validation: {
+        isReadyToPublish: true,
+        qualityScore: 88,
+        blockingIssues: [],
+        warnings: [],
+        recommendations: [],
+      },
+    });
+    const generateContent = jest.fn().mockResolvedValue({
+      text: JSON.stringify(payload),
+    });
+
+    (service as any).ai = {
+      models: { generateContent },
+    };
+    (service as any).resolveStoreAiContext = jest.fn().mockResolvedValue({
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+      storeName: 'Moda Brasil',
+      companyName: 'Moda Brasil',
+      segment: 'moda',
+      description: 'Ecommerce de moda com coleções sazonais.',
+      website: 'https://moda.example',
+      instagram: null,
+      whatsapp: null,
+      targetAudience: 'Consumidores no Brasil que já interagiram com a marca.',
+      businessType: 'ecommerce',
+      managerName: 'Ana',
+      tenantName: 'Moda Brasil',
+      tenantNotes: null,
+      managerNotes: null,
+      contextSources: ['briefing', 'store_profile'],
+      storeProfile: {
+        name: 'Moda Brasil',
+        segment: 'moda',
+        businessType: 'ecommerce',
+        city: null,
+        region: 'Brasil',
+        instagram: null,
+        whatsapp: null,
+        salesModel: 'ecommerce',
+        mainOffer: 'Coleção feminina',
+        targetAudienceBase: 'Consumidores no Brasil que já interagiram com a marca.',
+        differentiators: ['Entrega nacional'],
+        notesSummary: 'Operação focada em ecommerce.',
+      },
+      tenantProfile: {
+        businessType: 'ecommerce',
+        notes: null,
+        accountType: 'BUSINESS',
+      },
+      managerProfile: {
+        notes: null,
+      },
+      campaignIntent: {
+        goal: 'Gerar leads no WhatsApp',
+        funnelStage: 'remarketing',
+        channelPreference: 'whatsapp',
+        budgetRange: 'R$ 120 por dia',
+        durationDays: 7,
+        destinationType: 'messages',
+        primaryOffer: 'Coleção feminina',
+        region: 'Brasil',
+        extraContext: 'Recuperar interesse de quem já visitou a coleção.',
+        communicationTone: 'direto',
+      },
+      historicalContext: {
+        campaignCount: 4,
+        recentCampaigns: [],
+        metrics: { ctr: 1.5, cpa: 24, roas: 2.1 },
+        audienceSignals: [],
+      },
+      dataAvailability: {
+        hasHistoricalCampaigns: true,
+        hasPerformanceMetrics: true,
+        hasConnectedMetaAccount: true,
+        hasConnectedPage: true,
+        hasWebsite: true,
+        hasWhatsapp: false,
+        hasInstagram: false,
+        hasMessageDestinationAvailable: true,
+      },
+      fieldOrigins: {
+        segment: 'prompt',
+        businessType: 'prompt',
+        city: null,
+        region: 'prompt',
+        goal: 'prompt',
+        funnelStage: 'prompt',
+        budget: 'prompt',
+        destinationType: 'prompt',
+        channelPreference: 'prompt',
+        primaryOffer: 'store',
+        extraContext: 'prompt',
+      },
+    });
+
+    const result = await service.suggestCampaignFormFields({
+      prompt: 'Campanha de leads para ecommerce de moda no Brasil com orçamento 120 por dia, CTA falar no WhatsApp e foco em remarketing.',
+      storeId: '0f6a4f7e-8d6e-4b9b-9db8-1c1a53d9c001',
+    });
+
+    expect(result.status).toBe('AI_NEEDS_REVIEW');
+    if (result.status === 'AI_FAILED' || result.status === 'AI_NEEDS_RETRY') {
+      throw new Error('Expected AI_NEEDS_REVIEW');
+    }
+    const structuredResult = result as CampaignAiStructuredResponse;
+    expect(structuredResult.intent.destinationType).toBe('messages');
+    expect(structuredResult.creative.destinationUrl).toBeNull();
+    expect(structuredResult.validation.isReadyToPublish).toBe(false);
+    expect(structuredResult.validation.blockingIssues).toContain(
+      'Campanhas de mensagens (WhatsApp, Messenger, Instagram) ainda não possuem publicação automática nesta versão. A IA pode sugerir estratégia e estrutura, mas a publicação automática atual é apenas para campanhas de website.',
+    );
+    expect(structuredResult.validation.blockingIssues).toContain(
+      'Estrutura de remarketing não encontrada. Conecte pixel, audiência ou sinais de engajamento antes de publicar.',
+    );
+    expect(structuredResult.validation.blockingIssues).toContain(
+      'O briefing pede remarketing, mas ainda falta selecionar ou conectar um público de remarketing/pixel/audiência personalizada.',
+    );
+    expect(structuredResult.validation.warnings).toContain(
+      'Os interesses sugeridos vieram como público frio, então foram removidos do targeting final até existir uma audiência real de remarketing.',
+    );
+    expect(structuredResult.validation.recommendations).toContain(
+      'Configure uma audiência personalizada, pixel ou sinais reais de engajamento antes de publicar o remarketing.',
+    );
   });
 
   it('normalizes common field aliases from Gemini but keeps review state when confidence is insufficient', async () => {
@@ -1401,11 +1569,11 @@ describe('CampaignAiService', () => {
         budget: 50,
         region: 'Curitiba / PR',
         destinationType: 'website',
-        extraContext: 'Empresa: MetaIQ | Segmento: Marketing | Local: Curitiba / PR',
+        extraContext: 'Empresa: Nexora | Segmento: Marketing | Local: Curitiba / PR',
       },
-      storeName: 'MetaIQ',
-      tenantName: 'MetaIQ',
-      tenantBusinessName: 'MetaIQ',
+      storeName: 'Nexora',
+      tenantName: 'Nexora',
+      tenantBusinessName: 'Nexora',
       tenantBusinessType: 'Marketing',
       tenantDefaultCity: 'Curitiba',
       tenantDefaultState: 'PR',
@@ -1451,11 +1619,11 @@ describe('CampaignAiService', () => {
         budget: 50,
         region: 'Curitiba / PR',
         destinationType: 'website',
-        extraContext: 'Empresa: MetaIQ | Segmento: Marketing | Local: Curitiba / PR',
+        extraContext: 'Empresa: Nexora | Segmento: Marketing | Local: Curitiba / PR',
       },
-      storeName: 'MetaIQ',
-      tenantName: 'MetaIQ',
-      tenantBusinessName: 'MetaIQ',
+      storeName: 'Nexora',
+      tenantName: 'Nexora',
+      tenantBusinessName: 'Nexora',
       tenantBusinessType: 'Marketing',
       tenantDefaultCity: 'Curitiba',
       tenantDefaultState: 'PR',
@@ -1528,9 +1696,6 @@ describe('CampaignAiService', () => {
     expect(result.campaign.status).toBe('PAUSED');
     expect(result.campaign.budget.type).toBe('daily');
     expect(result.campaign.budget.amount).toBe(80);
-    expect(result.creative.cta).toBe('MESSAGE_PAGE');
-    expect(result.creative.destinationUrl).toBeNull();
-    expect(result.validation.isReadyToPublish).toBe(false);
   });
 
   it('normalizes WhatsApp CTA text to MESSAGE_PAGE', () => {
@@ -1540,7 +1705,7 @@ describe('CampaignAiService', () => {
     expect((service as any).normalizeCtaValue('Chamar agora no WhatsApp')).toBe('MESSAGE_PAGE');
   });
 
-  it('keeps WhatsApp creative in review when deterministic rules can normalize the contract', async () => {
+  it('returns retry when WhatsApp creative still violates the deterministic website-only contract', async () => {
     const service = createService();
     const payload = validStructuredResponse({
       intent: {
@@ -1579,14 +1744,11 @@ describe('CampaignAiService', () => {
       funnelStage: 'remarketing',
     });
 
-    expect(result.status).toBe('AI_NEEDS_REVIEW');
-    if (result.status !== 'AI_NEEDS_REVIEW') {
-      throw new Error('Expected AI_NEEDS_REVIEW');
+    expect(result.status).toBe('AI_NEEDS_RETRY');
+    if (result.status !== 'AI_NEEDS_RETRY') {
+      throw new Error('Expected AI_NEEDS_RETRY');
     }
-    expect((result as any).reason).toBeUndefined();
-    expect(result.creative.cta).toBe('MESSAGE_PAGE');
-    expect(result.creative.destinationUrl).toBeNull();
-    expect(result.validation.isReadyToPublish).toBe(false);
+    expect((result as any).reason).toBeTruthy();
   });
 
   it('preserves message consistency rules in local validation', () => {
@@ -1939,7 +2101,7 @@ describe('CampaignAiService', () => {
       models: { generateContent },
     };
     (service as any).resolveStoreAiContext = jest.fn().mockResolvedValue({
-      companyName: 'MetaIQ Pets',
+      companyName: 'Nexora Pets',
       segment: 'pet shop',
       businessType: 'servico local',
       targetAudience: 'Tutores de pets',
@@ -1998,7 +2160,7 @@ describe('CampaignAiService', () => {
       models: { generateContent },
     };
     (service as any).resolveStoreAiContext = jest.fn().mockResolvedValue({
-      companyName: 'MetaIQ Pets',
+      companyName: 'Nexora Pets',
       segment: 'pet shop',
       businessType: 'servico local',
       targetAudience: 'Tutores de pets em Curitiba',
@@ -2331,9 +2493,9 @@ describe('CampaignAiService', () => {
 
     expect(sanitized).toEqual({
       model: 'gemini-2.5-flash',
-      contents: '[redacted_in_production]',
+      contents: '[redacted]',
       config: {
-        responseJsonSchema: '[redacted_in_production]',
+        responseJsonSchema: '[redacted]',
         temperature: 0.25,
       },
     });

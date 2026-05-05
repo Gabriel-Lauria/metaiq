@@ -64,6 +64,9 @@ export class User {
   @Column({ type: 'int', default: 0 })
   sessionVersion: number;
 
+  @Column({ nullable: true })
+  onboardingCompletedAt: Date | null;
+
   @Column({ default: true })
   active: boolean;
 

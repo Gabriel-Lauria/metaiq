@@ -12,12 +12,21 @@ describe('AppController health/readiness', () => {
     metaAppSecret?: string;
     metaRedirectUri?: string;
   }) {
+    const rawOneQueue = [
+      { count: 2 },
+      { lastSyncAt: new Date().toISOString() },
+    ];
+    const queryBuilder = {
+      from: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn(async () => rawOneQueue.shift()),
+    };
     const dataSource = {
       isInitialized: options?.initialized ?? true,
       query: options?.queryImpl ?? jest.fn()
-        .mockResolvedValueOnce([{ ok: 1 }])
-        .mockResolvedValueOnce([{ count: 2 }])
-        .mockResolvedValueOnce([{ lastSyncAt: new Date().toISOString() }]),
+        .mockResolvedValueOnce([{ ok: 1 }]),
+      createQueryBuilder: jest.fn(() => queryBuilder),
     } as unknown as DataSource;
     const config = {
       get: jest.fn((key: string) => {

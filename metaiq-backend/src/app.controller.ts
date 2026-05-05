@@ -1,6 +1,7 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { IntegrationProvider } from './common/enums';
 
 @Controller()
 export class AppController {
@@ -46,7 +47,7 @@ export class AppController {
   @Get('/api')
   api() {
     return {
-      name: 'MetaIQ Backend API',
+      name: 'Nexora Backend API',
       status: 'ok',
     };
   }
@@ -147,14 +148,22 @@ export class AppController {
     lastSyncAt: string | null;
     metricRows: number;
   }> {
-    const metricRowsResult = await this.dataSource.query('SELECT COUNT(*) as count FROM metrics_daily');
-    const metricRows = Number(metricRowsResult?.[0]?.count || 0);
+    const metricRowsRaw = await this.dataSource
+      .createQueryBuilder()
+      .from('metrics_daily', 'metric')
+      .select('COUNT(*)', 'count')
+      .getRawOne<{ count?: string | number }>();
+    const metricRows = Number(metricRowsRaw?.count || 0);
 
-    const syncResult = await this.dataSource.query(
-      'SELECT MAX("lastSyncAt") as "lastSyncAt" FROM store_integrations WHERE provider = ?',
-      ['META'],
-    );
-    const lastSyncAtRaw = syncResult?.[0]?.lastSyncAt ?? null;
+    const syncRaw = await this.dataSource
+      .createQueryBuilder()
+      .from('store_integrations', 'integration')
+      .select('MAX(integration.lastSyncAt)', 'lastSyncAt')
+      .where('integration.provider = :provider', {
+        provider: IntegrationProvider.META,
+      })
+      .getRawOne<{ lastSyncAt?: string | Date | null }>();
+    const lastSyncAtRaw = syncRaw?.lastSyncAt ?? null;
     const lastSyncAt = lastSyncAtRaw ? new Date(lastSyncAtRaw) : null;
     const isFresh = lastSyncAt && (Date.now() - lastSyncAt.getTime()) <= this.metricsSyncMaxAgeMs;
 

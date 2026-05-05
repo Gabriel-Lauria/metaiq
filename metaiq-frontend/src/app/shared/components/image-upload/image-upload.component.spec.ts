@@ -25,8 +25,11 @@ describe('ImageUploadComponent', () => {
   };
 
   beforeEach(async () => {
-    api = jasmine.createSpyObj<ApiService>('ApiService', ['getAssets', 'uploadAsset']);
+    api = jasmine.createSpyObj<ApiService>('ApiService', ['getAssets', 'uploadMetaImageAsset', 'deleteMetaImageAsset']);
     api.getAssets.and.returnValue(of([]));
+    api.deleteMetaImageAsset.and.returnValue(of({ status: 'DELETED', message: 'Imagem removida com sucesso.' }));
+    spyOn(URL, 'createObjectURL').and.returnValue('blob:preview');
+    spyOn(URL, 'revokeObjectURL');
 
     await TestBed.configureTestingModule({
       imports: [ImageUploadComponent],
@@ -36,11 +39,13 @@ describe('ImageUploadComponent', () => {
     fixture = TestBed.createComponent(ImageUploadComponent);
     component = fixture.componentInstance;
     component.storeId = 'store-1';
+    component.adAccountId = 'ad-account-1';
   });
 
   it('renderiza preview da imagem após upload com sucesso', () => {
+    spyOn<any>(component, 'prepareLocalPreview').and.resolveTo();
     const upload$ = new Subject<any>();
-    api.uploadAsset.and.returnValue(upload$.asObservable());
+    api.uploadMetaImageAsset.and.returnValue(upload$.asObservable());
 
     fixture.detectChanges();
     component.onFileInput({
@@ -55,13 +60,15 @@ describe('ImageUploadComponent', () => {
     upload$.complete();
     fixture.detectChanges();
 
+    expect(api.uploadMetaImageAsset).toHaveBeenCalledWith(jasmine.any(File), 'store-1', 'ad-account-1');
     expect(component.progress()).toBe(100);
-    expect(component.successMessage()).toBe('Imagem enviada com sucesso');
+    expect(component.successMessage()).toBe('Imagem pronta para publicação');
     expect(fixture.nativeElement.querySelector('img')?.src).toContain(asset.storageUrl);
   });
 
   it('exibe erro amigável quando a API rejeita o arquivo', () => {
-    api.uploadAsset.and.returnValue(throwError(() => new Error('Imagem muito grande')));
+    spyOn<any>(component, 'prepareLocalPreview').and.resolveTo();
+    api.uploadMetaImageAsset.and.returnValue(throwError(() => new Error('Imagem muito grande')));
 
     fixture.detectChanges();
     component.onFileInput({
@@ -86,5 +93,20 @@ describe('ImageUploadComponent', () => {
 
     expect(component.assetSelected.emit).toHaveBeenCalledWith(asset);
     expect(fixture.nativeElement.querySelector('img')?.src).toContain(asset.storageUrl);
+  });
+
+  it('trata ARCHIVED como sucesso e remove o asset da lista', () => {
+    api.deleteMetaImageAsset.and.returnValue(of({
+      status: 'ARCHIVED',
+      message: 'Asset arquivado porque está vinculado a campanhas.',
+    }));
+
+    component.assets.set([asset]);
+    component.deleteAsset(asset.id);
+
+    expect(api.deleteMetaImageAsset).toHaveBeenCalledWith('store-1', asset.id);
+    expect(component.assets()).toEqual([]);
+    expect(component.successMessage()).toBe('Imagem arquivada com sucesso.');
+    expect(component.error()).toBeNull();
   });
 });

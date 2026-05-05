@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  Res,
-  UploadedFile,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { createReadStream } from 'fs';
@@ -23,12 +12,12 @@ import { AssetsService, AssetDto } from './assets.service';
 import { AssetType } from './entities/asset.entity';
 
 @Controller('assets')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 
   @Post('upload')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   @UseInterceptors(FileInterceptor('file'))
   upload(
     @CurrentUser() user: AuthenticatedUser,
@@ -40,8 +29,7 @@ export class AssetsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+  @Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('storeId') storeId?: string,
@@ -50,15 +38,23 @@ export class AssetsController {
     return this.assetsService.listForUser(user, storeId || '', type);
   }
 
+}
+
+@Controller('assets')
+export class AssetContentController {
+  constructor(private readonly assetsService: AssetsService) {}
+
   @Get(':assetId/content')
   async content(
     @Param('assetId') assetId: string,
+    @Query('expires') expires: string | undefined,
+    @Query('signature') signature: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    const { asset, filePath } = await this.assetsService.getAssetFileStream(assetId);
+    const { asset, filePath } = await this.assetsService.getAssetFileStreamFromSignedUrl(assetId, expires, signature);
     res.setHeader('Content-Type', asset.mimeType);
     res.setHeader('Content-Length', String(asset.size));
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Content-Disposition', `inline; filename="${asset.id}"`);
     createReadStream(filePath).pipe(res);
   }

@@ -20,9 +20,15 @@ export class LoggerService {
     'refreshToken',
     'authorization',
     'cookie',
+    'set-cookie',
     'secret',
+    'clientSecret',
+    'appSecret',
     'apiKey',
     'metaAccessToken',
+    'databaseUrl',
+    'dbUrl',
+    'connectionString',
   ];
 
   constructor(private readonly requestContext: RequestContextService) {}

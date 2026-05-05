@@ -1,5 +1,14 @@
 import { Injectable } from '@angular/core';
 import { HttpInterceptorFn, HttpRequest } from '@angular/common/http';
+import { environment } from '../environment';
+
+const API_ORIGIN = (() => {
+  try {
+    return new URL(environment.apiUrl).origin;
+  } catch {
+    return window.location.origin;
+  }
+})();
 
 /**
  * CSP Interceptor - Adiciona headers de segurança nas requisições
@@ -21,7 +30,7 @@ export const CSP_HEADERS = {
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: https:;
     font-src 'self' data:;
-    connect-src 'self' http://localhost:3004 https://api.metaiq.com;
+    connect-src 'self' ${API_ORIGIN};
     frame-ancestors 'none';
     base-uri 'self';
     form-action 'self';
@@ -48,7 +57,7 @@ export function sanitizeHtml(html: string): string {
 export function isSafeUrl(url: string): boolean {
   try {
     const urlObj = new URL(url, window.location.origin);
-    const allowedOrigins = [window.location.origin, 'http://localhost:3004', 'https://api.metaiq.com'];
+    const allowedOrigins = [window.location.origin, API_ORIGIN];
     return allowedOrigins.some(origin => urlObj.origin === origin);
   } catch {
     return false;

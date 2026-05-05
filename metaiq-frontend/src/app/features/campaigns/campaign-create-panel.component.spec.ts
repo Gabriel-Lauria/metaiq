@@ -42,9 +42,10 @@ describe('CampaignCreatePanelComponent', () => {
       'getMetaIntegrationStatus',
       'getAdAccounts',
       'getAssets',
-      'uploadAsset',
+      'uploadMetaImageAsset',
       'createMetaCampaign',
       'retryMetaCampaignRecovery',
+      'cleanupMetaCampaignRecovery',
     ]);
     ui = jasmine.createSpyObj<UiService>('UiService', ['showWarning', 'showError', 'showSuccess']);
     campaignAi = jasmine.createSpyObj<CampaignAiService>('CampaignAiService', ['suggest', 'analyze']);
@@ -71,7 +72,7 @@ describe('CampaignCreatePanelComponent', () => {
       provider: IntegrationProvider.META,
       status: IntegrationStatus.CONNECTED,
       pageId: 'page-1',
-      pageName: 'MetaIQ Page',
+      pageName: 'Nexora Page',
       lastSyncStatus: SyncStatus.SUCCESS,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -107,6 +108,16 @@ describe('CampaignCreatePanelComponent', () => {
         adSetId: 'adset-1',
         creativeId: 'creative-1',
         adId: 'ad-1',
+      },
+    }));
+    api.cleanupMetaCampaignRecovery.and.returnValue(of({
+      success: true,
+      message: 'Limpeza concluída',
+      cleaned: {
+        ad: false,
+        creative: false,
+        adset: true,
+        campaign: true,
       },
     }));
 
@@ -239,10 +250,7 @@ describe('CampaignCreatePanelComponent', () => {
     expect(api.retryMetaCampaignRecovery).toHaveBeenCalledWith(
       'store-1',
       'exec-123',
-      jasmine.objectContaining({
-        name: 'Campanha Meta segura',
-        adAccountId: 'ad-account-1',
-      }),
+      {},
     );
     expect(ui.showSuccess).toHaveBeenCalledWith(
       'Campanha retomada',
@@ -561,6 +569,30 @@ describe('CampaignCreatePanelComponent', () => {
     expect(component.state.ui.aiBlockingIssues).toContain('Campanhas de WhatsApp/mensagens precisam de destino de mensagem configurado.');
   });
 
+  it('mostra sugestao segura quando a resposta usa fallback local', () => {
+    campaignAi.suggest.and.returnValue(of(buildStructuredSuggestion({
+      meta: {
+        promptVersion: 'campaign-structured-v3.2.0',
+        model: 'gemini-2.5-flash',
+        usedFallback: true,
+        responseValid: true,
+      },
+    })));
+
+    component.switchToAiMode();
+    component.state.ui.aiPrompt = 'Campanha com fallback seguro';
+    component.applyAiSuggestions();
+    fixture.detectChanges();
+
+    expect(component.state.ui.aiUsedFallback).toBeTrue();
+    expect(ui.showWarning).toHaveBeenCalledWith(
+      'Sugestão segura pronta',
+      'IA gerou resposta incompleta. Usando sugestão segura.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('Sugestão segura');
+    expect(fixture.nativeElement.textContent).toContain('IA gerou resposta incompleta. Usando sugestão segura.');
+  });
+
   it('mostra aviso de AI_FAILED e não exibe score nem estratégia fake', () => {
     campaignAi.suggest.and.returnValue(of({
       status: 'AI_FAILED',
@@ -720,8 +752,55 @@ describe('CampaignCreatePanelComponent', () => {
     expect(api.createMetaCampaign).toHaveBeenCalledWith('store-1', jasmine.objectContaining({
       name: 'Campanha Meta segura',
       adAccountId: 'ad-account-1',
-      imageUrl: 'https://metaiq.dev/image.jpg',
+      imageAssetId: 'asset-1',
     }));
+  });
+
+  it('bloqueia a publicação quando a imagem ainda não foi enviada', () => {
+    openAdvancedMode(component, fixture);
+    component.state.creative.imageAssetId = '';
+    component.reviewNow();
+    component.submit();
+
+    expect(api.createMetaCampaign).not.toHaveBeenCalled();
+  });
+
+  it('salva imageAssetId ao selecionar um asset para o criativo', () => {
+    component.onCreativeAssetSelected({
+      id: 'asset-77',
+      storeId: 'store-1',
+      type: 'image',
+      mimeType: 'image/png',
+      size: 1234,
+      storageUrl: 'https://metaiq.dev/assets/asset-77.png',
+      status: 'SENT_TO_META',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    expect(component.state.creative.imageAssetId).toBe('asset-77');
+    expect(component.state.creative.imageUrl).toContain('asset-77.png');
+  });
+
+  it('bloqueia asset de outra conta de anúncios', () => {
+    component.onCreativeAssetSelected({
+      id: 'asset-88',
+      storeId: 'store-1',
+      adAccountId: 'ad-account-999',
+      type: 'image',
+      mimeType: 'image/png',
+      size: 1234,
+      storageUrl: 'https://metaiq.dev/assets/asset-88.png',
+      status: 'SENT_TO_META',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    expect(component.state.creative.imageAssetId).toBe('asset-1');
+    expect(ui.showWarning).toHaveBeenCalledWith(
+      'Asset incompatível',
+      'A imagem selecionada pertence a outra conta de anúncios. Escolha um asset da mesma conta da campanha.',
+    );
   });
 
   it('renderiza tooltips apenas nos campos estratégicos', () => {
@@ -732,8 +811,8 @@ describe('CampaignCreatePanelComponent', () => {
     ).map((item) => item.textContent?.trim() || '');
 
     expect(tooltipTexts.some((text) => text.includes('Ideal para cliques'))).toBeTrue();
-    expect(tooltipTexts.some((text) => text.toLowerCase().includes('bot'))).toBeTrue();
-    expect(tooltipTexts.some((text) => text.toLowerCase().includes('quem'))).toBeTrue();
+    expect(tooltipTexts.some((text) => text.includes('botão do anúncio'))).toBeTrue();
+    expect(tooltipTexts.some((text) => text.includes('medir ações no site'))).toBeTrue();
     expect(labels.some((label) => label.textContent?.includes('Nome') && label.querySelector('.field-tooltip'))).toBeFalse();
     expect(labels.some((label) => label.textContent?.includes('URL') && label.querySelector('.field-tooltip'))).toBeFalse();
     expect(labels.some((label) => label.textContent?.includes('Orçamento') && label.querySelector('.field-tooltip'))).toBeFalse();
@@ -1626,6 +1705,7 @@ function applyValidState(component: CampaignCreatePanelComponent): void {
   component.state.destination.websiteUrl = 'https://metaiq.dev/oferta';
   component.state.creative.message = 'Mensagem principal';
   component.state.creative.headline = 'Headline forte';
+  component.state.creative.imageAssetId = 'asset-1';
   component.state.creative.imageUrl = 'https://metaiq.dev/image.jpg';
   component.state.tracking.mainEvent = 'Lead';
   component.state.tracking.pixel = 'pixel-1';

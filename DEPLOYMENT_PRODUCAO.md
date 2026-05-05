@@ -1,4 +1,4 @@
-# 🚀 Guia de Deployment - MetaIQ em Produção
+# 🚀 Guia de Deployment - Nexora em Produção
 
 ## 📋 Índice
 1. [Pré-requisitos](#pré-requisitos)
@@ -762,7 +762,7 @@ docker restart metaiq-nginx
 
 - **Logs**: `/opt/metaiq/logs/`
 - **Backups**: `/opt/metaiq/backups/`
-- **Repositório**: [GitHub MetaIQ](https://github.com/seu-usuario/metaiq)
+- **Repositório**: [GitHub Nexora](https://github.com/seu-usuario/metaiq)
 - **Documentação**: [Docs](./docs/)
 
 ---

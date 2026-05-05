@@ -4,7 +4,7 @@ import { MetaCallToActionType } from './cta.constants';
 export type CampaignObjective = 'OUTCOME_TRAFFIC' | 'OUTCOME_LEADS' | 'REACH';
 export type CampaignGender = 'ALL' | 'MALE' | 'FEMALE';
 export type CampaignPlacement = 'feed' | 'stories' | 'reels' | 'explore' | 'messenger' | 'audience_network';
-export type CampaignInitialStatus = 'PAUSED' | 'ACTIVE';
+export type CampaignInitialStatus = 'PAUSED';
 export type CampaignDestinationType = 'site' | 'messages' | 'form' | 'app' | 'catalog';
 export type CampaignBudgetType = 'daily' | 'lifetime';
 export type CampaignCreationMode = 'ai-entry' | 'ai-result' | 'edit-lite' | 'advanced';
@@ -101,7 +101,7 @@ export interface CampaignBuilderState {
     headline: string;
     description: string;
     cta: MetaCallToActionType;
-    assetId: string;
+    imageAssetId: string;
     imageUrl: string;
     carousel: boolean;
   };
@@ -112,6 +112,8 @@ export interface CampaignBuilderState {
     utmSource: string;
     utmMedium: string;
     utmCampaign: string;
+    utmContent: string;
+    utmTerm: string;
     goals: string;
     notes: string;
   };
@@ -220,7 +222,7 @@ export interface CampaignCreateSuccessEvent {
  * Modo IA:     Briefing IA → Configuração → Público → Criativo → Revisão
  */
 
-export type StepId = 'objective' | 'product' | 'audience' | 'creative' | 'budget' | 'review';
+export type StepId = 'briefing-ia' | 'configuration' | 'audience' | 'creative' | 'review';
 
 export interface StepValidation {
   /** Erros que bloqueiam o avanço */

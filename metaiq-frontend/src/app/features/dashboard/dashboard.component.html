@@ -18,20 +18,7 @@
     (action)="loadData()"
   />
 
-  <!-- Empty State -->
-  <app-ui-state
-    *ngIf="!loading() && !error() && !hasDashboardData()"
-    type="empty"
-    icon="D"
-    [title]="isClient() ? 'Nenhum resultado disponível' : 'Nenhum dado encontrado'"
-    [message]="'Nenhum dado encontrado para os filtros selecionados.'"
-    actionLabel="Atualizar"
-    (action)="loadData()"
-  />
-
-  <!-- Main Dashboard -->
-  <div class="dashboard-content" *ngIf="!loading() && !error() && hasDashboardData()">
-    <!-- Header -->
+  <div class="dashboard-content" *ngIf="!loading() && !error()">
     <div class="dashboard-header">
       <div class="header-left">
         <h1 class="page-title">{{ dashboardTitle() }}</h1>
@@ -39,8 +26,9 @@
           Últimos {{ period() }} dias
           <span *ngIf="storeContext.selectedStore()"> • {{ storeContext.selectedStore()!.name }}</span>
         </p>
+        <p class="page-summary">{{ executiveSummary() }}</p>
       </div>
-      <div class="time-range-buttons">
+      <div class="header-actions">
         <select
           class="store-select"
           *ngIf="storeContext.stores().length > 1 && !isIndividual()"
@@ -68,10 +56,65 @@
           (click)="setPeriod(90)">
           90 dias
         </button>
+        <button class="btn-action btn-action-secondary" type="button" (click)="openMetrics()">Ver métricas</button>
+        <button class="btn-action btn-action-primary" type="button" (click)="openCampaignBuilder()">Criar nova campanha</button>
       </div>
     </div>
 
-    <!-- Metrics Grid -->
+    <section class="executive-banner">
+      <article class="executive-card primary">
+        <span class="executive-label">Prioridade operacional</span>
+        <strong>{{ executiveFocus() }}</strong>
+        <p>{{ executiveSummary() }}</p>
+      </article>
+      <article class="executive-card">
+        <span class="executive-label">Leitura de impacto</span>
+        <strong>{{ executiveRevenueLabel() }}</strong>
+        <p>{{ isClient() ? 'Veja resultado, tendência e oportunidades sem navegar por relatórios dispersos.' : 'Use o painel para decidir onde proteger verba, ajustar campanha e acelerar a operação.' }}</p>
+      </article>
+      <article class="executive-card">
+        <span class="executive-label">Atualização</span>
+        <strong>{{ getLastUpdatedLabel() }}</strong>
+        <p>Dados consolidados para leitura rápida de performance, contexto e próximos passos.</p>
+      </article>
+    </section>
+
+    <section class="attention-board">
+      <article class="attention-main">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">O que precisa de atenção hoje</span>
+            <h3>Prioridades operacionais</h3>
+          </div>
+          <button class="text-link" type="button" (click)="openCampaigns()">Abrir operação</button>
+        </div>
+
+        <div class="attention-list">
+          <article class="attention-item" *ngFor="let item of attentionItems(); trackBy: trackById" [class]="'tone-' + item.tone">
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.message }}</p>
+          </article>
+        </div>
+      </article>
+
+      <article class="attention-side">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">Snapshot executivo</span>
+            <h3>Leitura rápida</h3>
+          </div>
+        </div>
+
+        <div class="snapshot-list">
+          <article class="snapshot-card" *ngFor="let card of executiveSnapshots(); trackBy: trackById">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <p>{{ card.description }}</p>
+          </article>
+        </div>
+      </article>
+    </section>
+
     <div class="metrics-grid" *ngIf="metrics() && hasMetricsData()">
       <app-ui-kpi-card [label]="isClient() ? 'Pessoas alcançadas' : 'Impressões'" [value]="metrics()!.impressions.toLocaleString()" marker="I" tone="info" />
       <app-ui-kpi-card [label]="kpiLabel('clicks')" [value]="metrics()!.clicks.toLocaleString()" marker="C" tone="info" />
@@ -90,7 +133,20 @@
       <app-ui-kpi-card label="Ativas" [value]="summary()!.counts.activeCampaigns" marker="A" tone="success" />
     </div>
 
-    <!-- Insights Section -->
+    <section class="readiness-grid" *ngIf="!hasDashboardData()">
+      <article class="readiness-card">
+        <span class="section-kicker">Base operacional</span>
+        <strong>Conecte Meta e prepare o ambiente</strong>
+        <p>Sem integração, assets e primeira campanha, o dashboard ainda não consegue priorizar o que importa.</p>
+        <button class="btn-action btn-action-secondary" type="button" (click)="openCampaigns()">Abrir campanhas</button>
+      </article>
+      <article class="readiness-card">
+        <span class="section-kicker">Ativação</span>
+        <strong>Use o welcome como trilha inicial</strong>
+        <p>O fluxo foi reorganizado para que publicação venha depois da preparação, e não antes dela.</p>
+      </article>
+    </section>
+
     <div class="insights-section" *ngIf="allInsights.length > 0">
       <h3>{{ isClient() ? 'Pontos importantes' : 'Insights e recomendações' }}</h3>
       <div class="insights-grid">

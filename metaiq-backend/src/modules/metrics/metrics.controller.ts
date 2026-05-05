@@ -40,7 +40,7 @@ class MetricsSummaryQueryDto extends DateRangeQueryDto {
 
 @Controller('metrics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL, Role.CLIENT)
+@Roles(Role.PLATFORM_ADMIN, Role.ADMIN, Role.MANAGER, Role.OPERATIONAL)
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 

@@ -12,7 +12,7 @@ import { Manager } from '../managers/manager.entity';
 import { Tenant } from '../tenants/tenant.entity';
 import { UserStore } from '../user-stores/user-store.entity';
 import * as bcrypt from 'bcryptjs';
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
 import { AuthenticatedUser } from '../../common/interfaces';
 import { AccessScopeService } from '../../common/services/access-scope.service';
 import { AccountType, Role } from '../../common/enums';
@@ -30,11 +30,11 @@ export class CreateUserDto {
   name: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   managerId?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   tenantId?: string;
 
   @IsOptional()
@@ -73,11 +73,11 @@ export class ManagerUpdateUserDto {
 
 export class AdminUpdateUserDto extends ManagerUpdateUserDto {
   @IsOptional()
-  @IsString()
+  @IsUUID()
   managerId?: string | null;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   tenantId?: string | null;
 }
 
@@ -85,6 +85,12 @@ export class ResetUserPasswordDto {
   @IsString()
   @MinLength(6)
   password: string;
+}
+
+export class UpdateMyOnboardingDto {
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
 }
 
 export type UserResponseView = Omit<User, 'password'> & {
@@ -97,6 +103,8 @@ export type UserResponseView = Omit<User, 'password'> & {
   website: string | null;
   instagram: string | null;
   whatsapp: string | null;
+  onboardingCompletedAt: Date | null;
+  firstLogin: boolean;
 };
 
 export type CompanyProfileResponseView = {
@@ -195,6 +203,7 @@ export class UsersService {
     const { password: _password, ...userWithoutPassword } = user;
     const tenantProfile = await this.resolveTenantProfile(user.tenantId);
     const accountType = tenantProfile?.accountType ?? null;
+
     return {
       ...userWithoutPassword,
       accountType,
@@ -206,6 +215,8 @@ export class UsersService {
       website: tenantProfile?.website ?? null,
       instagram: tenantProfile?.instagram ?? null,
       whatsapp: tenantProfile?.whatsapp ?? null,
+      onboardingCompletedAt: user.onboardingCompletedAt ?? null,
+      firstLogin: !user.onboardingCompletedAt,
     };
   }
 
@@ -275,6 +286,16 @@ export class UsersService {
     return this.applyUserProfileUpdate(user, safeDto);
   }
 
+  async updateMyOnboardingForUser(
+    requester: AuthenticatedUser,
+    dto: UpdateMyOnboardingDto,
+  ): Promise<User> {
+    const user = await this.loadUserOrFail(requester.id);
+    const completed = dto.completed ?? true;
+    user.onboardingCompletedAt = completed ? new Date() : null;
+    return this.userRepository.save(user);
+  }
+
   async updateForUser(
     requester: AuthenticatedUser,
     id: string,
@@ -297,7 +318,6 @@ export class UsersService {
       if (requester.id === user.id) {
         throw new ForbiddenException('Usuário não pode alterar o próprio tenant');
       }
-
       user.managerId = dto.managerId;
     }
 
@@ -313,10 +333,11 @@ export class UsersService {
       if (!dto.tenantId) {
         throw new BadRequestException('tenantId é obrigatório');
       }
-
       await this.ensureTenantExists(dto.tenantId);
       user.tenantId = dto.tenantId;
     }
+
+    await this.assertUserTenantManagerIntegrity(user.role, user.tenantId, user.managerId);
 
     return this.applyUserProfileUpdate(user, dto);
   }
@@ -410,19 +431,14 @@ export class UsersService {
     }
 
     const role = dto.role ?? Role.OPERATIONAL;
-    const tenantId = await this.resolveTenantIdForCreate(role, dto.tenantId, dto.managerId);
-    const managerId = [Role.PLATFORM_ADMIN, Role.ADMIN].includes(role) ? dto.managerId ?? null : dto.managerId ?? tenantId;
+    const tenantId = await this.resolveTenantIdForCreate(role, dto.tenantId);
+    const managerId = this.resolveManagerIdForCreate(role, dto.managerId);
 
     if (tenantId) {
       await this.ensureTenantExists(tenantId);
     }
 
-    if (managerId) {
-      const manager = await this.managerRepository.findOne({ where: { id: managerId } });
-      if (!manager || !manager.active) {
-        throw new BadRequestException('managerId inválido');
-      }
-    }
+    await this.assertUserTenantManagerIntegrity(role, tenantId, managerId);
 
     const hashedPassword = await bcrypt.hash(dto.password, this.BCRYPT_ROUNDS);
 
@@ -434,6 +450,7 @@ export class UsersService {
       managerId,
       tenantId,
       createdByUserId: createdByUserId ?? null,
+      onboardingCompletedAt: null,
       active: dto.active ?? true,
       deletedAt: null,
     });
@@ -444,14 +461,15 @@ export class UsersService {
   private async resolveTenantIdForCreate(
     role: Role,
     payloadTenantId?: string,
-    legacyManagerId?: string,
   ): Promise<string | null> {
     if (role === Role.PLATFORM_ADMIN) {
+      if (payloadTenantId) {
+        throw new BadRequestException('PLATFORM_ADMIN não pode receber tenantId');
+      }
       return null;
     }
 
-    const tenantId = payloadTenantId ?? legacyManagerId;
-    if (!tenantId) {
+    if (!payloadTenantId) {
       throw new BadRequestException(
         role === Role.ADMIN
           ? 'tenantId é obrigatório para usuário ADMIN'
@@ -459,7 +477,26 @@ export class UsersService {
       );
     }
 
-    return tenantId;
+    return payloadTenantId;
+  }
+
+  private resolveManagerIdForCreate(
+    role: Role,
+    payloadManagerId?: string,
+  ): string | null {
+    if (role === Role.PLATFORM_ADMIN) {
+      if (payloadManagerId) {
+        throw new BadRequestException('PLATFORM_ADMIN não pode receber managerId');
+      }
+
+      return null;
+    }
+
+    if (!payloadManagerId) {
+      throw new BadRequestException('managerId é obrigatório para usuário não-platform');
+    }
+
+    return payloadManagerId;
   }
 
   private async ensureTenantExists(tenantId: string): Promise<void> {
@@ -467,6 +504,52 @@ export class UsersService {
     if (!tenant || !tenant.active) {
       throw new BadRequestException('tenantId inválido');
     }
+  }
+
+  private async ensureManagerBelongsToTenant(
+    managerId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const [manager, tenant] = await Promise.all([
+      this.managerRepository.findOne({ where: { id: managerId, deletedAt: IsNull() } }),
+      this.tenantRepository.findOne({ where: { id: tenantId, deletedAt: IsNull() } }),
+    ]);
+
+    if (!manager || !manager.active) {
+      throw new BadRequestException('managerId inválido');
+    }
+
+    if (!tenant || !tenant.active) {
+      throw new BadRequestException('tenantId inválido');
+    }
+
+    if (manager.id !== tenant.id) {
+      throw new BadRequestException('managerId deve pertencer ao mesmo tenant informado');
+    }
+  }
+
+  private async assertUserTenantManagerIntegrity(
+    role: Role,
+    tenantId: string | null | undefined,
+    managerId: string | null | undefined,
+  ): Promise<void> {
+    if (role === Role.PLATFORM_ADMIN) {
+      if (tenantId || managerId) {
+        throw new BadRequestException('PLATFORM_ADMIN não pode ter tenantId ou managerId');
+      }
+
+      return;
+    }
+
+    if (!tenantId) {
+      throw new BadRequestException('tenantId é obrigatório');
+    }
+
+    if (!managerId) {
+      throw new BadRequestException('managerId é obrigatório');
+    }
+
+    await this.ensureManagerBelongsToTenant(managerId, tenantId);
   }
 
   private async resolveAccountType(tenantId?: string | null): Promise<AccountType | null> {

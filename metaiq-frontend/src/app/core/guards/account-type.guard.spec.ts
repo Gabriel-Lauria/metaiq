@@ -24,13 +24,13 @@ describe('accountTypeGuard', () => {
     const route = new ActivatedRouteSnapshot();
     route.data = {
       disallowedAccountTypes: ['INDIVIDUAL'],
-      accountTypeRedirectTo: '/campaigns',
+      accountTypeRedirectTo: '/dashboard',
     };
 
     const result = TestBed.runInInjectionContext(() => accountTypeGuard(route, {} as any));
 
     expect(result).toBeFalse();
-    expect(router.navigate).toHaveBeenCalledWith(['/campaigns']);
+    expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
   });
 
   it('permite a rota minha empresa para contas individual', () => {
